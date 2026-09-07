@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+
+    <!--
+      Mobile viewport contract:
+      - `width=device-width, initial-scale=1` maps CSS pixels to device pixels.
+      - `maximum-scale=1, user-scalable=no` suppresses pinch-zoom and the
+        double-tap zoom gesture, which would otherwise fight touch controls.
+      - `viewport-fit=cover` lets the page paint under a notch / cutout; the
+        safe-area insets below keep interactive content clear of it.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+
+    <meta name="theme-color" content="#0f1420" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="Mobile-first Phaser 4 game" />
+
+    <!-- Treat as a standalone app surface when launched from a home screen. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <title>Phaser Mobile Starter</title>
+
+    <style>
+      :root {
+        /* Shell palette. Mirrored in src/config/theme.ts — change both together. */
+        --shell-bg: #0f1420;
+        --shell-fg: #e8edf7;
+        --shell-muted: #8b96ad;
+        --shell-accent: #4cc9f0;
+
+        /* Notch / rounded-corner insets, 0 on hardware without them. */
+        --safe-top: env(safe-area-inset-top, 0px);
+        --safe-right: env(safe-area-inset-right, 0px);
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
+        --safe-left: env(safe-area-inset-left, 0px);
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: var(--shell-bg);
+        color: var(--shell-fg);
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+        /* Kill browser-level touch behaviour that competes with game input:
+           pull-to-refresh, overscroll glow, long-press selection, tap flash. */
+        overscroll-behavior: none;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+      }
+
+      /*
+        `position: fixed` plus `100dvh` keeps the canvas stable while Android
+        Chrome collapses and re-expands its URL bar. `100vh` is the fallback
+        for engines without dynamic viewport units; it over-reports height
+        slightly, which the Scale Manager corrects on its first resize pass.
+      */
+      #game-root {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        width: 100dvw;
+        height: 100dvh;
+        display: block;
+        overflow: hidden;
+      }
+
+      #game-root canvas {
+        display: block;
+        touch-action: none;
+      }
+
+      /* Shared full-bleed overlay layout for the boot and orientation panels. */
+      .overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.85rem;
+        padding: calc(var(--safe-top) + 1.5rem) calc(var(--safe-right) + 1.5rem)
+          calc(var(--safe-bottom) + 1.5rem) calc(var(--safe-left) + 1.5rem);
+        background: var(--shell-bg);
+        text-align: center;
+      }
+
+      .overlay[hidden] {
+        display: none;
+      }
+
+      .overlay__title {
+        margin: 0;
+        font-size: 1.05rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+
+      .overlay__note {
+        margin: 0;
+        max-width: 22rem;
+        font-size: 0.85rem;
+        line-height: 1.5;
+        color: var(--shell-muted);
+      }
+
+      .spinner {
+        width: 2.25rem;
+        height: 2.25rem;
+        border: 3px solid rgba(76, 201, 240, 0.2);
+        border-top-color: var(--shell-accent);
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(1turn);
+        }
+      }
+
+      /* Respect a reduced-motion preference; the spinner is decorative. */
+      @media (prefers-reduced-motion: reduce) {
+        .spinner {
+          animation: none;
+        }
+      }
+
+      .rotate-icon {
+        width: 2.5rem;
+        height: 4rem;
+        border: 3px solid var(--shell-accent);
+        border-radius: 0.5rem;
+        animation: nudge 2.2s ease-in-out infinite;
+      }
+
+      @keyframes nudge {
+        0%,
+        45%,
+        100% {
+          transform: rotate(90deg);
+        }
+        60%,
+        90% {
+          transform: rotate(0deg);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .rotate-icon {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- Phaser injects its canvas here (see `scale.parent` in the game config). -->
+    <div id="game-root" aria-label="Game canvas" role="application"></div>
+
+    <!--
+      Server-rendered boot panel. A blank screen on a slow mobile connection
+      reads as a broken page, so the shell shows this immediately and the game
+      hides it once the first scene is running.
+    -->
+    <div class="overlay" id="boot-overlay">
+      <div class="spinner"></div>
+      <p class="overlay__title">Loading</p>
+      <p class="overlay__note" id="boot-error" hidden></p>
+    </div>
+
+    <!--
+      Portrait is the design orientation. The browser cannot lock orientation
+      outside fullscreen on Android, so the game prompts instead of forcing.
+    -->
+    <div class="overlay" id="orientation-overlay" hidden>
+      <div class="rotate-icon"></div>
+      <p class="overlay__title">Rotate your device</p>
+      <p class="overlay__note">This game is designed for portrait orientation.</p>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

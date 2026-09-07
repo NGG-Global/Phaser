@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    /* Language and environment */
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "useDefineForClassFields": true,
+
+    /* Modules — Vite bundles, so tsc only ever type-checks */
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noEmit": true,
+
+    /* Type safety: strict by default, no exceptions in game code */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "forceConsistentCasingInFileNames": true,
+
+    /* Path aliases — keep imports stable as the tree grows.
+       Mirrored in vite.config.ts `resolve.alias`; change both together.
+       TypeScript 7 removed `baseUrl`, so these must stay relative. */
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
+    /* Phaser ships a very large single-file .d.ts; skip re-checking it. */
+    "skipLibCheck": true
+  },
+  "include": ["src", "vite.config.ts"]
+}
