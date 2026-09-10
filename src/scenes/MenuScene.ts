@@ -38,8 +38,8 @@ export class MenuScene extends BaseScene {
     this.busy = false;
     // The hammer's idle sway doubles as the title illustration; it never receives a plan.
     this.illustration = VIGNETTES[0]!.create(this);
-    this.edition = this.text('SMALL ACTS', 17, 'monospace').setLetterSpacing(2);
-    this.headline = this.text('Small\nActs.', 104, 'Georgia, serif').setLineSpacing(-17);
+    this.edition = this.text('TINY TEMPO', 17, 'monospace').setLetterSpacing(2);
+    this.headline = this.text('Tiny\nTempo.', 104, 'Georgia, serif').setLineSpacing(-17);
     this.caption = this.text('Watch a rhythm. Tap it back.', 23, 'Georgia, serif').setFontStyle('italic');
     const progress = loadProgress();
     this.note = this.text(progress.unlocked === 1 ? 'A NEW ROAD BEGINS' : `NEXT UP   LEVEL ${progress.unlocked}   ·   ${areaOf(progress.unlocked).name.toUpperCase()}`, 16, 'monospace').setLetterSpacing(2).setOrigin(0.5);

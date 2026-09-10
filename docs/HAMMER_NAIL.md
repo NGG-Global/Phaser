@@ -1,4 +1,4 @@
-# Hammer + Nail — Small Acts
+# Hammer + Nail — Tiny Tempo
 
 One vignette, built over the existing rhythm engine. No Window, Bug, progression system or alternate scoring was added.
 

@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.ngg.smallacts',
-  appName: 'Small Acts',
+  appName: 'Tiny Tempo',
   webDir: 'dist',
   // Match the shell paper colour so the WebView never flashes white before index.html paints.
   backgroundColor: '#eee8d8',

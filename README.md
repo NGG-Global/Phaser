@@ -1,4 +1,4 @@
-# Small Acts — a three-act rhythm game
+# Tiny Tempo — an endless rhythm game
 
 **Current music update:** seven synchronized WAV stems (drums, bass, guitar, keyboard, percussion, synth, brass) play continuously, including through the summary and the menu. Everything runs at the stems' measured 120 BPM; each stem is normalized to an exact 60-bar loop whose origin is the first downbeat. The WAV masters (161 MB) stay in `bgm/`; the game ships the MP3s in `bgm/mp3/` produced by `npm run music:encode` (see `docs/MUSIC.md`). Stem levels and URLs live in `src/config/music.ts`. DEV `?debug` adds stem mute/restore buttons and diagnostics. See [music implementation and metadata caveat](docs/MUSIC.md); the supplied 120/121 BPM discrepancy needs confirmation. Earlier tempo/session-duration notes below describe the music-free milestone.
 

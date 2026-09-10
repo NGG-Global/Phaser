@@ -60,7 +60,7 @@ export class MapScene extends BaseScene {
     this.areaRanges = Array.from({ length: areas }, (_, k) => this.add.text(0, 0, `LEVELS ${k * PROGRESSION.areaSize + 1}–${(k + 1) * PROGRESSION.areaSize}`, { fontFamily: 'monospace', fontSize: '15px' }).setLetterSpacing(2).setOrigin(0, 0.5));
     this.hudBack = this.add.graphics().setScrollFactor(0).setDepth(10);
     const hud = (value: string, size: number, font: string) => this.add.text(0, 0, value, { fontFamily: font, fontSize: `${size}px`, color: '#243e35' }).setScrollFactor(0).setDepth(11);
-    this.edition = hud('SMALL ACTS', 16, 'monospace').setLetterSpacing(2);
+    this.edition = hud('TINY TEMPO', 16, 'monospace').setLetterSpacing(2);
     this.status = hud('', 15, 'monospace').setLetterSpacing(2);
     this.menu = hud('MENU', 15, 'monospace').setLetterSpacing(2).setOrigin(0.5);
     this.mute = hud(currentAudio(this)?.muted ? '×' : '♪', 32, 'Georgia, serif').setOrigin(0.5);
