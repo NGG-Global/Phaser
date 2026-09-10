@@ -94,6 +94,40 @@ Not changed, but observed: the outcome headline is fully legible for well under 
 
 Browser check: menu → PLAY reached the first count-in in about 6.7 s (161 MB of stems from localhost), nine tasks completed with the expected slides and two curtains, MENU mid-round and from the summary returned to the title with seven stems still running and one pointer handler, and PLAY again started a fresh session. Console error and warning logs were empty.
 
+## Menu and map visual design
+
+Both screens share one raised language: a cast shadow, a darker side wall, a face and a
+rim light, so a node, a plate, a chip and the PLAY button all read as the same material
+lit from the same direction. `ui/colour.ts` derives every depth tone — shadows, hazed
+distance, bevels, sheens — from the five colours an area already authors in `levels.ts`,
+so adding an area is still five values.
+
+The road is a Catmull-Rom spline through the level nodes (`ui/path.ts`), sampled fourteen
+times per span. Stroking the nodes directly folded the road at every level; the spline
+cuts the sharpest turn to under a third of that. It is drawn as a dropped shadow, a
+casing, the surface and a top sheen, with markings dashed at an even pitch along the
+curve rather than per node. A span that crosses an area boundary is split at its
+midpoint, which is exactly where the ground changes, so surface and terrain change on the
+same line instead of a node apart.
+
+Depth in the terrain is atmospheric rather than perspective: each band hazes toward its
+own sky colour at its far end, boundaries cross-fade over nine bands, and a quiet motif
+per area — tufts, staggered paving, ripples, drifts, stones — keeps the ground from
+reading as flat paint. Scenery sits beside the road with two silhouettes per area and a
+cast shadow each; the shadows are what sell the depth. Stars sit on their own plate so
+they never lie on the road surface, area signs are plates sized to their own text (repeat
+areas gain a numeral), and locked nodes carry a drawn padlock rather than a dimmed number
+alone. The menu adds a scrim behind the type, a progress card previewing the next area's
+ground and road, and four dots on the game's own 120 BPM pulse; reduced-motion holds the
+dots and the frontier pulse still.
+
+Everything except the frontier pulse, the tap ripple and a 140 ms button press is baked in
+`layout()`. Measured in headless Chromium: the heaviest bake the map can be asked for — 82
+levels over nine areas, 1,149 road samples — takes about 10 ms, and idle frame rate is flat
+across 13, 42 and 82 levels, so geometry volume is not what costs. That renderer caps
+around 14 fps regardless, so it says nothing about a real handset; on-device frame rate is
+still unmeasured.
+
 ## Level map and progression (10 September 2026)
 
 `MapScene` is a vertically scrolling road: level 1 at the bottom, ten levels per themed area, the road continuing twelve levels past the frontier. Drag scrolls with a little inertia; a tap under the slop threshold selects. Cleared nodes are filled with their stars, the frontier pulses, locked nodes are faded and ignore taps. The whole road is one static Graphics rebuilt in `layout()`; only the pulse ring and tap acknowledgement redraw per frame. `PlayScene` receives `{ level, autoStart }`, builds the vignette for that level, and steps `MusicSystem.setRate` on each task's downbeat; the last task's ending schedules the rate back to 1.
