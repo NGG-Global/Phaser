@@ -6,7 +6,7 @@ import type { Judgement } from '@/rhythm/judge';
 import type { Vignette } from './Vignette';
 import {
   advanceBite, acceptDemoBeat, bladeVisibleDepth, clamp01, drawBack, dustFall,
-  easeOut, kerfDepth, SAW_MOTION, sawDirection, strokeTravel,
+  easeOut, kerfDepth, REFERENCE_BEAT, SAW_MOTION, sawDirection, sawTiming, strokeTravel,
 } from './sawMotion';
 
 /** Cold linen and slate. Sawdust is the only warm note, so the accent doubles as the reward. */
@@ -238,14 +238,18 @@ export class SawTimberVignette implements Vignette {
     return this.plan?.cues.find(cue => cue.kind === 'action' && cue.time > now)?.time ?? null;
   }
 
+  /** Seconds per beat of the task in progress; the stroke's phases are fractions of it. */
+  private beat(): number { return this.plan ? 60 / this.plan.bpm : REFERENCE_BEAT; }
+
   /** Travel along the blade in board units. The bite is at zero; direction alternates. */
   private offset(now: number): number {
-    const current = sawDirection(this.strokes - 1) * strokeTravel(now - this.strokeAt);
+    const beat = this.beat();
+    const current = sawDirection(this.strokes - 1) * strokeTravel(now - this.strokeAt, beat);
     const next = this.upcoming(now);
-    if (next === null || next - now >= SAW_MOTION.drawBackSec) return current * SAW_MOTION.travel;
+    if (next === null || next - now >= sawTiming(beat).drawBackSec) return current * SAW_MOTION.travel;
     // The next stroke reverses, so blend into its frame rather than snapping back.
     const dir = sawDirection(this.strokes);
-    return dir * drawBack(next - now, current * dir) * SAW_MOTION.travel;
+    return dir * drawBack(next - now, current * dir, beat) * SAW_MOTION.travel;
   }
 
   public update(now: number): void {
@@ -265,10 +269,11 @@ export class SawTimberVignette implements Vignette {
       this.setKerf(1, this.finishAt);
       if (!this.successful) this.drift = Math.max(this.drift, 14);
     }
-    const beat = this.plan ? 60 / this.plan.bpm : 0.5;
+    const beat = this.beat();
     const swap = this.handoffSlide(now, beat);
     const age = now - this.strokeAt;
-    const bite = age >= 0 && age < SAW_MOTION.dustSec ? 1 - age / SAW_MOTION.dustSec : 0;
+    const { dustSec } = sawTiming(beat);
+    const bite = age >= 0 && age < dustSec ? 1 - age / dustSec : 0;
     const press = age >= 0 && age < 0.16 ? Math.sin(age / 0.16 * Math.PI) : 0;
     // Both offsets are relative to the board's own anchor, which the slide and the
     // flex add to rather than replace.
@@ -407,8 +412,9 @@ export class SawTimberVignette implements Vignette {
     const g = this.dust.clear();
     if (bite <= 0 || this.kerf <= 0) return;
     const age = now - this.strokeAt;
-    const fall = dustFall(age);
-    const spread = easeOut(age / SAW_MOTION.dustSec) * 96;
+    const beat = this.beat();
+    const fall = dustFall(age, beat);
+    const spread = easeOut(age / sawTiming(beat).dustSec) * 96;
     const dir = sawDirection(this.strokes - 1);
     const c = Math.cos(TILT);
     const s = Math.sin(TILT);

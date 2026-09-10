@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   advanceBite, acceptDemoBeat, bladeVisibleDepth, drawBack, dustFall,
-  kerfDepth, SAW_MOTION, sawDirection, strokeTravel,
+  kerfDepth, REFERENCE_BEAT, SAW_MOTION, sawDirection, sawTiming, strokeTravel,
 } from '../src/vignettes/sawMotion';
 import { synthesizeSaw } from '../src/audio/sawSounds';
 import { levelSpec } from '../src/game/levels';
@@ -21,20 +21,38 @@ describe('saw presentation curves', () => {
     expect(sawDirection(1001)).toBe(-1);
   });
   it('puts maximum engagement on the beat and chains one stroke into the next', () => {
+    const t = sawTiming();
+    // The stroke was tuned at 120 BPM; the reference timing must still be those seconds.
+    expect(REFERENCE_BEAT).toBe(0.5);
+    expect(t).toEqual({ drawBackSec: 0.15, biteHoldSec: 0.028, followThroughSec: 0.19, dustSec: 0.42 });
     expect(strokeTravel(0)).toBe(0);
-    expect(strokeTravel(SAW_MOTION.biteHoldSec)).toBe(0);
-    expect(strokeTravel(SAW_MOTION.followThroughSec)).toBeCloseTo(1);
+    expect(strokeTravel(t.biteHoldSec)).toBe(0);
+    expect(strokeTravel(t.followThroughSec)).toBeCloseTo(1);
     expect(strokeTravel(100)).toBe(1);
     expect(strokeTravel(-1)).toBe(0);
     // A stroke resting at the end of its travel is the next stroke's fully drawn back.
-    expect(drawBack(SAW_MOTION.drawBackSec)).toBe(-1);
+    expect(drawBack(t.drawBackSec)).toBe(-1);
     expect(drawBack(0)).toBeCloseTo(0);
-    expect(drawBack(SAW_MOTION.drawBackSec * 0.5)).toBeGreaterThan(-1);
+    expect(drawBack(t.drawBackSec * 0.5)).toBeGreaterThan(-1);
     // A quick pair reverses from wherever the previous follow-through had reached.
-    expect(drawBack(SAW_MOTION.drawBackSec, -0.3)).toBeCloseTo(-0.3);
+    expect(drawBack(t.drawBackSec, -0.3)).toBeCloseTo(-0.3);
     expect(drawBack(0, -0.3)).toBeCloseTo(0);
-    // The draw back and the follow-through together fit inside a half beat at 120 BPM.
-    expect(SAW_MOTION.drawBackSec + SAW_MOTION.followThroughSec).toBeLessThan(0.5);
+  });
+  it('tightens with the tempo so a stroke never outlives a half beat', () => {
+    // The tightest authored interval is a half beat at every tempo, so the follow-through
+    // must be shorter than that as a fraction of the beat, not merely at 120 BPM.
+    expect(SAW_MOTION.followThroughBeats).toBeLessThan(0.5);
+    for (const bpm of [120, 132, 150]) {
+      const beat = 60 / bpm;
+      const t = sawTiming(beat);
+      expect(t.followThroughSec).toBeLessThan(beat / 2);
+      expect(strokeTravel(t.followThroughSec, beat)).toBeCloseTo(1);
+      expect(strokeTravel(t.biteHoldSec, beat)).toBe(0);
+      expect(drawBack(t.drawBackSec, -1, beat)).toBe(-1);
+      expect(dustFall(100, beat)).toBe(dustFall(t.dustSec, beat));
+    }
+    // At the plateau ceiling the margin is no longer 10 ms.
+    expect(sawTiming(60 / 150).followThroughSec).toBeCloseTo(0.152);
   });
   it('never shows the blade below the depth it has actually sawn', () => {
     expect(kerfDepth(0, 3)).toBe(0);
@@ -68,8 +86,8 @@ describe('saw presentation curves', () => {
   it('keeps the dust plume bounded and grounded', () => {
     expect(dustFall(-1)).toBe(0);
     expect(dustFall(0)).toBe(0);
-    expect(dustFall(SAW_MOTION.dustSec / 2)).toBeLessThan(dustFall(SAW_MOTION.dustSec));
-    expect(dustFall(100)).toBe(dustFall(SAW_MOTION.dustSec));
+    expect(dustFall(sawTiming().dustSec / 2)).toBeLessThan(dustFall(sawTiming().dustSec));
+    expect(dustFall(100)).toBe(dustFall(sawTiming().dustSec));
   });
   it('takes every fourth level, by registry order alone', () => {
     // levelSpec picks VIGNETTES[(level - 1) % VIGNETTES.length], so registry order is the

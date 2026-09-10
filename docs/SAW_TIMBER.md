@@ -5,17 +5,16 @@ scheduler or judgement rule changed for it. The engine gained one generic capabi
 an optional judgement accent on the sound set — because the action sound is scheduled
 before the tap is graded, so nothing existing could react to a grade.
 
-`levelSpec` cycles the registry, so the saw is every fourth level. Its tasks and tempo
+`levelSpec` cycles the registry, so the saw is every fifth level now that Tomato follows it. Its tasks and tempo
 come from the progression curve like any other vignette's: each level starts at the
 music's 120 BPM and ramps task by task toward its peak, up to 150 BPM on the plateau.
 
-One consequence is worth knowing. The follow-through is 190 ms, chosen against the
-250 ms half beat at 120 BPM. At the 150 BPM ceiling the tightest authored spacing is
-200 ms, so the stroke still completes — with 10 ms to spare. Deep saw levels will
-therefore read as near-continuous scrubbing rather than distinct strokes. The fix, if
-that reads badly on a device, is to scale `SAW_MOTION` by `plan.bpm` instead of holding
-it in absolute seconds; that is deliberately not done here, because it would change
-motion this branch has already verified.
+The stroke's phases are fractions of a beat, not seconds (`sawTiming(beat)`), because
+the tightest authored interval is a half beat at every tempo. Tuned at 120 BPM the
+follow-through is 190 ms against a 250 ms half beat; held in seconds it would have had
+10 ms to spare at the 150 BPM ceiling and read as continuous scrubbing. In beats it is
+152 ms against 200 ms there, and `tests/saw.test.ts` asserts the ratio rather than the
+120 BPM numbers.
 
 ## Visual direction and controls
 
@@ -67,8 +66,9 @@ the offcut hanging by a splintered hinge, swinging, and the copy holds back.
 ## Ownership and timing
 
 - `src/vignettes/sawMotion.ts`: presentation-only curves and constants — stroke travel,
-  the draw back, kerf depth, visible blade depth, dust fall — plus `sawDirection`,
-  `advanceBite` and `acceptDemoBeat`. Pure `number → number` with no Phaser import, so it
+  the draw back, kerf depth, visible blade depth, dust fall — plus `sawDirection` and
+  `advanceBite`; `acceptDemoBeat` and the generic advance-on-hit live in `motion.ts`
+  since a second vignette needed them. Pure `number → number` with no Phaser import, so it
   is unit-testable under vitest's node environment. It never alters a target, grade or score.
 - `src/vignettes/SawTimberVignette.ts`: all geometry, palette and motion. Motion samples
   the absolute audio time the host supplies and the plan's absolute times; there is no
@@ -98,7 +98,7 @@ which is what the note above is about.
 
 ## Verification
 
-`npm run typecheck`, `npm run lint`, `npm test` (92 tests, up from 70) and `npm run build`
+`npm run typecheck`, `npm run lint`, `npm test` (103 tests, up from 70, including Tomato's) and `npm run build`
 all pass. `tests/saw.test.ts` pins the curve boundaries the way `tests/hammer.test.ts`
 does — the bite exactly on contact, the follow-through settling at rest, kerf and blade
 depth clamped at both ends, a flawless response stopping short of severing — and adds

@@ -1,16 +1,17 @@
 import type { Judgement } from '@/rhythm/judge';
-import { clamp01, easeOut } from './motion';
-export { clamp01, easeOut } from './motion';
+import { advanceOnHit, clamp01, easeOut, REFERENCE_BEAT } from './motion';
+export { acceptDemoBeat, clamp01, easeOut, REFERENCE_BEAT } from './motion';
 
 /** Presentation-only curves. They never alter a target, grade or score. */
 export const SAW_MOTION = {
-  // A stroke has to finish inside the tightest authored interval. Adjacent half
-  // beats are 250 ms apart, so the draw back and follow-through together stay
-  // under that; otherwise a quick pair reads as one long scrub.
-  drawBackSec: 0.15,
-  biteHoldSec: 0.028,
-  followThroughSec: 0.19,
-  dustSec: 0.42,
+  // Stroke phases are fractions of a beat, not seconds. Levels ramp from 120 toward
+  // 150 BPM task by task, and the tightest authored interval is always a half beat,
+  // so a stroke held in seconds would outlive its interval at the plateau and a
+  // quick pair would read as one long scrub. In beats it tightens with the tempo.
+  drawBackBeats: 0.3,
+  biteHoldBeats: 0.056,
+  followThroughBeats: 0.38,
+  dustBeats: 0.84,
   /** Half the stroke's reach along the blade, in board units. */
   travel: 152,
   boardThickness: 86,
@@ -19,6 +20,23 @@ export const SAW_MOTION = {
   /** A flawless response stops short of severing; the unscored coda finishes the cut. */
   kerfAtFullResponse: 0.86,
 } as const;
+
+export interface SawTiming {
+  readonly drawBackSec: number;
+  readonly biteHoldSec: number;
+  readonly followThroughSec: number;
+  readonly dustSec: number;
+}
+
+/** The stroke's phases in seconds for a given beat length. */
+export function sawTiming(beat = REFERENCE_BEAT): SawTiming {
+  return {
+    drawBackSec: SAW_MOTION.drawBackBeats * beat,
+    biteHoldSec: SAW_MOTION.biteHoldBeats * beat,
+    followThroughSec: SAW_MOTION.followThroughBeats * beat,
+    dustSec: SAW_MOTION.dustBeats * beat,
+  };
+}
 
 /**
  * Push, pull, push. Parity of the action count is the only source of direction,
@@ -33,9 +51,10 @@ export function sawDirection(strokeIndex: number): 1 | -1 {
  * maximum tooth engagement, 1 at the end of the follow-through. Consecutive
  * strokes alternate direction, so a stroke resting at 1 is the next stroke's -1.
  */
-export function strokeTravel(age: number): number {
+export function strokeTravel(age: number, beat = REFERENCE_BEAT): number {
   if (age <= 0) return 0;
-  return easeOut((age - SAW_MOTION.biteHoldSec) / (SAW_MOTION.followThroughSec - SAW_MOTION.biteHoldSec));
+  const { biteHoldSec, followThroughSec } = sawTiming(beat);
+  return easeOut((age - biteHoldSec) / (followThroughSec - biteHoldSec));
 }
 
 /**
@@ -43,8 +62,8 @@ export function strokeTravel(age: number): number {
  * Quick pairs begin the draw back while the previous follow-through is still
  * moving, so blend from that pose instead of snapping to the nominal end of travel.
  */
-export function drawBack(untilBite: number, from = -1): number {
-  const p = clamp01(1 - untilBite / SAW_MOTION.drawBackSec);
+export function drawBack(untilBite: number, from = -1, beat = REFERENCE_BEAT): number {
+  const p = clamp01(1 - untilBite / sawTiming(beat).drawBackSec);
   // Slow off the reversal, accelerating into the beat: the bite is what carries the timing.
   return from * (1 - p ** 2);
 }
@@ -60,8 +79,8 @@ export function bladeVisibleDepth(kerf: number): number {
 }
 
 /** Sawdust leaves the kerf on the bite and falls under its own weight. */
-export function dustFall(age: number): number {
-  const p = clamp01(age / SAW_MOTION.dustSec);
+export function dustFall(age: number, beat = REFERENCE_BEAT): number {
+  const p = clamp01(age / sawTiming(beat).dustSec);
   return p * p * 210;
 }
 
@@ -71,14 +90,5 @@ export function dustFall(age: number): number {
  * invents a stroke the player did not make.
  */
 export function advanceBite(bites: number, kind: Judgement['kind']): number {
-  return kind === 'hit' ? bites + 1 : bites;
-}
-
-/**
- * A demonstration beat can arrive twice: rendering re-scans the plan's cues every
- * frame, and the host also forwards the controller's cue. Returns the new high
- * water mark, or null when the beat has already been drawn.
- */
-export function acceptDemoBeat(lastDemo: number, time: number): number | null {
-  return time > lastDemo ? time : null;
+  return advanceOnHit(bites, kind);
 }
