@@ -1,25 +1,32 @@
 /** Musical model of the stems. No tempo progression or playback-rate adjustment. */
-export const STEM_IDS = ['drums', 'bass', 'keyboard', 'synth'] as const;
+export const STEM_IDS = ['drums', 'bass', 'guitar', 'keyboard', 'percussion', 'synth', 'brass'] as const;
 export type StemId = typeof STEM_IDS[number];
 export const MUSIC = {
-  // Measured, not assumed: onset analysis of `0 Drums.wav` scores 121 BPM roughly ten
-  // times higher than 120, and the 51.578 s file is 104.02 beats at 121 (26 bars), so
-  // the file loops cleanly. The first beat lands about 0.248 s in, one eighth after
-  // the opening drum pickup. At 120 the count-in drifts 4 ms per beat and is half a
-  // beat off the drums before the third act. Bar phase (which beat is "one") is inferred
-  // from kick accents; confirm with the composer.
-  sourceBpm: 121,
+  // Measured from the delivered files (see docs/MUSIC.md): 120 BPM, 60 bars, every stem
+  // 119.925 s. The first downbeat sits about 0.156 s into the file, and the file ends
+  // 75 ms short of bar 61, so the raw file neither starts on the beat nor loops on a bar.
+  // MusicSystem copies each stem into an exact whole-bar loop: it drops `leadInSec` and
+  // pads the silent tail to `bars` bars. The files themselves are untouched.
+  sourceBpm: 120,
   beatsPerBar: 4,
-  pickupBeats: 0.5,
+  bars: 60,
+  leadInSec: 0.156,
+  pickupBeats: 0,
   startLeadSec: 0.2,
   gainRampSec: 0.025,
   masterGain: 0.4,
-  mix: { keyboard: 1, bass: 0.75, synth: 0.45, drums: 0.2 } satisfies Record<StemId, number>,
+  // The stems arrive balanced against each other; the bus supplies SFX headroom.
+  mix: { drums: 1, bass: 1, guitar: 1, keyboard: 1, percussion: 1, synth: 1, brass: 1 } satisfies Record<StemId, number>,
   urls: {
     drums: new URL('../../bgm/0 Drums.wav', import.meta.url).href,
     bass: new URL('../../bgm/1 Bass.wav', import.meta.url).href,
-    keyboard: new URL('../../bgm/2 Keyboard.wav', import.meta.url).href,
-    synth: new URL('../../bgm/3 Synth.wav', import.meta.url).href,
+    guitar: new URL('../../bgm/2 Guitar.wav', import.meta.url).href,
+    keyboard: new URL('../../bgm/3 Keyboard.wav', import.meta.url).href,
+    percussion: new URL('../../bgm/4 Percussion.wav', import.meta.url).href,
+    synth: new URL('../../bgm/5 Synth.wav', import.meta.url).href,
+    brass: new URL('../../bgm/6 Brass.wav', import.meta.url).href,
   } satisfies Record<StemId, string>,
 } as const;
 export const pickupSeconds = (bpm: number, beats: number): number => beats * 60 / bpm;
+/** Exact loop length in seconds: whole bars at the source tempo. */
+export const loopSeconds = (): number => MUSIC.bars * MUSIC.beatsPerBar * 60 / MUSIC.sourceBpm;

@@ -2,11 +2,19 @@
 
 ## Music integration update
 
-All three acts share the stems' measured 121 BPM and a four-stem backing composition. The half-beat drum pickup is heard before the four-beat count-in; full-file loops preserve it. Music continues through the final summary; restart schedules all stems anew. Authored patterns and judgement are unchanged, while the old 86/96/104 tempo progression is inactive. Supplied metadata also mentions 121 BPM and needs confirmation—see [music notes](MUSIC.md). No dynamic tempo or gameplay-driven stem mixing is implemented.
+All rounds share the seven-stem composition at its measured 120 BPM. Each stem is normalized to an exact 60-bar loop whose origin is the first downbeat, so the count-in starts on the loop origin. Music continues through the final summary; restart schedules all stems anew. Authored patterns and judgement are unchanged, while the old 86/96/104 tempo progression is inactive. Supplied metadata also mentions 121 BPM and needs confirmation—see [music notes](MUSIC.md). No dynamic tempo or gameplay-driven stem mixing is implemented.
 
-## Current vertical slice: three small acts
+## Current vertical slice: three rounds of three tasks
 
-The slice is now one short finite session: Hammer result → impact-ring transition → Window result → squeegee transition → Bug result → minimal summary/restart. Each vignette gets one authored demonstration/response task, rather than the previous three tasks per vignette. Restart returns to Hammer. All performances continue to the ending; there are no lives, fail gates, or random patterns.
+The slice is one finite session that starts from a main menu: Hammer round (three tasks) → impact-ring transition → Window round (three tasks) → squeegee transition → Bug round (three tasks) → summary. Tasks inside a round hand over with the beat-aligned table slide; only round boundaries change vignette, and consecutive rounds never share one. Restart returns to the first task; MENU returns to the title. All performances continue to the ending; there are no lives, fail gates, or random patterns.
+
+| Round | Tasks | Lesson |
+| --- | --- | --- |
+| Hammer | `X X X -`, `X X - X`, `X - X X` | Steady quarter-note vocabulary, then rests inside the bar |
+| Window | `X - X - X - - X`, `X - X - - X X -`, `X - - X X - X -` (half-beat steps) | One offbeat per phrase, moving around the bar |
+| Bug | three eight-beat phrases mixing rests and offbeats | Two similar halves combine what came before |
+
+The earlier one-task-per-act table below is retained as history.
 
 | Act | Tempo | Phrase | Lesson |
 | --- | --- | --- | --- |

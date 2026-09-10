@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { SESSION, sessionAccuracy } from '../src/game/session';
+import { SESSION, sessionAccuracy, sessionTasks, validateSession } from '../src/game/session';
 import { MUSIC } from '../src/config/music';
 import { RHYTHM } from '../src/config/rhythm';
 import { RoundController, type RoundEvents } from '../src/game/RoundController';
@@ -14,14 +14,26 @@ describe('authored three-act session', () => {
     expect(shoeLift(0.315)).toBeCloseTo(245);
     expect(shoeLift(100)).toBe(245);
   });
-  it('teaches steady taps, one offbeat, then a longer phrase at the music tempo', () => {
-    expect(SESSION.map(a => a.vignette)).toEqual(['hammer', 'window', 'bug']);
-    expect(SESSION.map(a => a.pattern.lengthBeats)).toEqual([4, 4, 8]);
+  it('groups tasks into single-vignette rounds that alternate vignette', () => {
+    expect(SESSION.map(r => r.vignette)).toEqual(['hammer', 'window', 'bug']);
+    expect(SESSION.map(r => r.tasks.length)).toEqual([3, 3, 3]);
+    expect(SESSION.map(r => r.tasks.map(p => p.lengthBeats))).toEqual([[4, 4, 4], [4, 4, 4], [8, 8, 8]]);
+    const tasks = sessionTasks();
+    expect(tasks).toHaveLength(9);
+    expect(tasks.map(task => task.index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(tasks.map(task => task.round)).toEqual([0, 0, 0, 1, 1, 1, 2, 2, 2]);
+    expect(tasks.map(task => task.closesRound)).toEqual([false, false, true, false, false, true, false, false, true]);
+    for (const task of tasks) expect(task.vignette).toBe(SESSION[task.round]!.vignette);
+    expect(() => validateSession([{ vignette: 'hammer', tasks: SESSION[0]!.tasks }, { vignette: 'hammer', tasks: SESSION[0]!.tasks }])).toThrow(/repeat/);
+    expect(() => validateSession([{ vignette: 'hammer', tasks: [] }])).toThrow(/no tasks/);
+    expect(() => validateSession([])).toThrow();
+  });
+  it('keeps every task at the music tempo with Perfect windows that never overlap', () => {
     const beat = 60 / MUSIC.sourceBpm;
-    for (const act of SESSION) for (let i = 1; i < act.pattern.hits.length; i++) {
-      const gap = (act.pattern.hits[i]! - act.pattern.hits[i - 1]!) * beat;
-      // Adjacent half beats (about 248 ms) are closer than two Good windows, so the
-      // judge's nearest-target cells decide those; Perfect windows must never overlap.
+    for (const round of SESSION) for (const pattern of round.tasks) for (let i = 1; i < pattern.hits.length; i++) {
+      const gap = (pattern.hits[i]! - pattern.hits[i - 1]!) * beat;
+      // Adjacent half beats (250 ms) are closer than two Good windows, so the judge's
+      // nearest-target cells decide those; Perfect windows must never overlap.
       expect(gap).toBeGreaterThan(2 * RHYTHM.perfectMs / 1000);
       expect(gap).toBeGreaterThan(RHYTHM.goodMs / 1000);
     }
@@ -33,7 +45,7 @@ describe('authored three-act session', () => {
     for (let loop = 0; loop < 3; loop++) {
       let origin = 0.2;
       const accuracies: number[] = [];
-      for (const act of SESSION) {
+      for (const act of sessionTasks()) {
         controller.start(act.pattern, MUSIC.sourceBpm, origin - 0.2, (origin - 0.2) * 1000, origin);
         const plan = controller.plan!;
         let target = 0;
@@ -55,7 +67,7 @@ describe('authored three-act session', () => {
       controller.dispose();
     }
     expect(events.interrupted).not.toHaveBeenCalled();
-    expect(events.complete).toHaveBeenCalledTimes(9);
+    expect(events.complete).toHaveBeenCalledTimes(3 * sessionTasks().length);
   });
   it.each(['action', 'success', 'rough'] as const)('synthesizes bounded cartoon %s sounds', kind => {
     const samples = synthesizeStomp(48000, kind);

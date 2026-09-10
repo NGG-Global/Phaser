@@ -1,17 +1,29 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MusicSystem, validateStemBuffers, type StemBuffers } from '../src/audio/MusicSystem';
-import { MUSIC, STEM_IDS, pickupSeconds } from '../src/config/music';
+import { MusicSystem, normalizeLoop, validateStemBuffers, type StemBuffers } from '../src/audio/MusicSystem';
+import { MUSIC, STEM_IDS, loopSeconds, pickupSeconds } from '../src/config/music';
+
+// A 100 Hz "sample rate" keeps the fake buffers tiny while exercising real frame arithmetic.
+const RATE = 100;
+const FILE_FRAMES = 11993; // 119.93 s: 75 ms short of 60 bars, like the delivered stems.
+const N = STEM_IDS.length;
+function fakeBuffer(length: number, rate = RATE, channels = 2) {
+  const data = Array.from({ length: channels }, () => new Float32Array(length));
+  return { length, sampleRate: rate, duration: length / rate, numberOfChannels: channels,
+    getChannelData: (c: number) => data[c]!,
+    copyToChannel: (source: Float32Array, c: number) => { data[c]!.set(source.subarray(0, length)); } };
+}
 afterEach(() => vi.unstubAllGlobals());
 
 function setup(mismatch = false) {
   const nodes: ReturnType<typeof makeSource>[] = [];
-  const makeSource = () => ({ buffer: null, loop: false, loopStart: -1, loopEnd: -1, playbackRate: { value: 0 },
+  const makeSource = () => ({ buffer: null as { length: number } | null, loop: false, loopStart: -1, loopEnd: -1, playbackRate: { value: 0 },
     start: vi.fn(), stop: vi.fn(), connect: vi.fn(), disconnect: vi.fn(), onended: null });
   const gains: { gain: { value: number; cancelScheduledValues: ReturnType<typeof vi.fn>; setValueAtTime: ReturnType<typeof vi.fn>; linearRampToValueAtTime: ReturnType<typeof vi.fn> }; disconnect: ReturnType<typeof vi.fn> }[] = [];
   let decoded = 0;
   const context = {
     currentTime: 10, state: 'running',
-    decodeAudioData: vi.fn(async () => { decoded++; const length = 2475742 + (mismatch && decoded === 4 ? 1 : 0); return { length, sampleRate: 48000, duration: length / 48000 }; }),
+    decodeAudioData: vi.fn(async () => { decoded++; return fakeBuffer(FILE_FRAMES + (mismatch && decoded === N ? 1 : 0)); }),
+    createBuffer: (channels: number, length: number, rate: number) => fakeBuffer(length, rate, channels),
     createGain: () => {
       const node = { gain: { value: 1, cancelScheduledValues: vi.fn(), setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() }, connect: vi.fn(), disconnect: vi.fn() };
       gains.push(node); return node;
@@ -30,19 +42,32 @@ describe('synchronized stems', () => {
     const first = system.load();
     expect(system.load()).toBe(first);
     await first;
-    expect(fetcher).toHaveBeenCalledTimes(4);
-    expect(context.decodeAudioData).toHaveBeenCalledTimes(4);
+    expect(fetcher).toHaveBeenCalledTimes(N);
+    expect(context.decodeAudioData).toHaveBeenCalledTimes(N);
     expect(system.start(12)).toBeCloseTo(12 + pickupSeconds(MUSIC.sourceBpm, MUSIC.pickupBeats), 9);
-    expect(nodes).toHaveLength(4);
+    expect(nodes).toHaveLength(N);
     for (const node of nodes) {
       expect(node.start).toHaveBeenCalledExactlyOnceWith(12, 0);
       expect(node.loop).toBe(true);
       expect(node.loopStart).toBe(0);
-      expect(node.loopEnd).toBe(2475742 / 48000);
+      expect(node.loopEnd).toBe(loopSeconds());
+      expect(node.buffer!.length).toBe(loopSeconds() * RATE);
       expect(node.playbackRate.value).toBe(1);
     }
     await system.load();
-    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(fetcher).toHaveBeenCalledTimes(N);
+  });
+  it('normalizes a stem into an exact whole-bar loop: drops the lead-in and pads the tail', () => {
+    const source = fakeBuffer(FILE_FRAMES);
+    for (let i = 0; i < FILE_FRAMES; i++) source.getChannelData(0)[i] = i;
+    const lead = Math.round(MUSIC.leadInSec * RATE);
+    const loop = normalizeLoop({ createBuffer: (c: number, l: number, r: number) => fakeBuffer(l, r, c) } as unknown as AudioContext, source as unknown as AudioBuffer);
+    expect(loop.length).toBe(loopSeconds() * RATE);
+    expect(loop.getChannelData(0)[0]).toBe(lead);
+    expect(loop.getChannelData(0)[FILE_FRAMES - lead - 1]).toBe(FILE_FRAMES - 1);
+    expect(loop.getChannelData(0)[FILE_FRAMES - lead]).toBe(0);
+    expect(loop.getChannelData(0)[loop.length - 1]).toBe(0);
+    expect(() => normalizeLoop({} as AudioContext, fakeBuffer(lead) as unknown as AudioBuffer)).toThrow(/lead-in/);
   });
   it('retains the same four sources through silent gains, restoration and multiple loops', async () => {
     const { system, nodes, gains, context } = setup();
@@ -52,8 +77,8 @@ describe('synchronized stems', () => {
       context.currentTime += system.duration;
       system.setGain(id, MUSIC.mix[id]);
     }
-    expect(system.activeSources).toBe(4);
-    expect(system.completedLoops).toBe(3);
+    expect(system.activeSources).toBe(N);
+    expect(system.completedLoops).toBe(N - 1);
     expect(system.playbackGeneration).toBe(1);
     for (const node of nodes) { expect(node.start).toHaveBeenCalledTimes(1); expect(node.stop).not.toHaveBeenCalled(); }
     expect(gains[1]!.gain.linearRampToValueAtTime).toHaveBeenCalled();
@@ -61,8 +86,8 @@ describe('synchronized stems', () => {
   it('cleans all old sources on restart and disposes idempotently', async () => {
     const { system, nodes } = setup();
     await system.load(); system.start(12); system.start(14);
-    expect(system.activeSources).toBe(4);
-    for (const node of nodes.slice(0, 4)) { expect(node.stop).toHaveBeenCalledTimes(1); expect(node.disconnect).toHaveBeenCalledTimes(1); }
+    expect(system.activeSources).toBe(N);
+    for (const node of nodes.slice(0, N)) { expect(node.stop).toHaveBeenCalledTimes(1); expect(node.disconnect).toHaveBeenCalledTimes(1); }
     system.dispose(); system.dispose();
     expect(system.activeSources).toBe(0);
     for (const node of nodes) expect(node.stop).toHaveBeenCalledTimes(1);
@@ -97,14 +122,11 @@ describe('synchronized stems', () => {
     await expect(loading).rejects.toThrow(/disposed/);
     expect(system.ready).toBe(false); expect(nodes).toHaveLength(0);
   });
-  it('keeps the measured pickup musical and loops the stems on a whole bar', () => {
-    expect(pickupSeconds(MUSIC.sourceBpm, MUSIC.pickupBeats)).toBeCloseTo(0.248, 3);
+  it('starts the count-in on the loop downbeat and validates equal stem lengths', () => {
+    expect(pickupSeconds(MUSIC.sourceBpm, MUSIC.pickupBeats)).toBe(0);
     expect(pickupSeconds(100, 1)).toBe(0.6);
-    const buffer = { length: 2475742, sampleRate: 48000, duration: 2475742 / 48000 } as AudioBuffer;
-    // 51.578 s at 121 BPM is 104.02 beats: 26 bars, within 8 ms. At 120 it would be 103.16.
-    const beats = buffer.duration * MUSIC.sourceBpm / 60;
-    expect(Math.abs(beats - Math.round(beats)) * 60 / MUSIC.sourceBpm).toBeLessThan(0.01);
-    expect(Math.round(beats) % MUSIC.beatsPerBar).toBe(0);
+    expect(loopSeconds()).toBe(120);
+    const buffer = { length: 5760000, sampleRate: 48000, duration: 120 } as AudioBuffer;
     expect(validateStemBuffers(Object.fromEntries(STEM_IDS.map(id => [id, buffer])) as StemBuffers)).toBe(buffer.duration);
   });
 });

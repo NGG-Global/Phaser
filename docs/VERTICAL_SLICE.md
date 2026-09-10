@@ -2,9 +2,9 @@
 
 ## Scope and content
 
-One authored session, approximately 43 seconds: Hammer → Window → Bug → summary. The summary uses the mean of the three task accuracy percentages. Another tap restarts from Hammer; the top restart control does the same during any phase. There is no infinite difficulty escalation, randomness or new input mechanic.
+One authored session of three **rounds**, each three **tasks** of a single vignette: Hammer ×3 → Window ×3 → Bug ×3 → summary, roughly 100 seconds at 120 BPM. Consecutive rounds always change vignette (`validateSession` rejects a repeat). Inside a round, tasks hand over with the two-beat table slide and no curtain; a round boundary adds the outgoing vignette's transition painter. The summary uses the mean of all task accuracies. Another tap restarts from the first task; the top ↻ control does the same during any phase, and MENU returns to the title screen while the music keeps playing. There is no infinite difficulty escalation, randomness or new input mechanic.
 
-Progression is `game/session.ts`, separate from visual registration. It starts with three straight taps, introduces a final half-beat, then extends to a repeated eight-beat phrase. Every act plays at the music's measured 121 BPM (see [Music](MUSIC.md)); acts carry no tempo of their own. Adjacent half beats in the third act are about 248 ms apart, closer than two 130 ms Good windows, so the judge's fixed nearest-target cells (midpoint tie to the earlier target) decide those, and Perfect windows never overlap. Four-beat count-ins and handoffs remain intact. Strong/rough outcomes are visual interpretations of the original score, not another judge.
+Progression is `game/session.ts`: `SESSION` is a list of rounds (`{ vignette, tasks }`) and `sessionTasks()` flattens it for the host, which advances one task at a time. Hammer teaches quarter-note phrases, Window adds one offbeat per phrase, Bug combines both over eight beats. Everything plays at the music's measured 120 BPM (see [Music](MUSIC.md)). Adjacent half beats are 250 ms apart, closer than two 130 ms Good windows, so the judge's fixed nearest-target cells (midpoint tie to the earlier target) decide those, and Perfect windows never overlap. Four-beat count-ins and handoffs remain intact. Strong/rough outcomes are visual interpretations of the original score, not another judge.
 
 ## Bug + Shoe
 
@@ -32,7 +32,7 @@ DEV replay buttons: Accurate, Good (+80 ms), Rough (+240 ms), Spam (40 ms interv
 
 1. Implement `Vignette` with responsive layout, callbacks, absolute-time update and complete destroy.
 2. Register its factory, identity/copy, palette, sound buffers, outcome presentation settings and transition painter.
-3. Add an authored `{ vignette, pattern }` entry to `SESSION`.
+3. Add a round `{ vignette, tasks }` to `SESSION`, or more tasks to an existing round; consecutive rounds must differ in vignette.
 
 Do not add vignette-specific rules to `RoundController`, `judge.ts`, `TapInput`, or `AudioClock`.
 
@@ -52,3 +52,9 @@ Fixed in this pass:
 - Every page load logged a favicon 404.
 
 Not changed, but observed: the outcome headline is fully legible for well under a second before the scene slides away, because it is tied to the two-beat ending grid; the stall detector (250 ms between pumps) pauses the round on heavily loaded renderers, which is by design but means slow devices see "Take a breath" on the first heavy frame; the canvas backing store is the logical 720-wide size regardless of device pixel ratio, so high-DPI handsets upscale the render; taps during the demonstration receive no acknowledgement; Perfect and Good are visually identical and omissions have no immediate cue in Hammer or Bug.
+
+## Main menu and shared audio (10 September 2026)
+
+`MenuScene` is the first interactive scene: title, a one-line invitation, the round/task count, a PLAY button anchored a fixed distance above the bottom edge, and the sound toggle. The hammer illustration's idle sway is reused as the title art. PLAY is the audio gesture: it creates or reuses the game-wide `AudioEngine` (`audio/sharedAudio.ts`, held in the Phaser registry and disposed with the game), awaits unlock and stem loading, then starts `PlayScene` with `autoStart`, which begins the first count-in on its create event. PlayScene no longer owns or disposes the engine; leaving for the menu cancels its voices and lets the music run on. `RoundController` now tolerates a pump stall that ends inside the count-in, because the scene switch and the first heavy frames of a fresh scene land there and no beat has been shown or judged yet; any later stall still pauses the attempt.
+
+Browser check: menu → PLAY reached the first count-in in about 6.7 s (161 MB of stems from localhost), nine tasks completed with the expected slides and two curtains, MENU mid-round and from the summary returned to the title with seven stems still running and one pointer handler, and PLAY again started a fresh session. Console error and warning logs were empty.

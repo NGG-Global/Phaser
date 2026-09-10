@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { AudioEngine } from '@/audio/AudioEngine';
+import type { AudioEngine } from '@/audio/AudioEngine';
+import { sharedAudio } from '@/audio/sharedAudio';
 import { MUSIC, STEM_IDS } from '@/config/music';
 import { TaskSequence } from '@/game/TaskSequence';
 import { SceneKey } from '@/config/scenes';
@@ -10,12 +11,14 @@ import { RoundController, type Phase } from '@/game/RoundController';
 import type { RoundResult } from '@/game/scoring';
 import { TapInput, type Tap } from '@/input/TapInput';
 import type { Judgement } from '@/rhythm/judge';
-import { SESSION, sessionAccuracy } from '@/game/session';
+import { SESSION, sessionAccuracy, sessionTasks } from '@/game/session';
 import type { TransitionPainter } from '@/vignettes/transitions';
 import { VIGNETTES } from '@/vignettes/registry';
 import type { Vignette } from '@/vignettes/Vignette';
 import { easeOut } from '@/vignettes/motion';
 
+
+const TASKS = sessionTasks();
 
 /** Composes the existing engine with registered visual vignettes. No judgement rules live here. */
 export class PlayScene extends BaseScene {
@@ -23,10 +26,10 @@ export class PlayScene extends BaseScene {
   private controller: RoundController | null = null;
   private taps!: TapInput;
   private vignette!: Vignette;
-  private readonly previewAct = import.meta.env.DEV ? Math.max(0, SESSION.findIndex(act => act.vignette === new URLSearchParams(location.search).get('vignette'))) : 0;
-  private actIndex = this.previewAct;
-  private vignetteIndex = VIGNETTES.findIndex(v => v.id === SESSION[this.actIndex]!.vignette);
-  private get act() { return SESSION[this.actIndex]!; }
+  private readonly previewTask = import.meta.env.DEV ? Math.max(0, TASKS.findIndex(task => task.vignette === new URLSearchParams(location.search).get('vignette'))) : 0;
+  private taskIndex = this.previewTask;
+  private vignetteIndex = VIGNETTES.findIndex(v => v.id === TASKS[this.taskIndex]!.vignette);
+  private get task() { return TASKS[this.taskIndex]!; }
   private sessionResults: number[] = [];
   private summaryShown = false;
   private get definition() { return VIGNETTES[this.vignetteIndex]!; }
@@ -37,6 +40,7 @@ export class PlayScene extends BaseScene {
   private invitation!: Phaser.GameObjects.Text;
   private accuracy!: Phaser.GameObjects.Text;
   private restart!: Phaser.GameObjects.Text;
+  private menu!: Phaser.GameObjects.Text;
   private mute!: Phaser.GameObjects.Text;
   private marks!: Phaser.GameObjects.Graphics;
   private rule!: Phaser.GameObjects.Graphics;
@@ -48,7 +52,8 @@ export class PlayScene extends BaseScene {
   private headlineAt = -Infinity;
   private outcomes: ('perfect' | 'good' | 'miss' | 'pending')[] = [];
   private sequence: TaskSequence | null = null;
-  private transition: { slide: number; swap: number; next: number; swapped: boolean; painter: TransitionPainter } | null = null;
+  /** The curtain painter is only present when the next task changes vignette; same-vignette tasks just slide. */
+  private transition: { slide: number; swap: number; next: number; swapped: boolean; painter: TransitionPainter | null } | null = null;
   private replayOffset: number | null = null;
   private attempts = 0;
   private demoCount = 0;
@@ -75,6 +80,7 @@ export class PlayScene extends BaseScene {
     this.invitation = this.text('TAP ANYWHERE TO BEGIN', 17, 'monospace').setLetterSpacing(2).setOrigin(0.5);
     this.accuracy = this.text('', 18, 'monospace').setOrigin(0.5);
     this.restart = this.text('↻', 38, 'Arial, sans-serif').setOrigin(0.5);
+    this.menu = this.text('MENU', 16, 'monospace').setLetterSpacing(2).setOrigin(0.5);
     this.mute = this.text('♪', 32, 'Georgia, serif').setOrigin(0.5);
     this.marks = this.add.graphics();
     this.rule = this.add.graphics();
@@ -87,6 +93,9 @@ export class PlayScene extends BaseScene {
     this.scale.on(Phaser.Scale.Events.RESIZE, this.checkOrientation, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.shutdown, this);
+    // Arriving from the menu's PLAY tap: audio is already unlocked and loaded, so begin at once.
+    const data = this.sys.settings.data as { autoStart?: boolean } | undefined;
+    if (data?.autoStart) this.events.once(Phaser.Scenes.Events.CREATE, () => { void this.startRound(); });
   }
   private text(value: string, size: number, fontFamily: string): Phaser.GameObjects.Text {
     return this.add.text(0, 0, value, { fontFamily, fontSize: `${size}px`, color: `#${this.definition.ink.toString(16).padStart(6, '0')}` });
@@ -104,6 +113,7 @@ export class PlayScene extends BaseScene {
     this.headline.setPosition(left - 5 * s, this.headlineY).setFontSize(this.headlineSize).setLineSpacing(-12 * s);
     this.controlSize = Math.max(88 * s, 48 * this.viewport.unitScale);
     this.restart.setPosition(safe.centerX + 175 * s, top + 55 * s).setFontSize(36 * s);
+    this.menu.setPosition(safe.centerX + 70 * s, top + 55 * s).setFontSize(15 * s);
     this.mute.setPosition(safe.centerX + 283 * s, top + 55 * s).setFontSize(32 * s);
     this.caption.setPosition(safe.centerX, safe.bottom - 160 * s).setFontSize(23 * s);
     this.invitation.setPosition(safe.centerX, safe.bottom - 72 * s).setFontSize(17 * s);
@@ -121,7 +131,7 @@ export class PlayScene extends BaseScene {
     this.replayOffset = null;
     this.transition = null;
     this.lastJudgement = '';
-    this.actIndex = this.previewAct;
+    this.taskIndex = this.previewTask;
     this.sessionResults = [];
     this.summaryShown = false;
     this.controller?.dispose();
@@ -135,10 +145,11 @@ export class PlayScene extends BaseScene {
     this.starting = true;
     this.invitation.setText('ONE MOMENT');
     try {
-      if (!this.audio) {
-        this.audio = new AudioEngine();
+      if (!this.controller) {
+        this.audio = sharedAudio(this);
         this.audio.setSounds(this.definition.sounds(this.audio.context));
         this.audio.context.addEventListener('statechange', this.audioState);
+        this.mute.setText(this.audio.muted ? '×' : '♪');
         this.controller = new RoundController(this.audio, {
           phase: phase => this.showPhase(phase),
           cue: cue => {
@@ -154,14 +165,14 @@ export class PlayScene extends BaseScene {
           interrupted: () => this.showPause(),
         });
       }
-      await this.audio.unlock();
+      await this.audio!.unlock();
       if (this.disposed || request !== this.startRequest || this.blocked()) return;
       this.invitation.setText('LOADING MUSIC');
-      await this.audio.music.load();
+      await this.audio!.music.load();
       if (this.disposed || request !== this.startRequest || this.blocked()) return;
       this.starting = false;
       this.selectVignette();
-      const origin = this.audio.music.start();
+      const origin = this.audio!.music.start();
       this.sequence = new TaskSequence(MUSIC.sourceBpm, origin, 1);
       this.beginTask(origin);
     } catch (error) {
@@ -176,8 +187,8 @@ export class PlayScene extends BaseScene {
     }
   }
   private selectVignette(): void {
-    const index = VIGNETTES.findIndex(v => v.id === this.act.vignette);
-    if (index < 0) throw new Error(`Unregistered vignette: ${this.act.vignette}`);
+    const index = VIGNETTES.findIndex(v => v.id === this.task.vignette);
+    if (index < 0) throw new Error(`Unregistered vignette: ${this.task.vignette}`);
     if (index !== this.vignetteIndex) {
       this.vignette.destroy();
       this.vignetteIndex = index;
@@ -185,7 +196,7 @@ export class PlayScene extends BaseScene {
     }
     this.audio!.setSounds(this.definition.sounds(this.audio!.context));
     const color = `#${this.definition.ink.toString(16).padStart(6, '0')}`;
-    for (const text of [this.headline, this.edition, this.caption, this.invitation, this.accuracy, this.restart, this.mute, this.debug]) text.setColor(color);
+    for (const text of [this.headline, this.edition, this.caption, this.invitation, this.accuracy, this.restart, this.menu, this.mute, this.debug]) text.setColor(color);
     this.layout();
   }
   private beginTask(startAt: number): void {
@@ -193,9 +204,9 @@ export class PlayScene extends BaseScene {
     this.demoCount = 0;
     this.finishUnlock = Infinity;
     this.accuracy.setText('');
-    this.edition.setText(`SMALL ACTS   /   ${this.actIndex + 1} OF ${SESSION.length}`);
-    this.outcomes = this.act.pattern.hits.map(() => 'pending');
-    this.controller!.start(this.act.pattern, this.sequence!.bpm, this.audio!.context.currentTime, performance.now(), startAt);
+    this.edition.setText(`ROUND ${this.task.round + 1}/${SESSION.length}   ·   TASK ${this.task.task + 1}/${SESSION[this.task.round]!.tasks.length}`);
+    this.outcomes = this.task.pattern.hits.map(() => 'pending');
+    this.controller!.start(this.task.pattern, this.sequence!.bpm, this.audio!.context.currentTime, performance.now(), startAt);
     this.vignette.reset(this.controller!.plan!);
     if (this.replayOffset !== null) {
       const plan = this.controller!.plan!;
@@ -212,6 +223,9 @@ export class PlayScene extends BaseScene {
     }
     if (Math.abs(tap.x - this.restart.x) < this.controlSize / 2 && Math.abs(tap.y - this.restart.y) < this.controlSize / 2) {
       void this.startRound(); return;
+    }
+    if (Math.abs(tap.x - this.menu.x) < this.controlSize / 2 && Math.abs(tap.y - this.menu.y) < this.controlSize / 2) {
+      this.scene.start(SceneKey.Menu); return;
     }
     const phase = this.controller?.phase ?? 'idle';
     if (phase === 'idle' || phase === 'paused') { if (!this.starting) void this.startRound(); return; }
@@ -231,7 +245,7 @@ export class PlayScene extends BaseScene {
     if (transition && this.now() >= transition.swap && !transition.swapped) {
       if (this.audio.context.currentTime > transition.next - RHYTHM.leadSec) { this.interrupt(); return; }
       transition.swapped = true;
-      this.actIndex++;
+      this.taskIndex++;
       this.selectVignette();
       this.sequence = new TaskSequence(MUSIC.sourceBpm, transition.next, 1);
       this.beginTask(transition.next);
@@ -302,7 +316,7 @@ export class PlayScene extends BaseScene {
       this.vignette.translate(this.viewport.full.width * (slide.swapped ? 1 - easeOut(p) : -(Math.min(1, Math.max(0, p)) ** 3)));
     }
     this.curtain.clear();
-    if (slide && now >= slide.slide && now < slide.next) {
+    if (slide?.painter && now >= slide.slide && now < slide.next) {
       const p = (now - slide.slide) / (slide.next - slide.slide);
       slide.painter(this.curtain, this.viewport, p);
     }
@@ -318,14 +332,14 @@ export class PlayScene extends BaseScene {
     if (this.controller?.phase === 'result' && !this.transition && now >= this.finishUnlock && !this.summaryShown) {
       this.summaryShown = true;
       this.replay = null;
-      this.changeHeadline('Three small\nacts.');
+      this.changeHeadline(`${['One', 'Two', 'Three', 'Four', 'Five', 'Six'][SESSION.length - 1] ?? SESSION.length} small\nacts.`);
       this.caption.setText('A little rhythm goes a long way.');
       this.accuracy.setText(`${Math.round(sessionAccuracy(this.sessionResults))}% IN TIME`);
       this.invitation.setText('TAP TO PLAY AGAIN');
     }
     if (this.debugMode) {
       const music = this.audio?.music;
-      this.debug.setText(`${this.definition.id} task ${this.attempts} · ${this.controller?.phase ?? 'idle'}\nvoices ${this.audio?.activeSources ?? 0} · handlers ${this.input.listenerCount(Phaser.Input.Events.POINTER_DOWN)} · objects ${this.children.length}\n${this.controller?.result?.accuracy.toFixed(0) ?? '—'}% · ${this.audio?.clock.mode ?? 'locked'} · ${this.game.loop.actualFps.toFixed(0)} fps\n${this.lastJudgement}\nstems ${music?.activeSources ?? 0} · run ${music?.playbackGeneration ?? 0} · loops ${music?.completedLoops ?? 0}\nstart ${music?.startTime?.toFixed(3) ?? '—'} · length ${music?.duration.toFixed(6) ?? '—'}\n${STEM_IDS.map(id => `${id[0]}:${music?.gain(id) ?? MUSIC.mix[id]}`).join(' ')}`);
+      this.debug.setText(`${this.definition.id} r${this.task.round + 1}t${this.task.task + 1} attempt ${this.attempts} · ${this.controller?.phase ?? 'idle'}\nvoices ${this.audio?.activeSources ?? 0} · handlers ${this.input.listenerCount(Phaser.Input.Events.POINTER_DOWN)} · objects ${this.children.length}\n${this.controller?.result?.accuracy.toFixed(0) ?? '—'}% · ${this.audio?.clock.mode ?? 'locked'} · ${this.game.loop.actualFps.toFixed(0)} fps\n${this.lastJudgement}\nstems ${music?.activeSources ?? 0} · run ${music?.playbackGeneration ?? 0} · loops ${music?.completedLoops ?? 0}\nstart ${music?.startTime?.toFixed(3) ?? '—'} · length ${music?.duration.toFixed(6) ?? '—'}\n${STEM_IDS.map(id => `${id[0]}:${music?.gain(id) ?? MUSIC.mix[id]}`).join(' ')}`);
     }
   }
   private changeHeadline(text: string): void {
@@ -366,13 +380,14 @@ export class PlayScene extends BaseScene {
   private showResult(result: RoundResult): void {
     const strong = result.accuracy >= this.definition.successAccuracy;
     this.sequence!.complete(result.accuracy);
-    this.sessionResults[this.actIndex] = result.accuracy;
+    this.sessionResults[this.taskIndex] = result.accuracy;
     const ending = this.sequence!.ending(this.controller!.plan!.end);
     const contact = ending.contact;
     this.vignette.finish(strong, contact);
     this.audio!.playFinish(contact, strong);
     this.finishUnlock = contact + this.definition.endingSec;
-    this.transition = this.actIndex < SESSION.length - 1 ? { ...ending, swapped: false, painter: this.definition.transition } : null;
+    const next = TASKS[this.taskIndex + 1];
+    this.transition = next ? { ...ending, swapped: false, painter: this.task.closesRound ? this.definition.transition : null } : null;
     const copy = strong ? this.definition.success : this.definition.rough;
     this.changeHeadline(copy[0]);
     this.caption.setText(copy[1]);
@@ -423,8 +438,10 @@ export class PlayScene extends BaseScene {
     document.removeEventListener('visibilitychange', this.visibility);
     window.removeEventListener('pagehide', this.pageHide);
     this.scale.off(Phaser.Scale.Events.RESIZE, this.checkOrientation, this);
+    this.controller = null;
     this.audio?.context.removeEventListener('statechange', this.audioState);
-    this.audio?.dispose();
+    // The engine and its music belong to the game (see sharedAudio); only this scene's voices stop.
+    this.audio?.cancel();
     this.audio = null;
   }
 }

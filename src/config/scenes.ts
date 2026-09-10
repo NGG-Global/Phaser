@@ -7,6 +7,7 @@
 export const SceneKey = {
   Boot: 'boot',
   Preload: 'preload',
+  Menu: 'menu',
   Play: 'play',
 } as const;
 

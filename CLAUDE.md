@@ -1,8 +1,17 @@
 # Development guidelines
 
-## Current timing prototype
+## Current state
 
-The current default is now the Hammer + Nail vignette (see `docs/HAMMER_NAIL.md`).
+Boot → Preload → `MenuScene` (title, PLAY, sound) → `PlayScene`. A session is
+`SESSION` in `src/game/session.ts`: rounds of tasks, one vignette per round,
+consecutive rounds differ. Music is seven stems normalized to a 120 BPM,
+60-bar loop (`docs/MUSIC.md`); the raw WAVs are far too large to ship and need
+compressed delivery. The `AudioEngine` is game-wide via `audio/sharedAudio.ts`
+and is unlocked by the menu's PLAY tap. The paragraphs below are history.
+
+## Earlier: Hammer + Nail vignette
+
+The default was the Hammer + Nail vignette (see `docs/HAMMER_NAIL.md`).
 Keep presentation inside `src/vignettes/HammerNailVignette.ts`; the existing
 rhythm controller/judge/scorer remain authoritative. Debug replay controls exist
 only with DEV and `?debug`. Do not add other vignettes without a request.

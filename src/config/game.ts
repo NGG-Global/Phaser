@@ -4,6 +4,7 @@ import { DESIGN_HEIGHT, DESIGN_WIDTH } from '@/config/design';
 import { COLORS } from '@/config/theme';
 import { getGameRootId } from '@/core/shell';
 import { BootScene } from '@/scenes/BootScene';
+import { MenuScene } from '@/scenes/MenuScene';
 import { PlayScene } from '@/scenes/PlayScene';
 import { PreloadScene } from '@/scenes/PreloadScene';
 
@@ -138,6 +139,6 @@ export function createGameConfig(): Phaser.Types.Core.GameConfig {
     /** Console banner is useful while developing, noise in production. */
     banner: import.meta.env.DEV,
 
-    scene: [BootScene, PreloadScene, PlayScene],
+    scene: [BootScene, PreloadScene, MenuScene, PlayScene],
   };
 }

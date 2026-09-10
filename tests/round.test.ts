@@ -53,6 +53,17 @@ describe('round lifecycle', () => {
     advance(target + 0.1);
     expect(round.tap(target, target + 0.1, (target + 0.1) * 1000)?.grade).toBe('Perfect');
   });
+  it('tolerates a stall that ends inside the count-in, since nothing has been shown or judged yet', () => {
+    const { round, events } = setup();
+    round.tick(0.02, 20);
+    round.tick(1.5, 1500); // 1.48 s without a pump, still before the demonstration at 2.6 s
+    expect(round.phase).toBe('prepare');
+    expect(events.interrupted).not.toHaveBeenCalled();
+    round.tick(1.52, 1520);
+    round.tick(2.7, 2700); // the same gap reaching the demonstration is a real stall
+    expect(round.phase).toBe('paused');
+    expect(events.interrupted).toHaveBeenCalledTimes(1);
+  });
   it('invalidates a long stall before recording unfair misses', () => {
     const { round, events } = setup();
     round.tick(9, 9000);
