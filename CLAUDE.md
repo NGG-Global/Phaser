@@ -1,5 +1,23 @@
 # Development guidelines
 
+## Current timing prototype
+
+The current default is now the Hammer + Nail vignette (see `docs/HAMMER_NAIL.md`).
+Keep presentation inside `src/vignettes/HammerNailVignette.ts`; the existing
+rhythm controller/judge/scorer remain authoritative. Debug replay controls exist
+only with DEV and `?debug`. Do not add other vignettes without a request.
+The paragraph below records the earlier timing-only milestone.
+
+PlayScene is now Rhythm Lab. Consult the implementation notes at the top of
+`docs/TECHNICAL_ARCHITECTURE.md` before the historical starter guidance below.
+Use `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build`.
+Gameplay has one TAP action using Phaser's unified pointer event and original
+DOM timestamp. Drag/player helpers remain unused legacy starter code. Do not
+restore drag-to-position behavior to the rhythm scene. AudioEngine owns the
+only AudioContext; Phaser sound is disabled. Visual frame/tween time must never
+become the musical clock. Current grades are Perfect/Good/Miss with thresholds
+in `src/config/rhythm.ts`. Vignettes and progression are not implemented.
+
 Mobile-first Phaser 4 game project. Portrait, touch-first, with Android as the
 intended primary platform.
 

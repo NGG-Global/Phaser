@@ -35,5 +35,5 @@
     /* Phaser ships a very large single-file .d.ts; skip re-checking it. */
     "skipLibCheck": true
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "tests", "vite.config.ts"]
 }

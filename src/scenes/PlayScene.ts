@@ -1,322 +1,423 @@
 import Phaser from 'phaser';
-
-import { DEPTH, LAYOUT } from '@/config/design';
+import { AudioEngine } from '@/audio/AudioEngine';
+import { MUSIC, STEM_IDS } from '@/config/music';
+import { TaskSequence } from '@/game/TaskSequence';
 import { SceneKey } from '@/config/scenes';
-import { COLORS, CSS_COLORS, FONT_FAMILY } from '@/config/theme';
+import { RHYTHM } from '@/config/rhythm';
 import { BaseScene } from '@/core/BaseScene';
-import { HorizontalDragBehaviour } from '@/input/HorizontalDragBehaviour';
-import { Player } from '@/objects/Player';
-import { TextureKey } from '@/textures/generateCoreTextures';
+import { isTouchPrimary } from '@/core/shell';
+import { RoundController, type Phase } from '@/game/RoundController';
+import type { RoundResult } from '@/game/scoring';
+import { TapInput, type Tap } from '@/input/TapInput';
+import type { Judgement } from '@/rhythm/judge';
+import { SESSION, sessionAccuracy } from '@/game/session';
+import type { TransitionPainter } from '@/vignettes/transitions';
+import { VIGNETTES } from '@/vignettes/registry';
+import type { Vignette } from '@/vignettes/Vignette';
+import { easeOut } from '@/vignettes/motion';
 
-/** Player art size in design units, before viewport scaling. */
-const PLAYER_DESIGN_SIZE = 148;
-/** Height of the drag rail in design units. */
-const TRACK_THICKNESS = 14;
-/** Number of tick marks along the rail, endpoints included. Must be >= 2. */
-const TRACK_TICKS = 5;
-/** Duration of the tap-to-move glide. */
-const TAP_MOVE_MS = 260;
 
-/**
- * Playable test scene.
- *
- * Exercises the four things this project needs to get right before any real
- * game code is written: a portrait layout, touch input, a layout that survives
- * an arbitrary screen size, and an object that can be dragged.
- *
- * The player can be moved two ways, because a mobile game needs both: dragged
- * directly, or sent to a position by tapping the playfield. Everything is
- * positioned from `this.viewport`, so the same code covers a 4:3 tablet and a
- * 21:9 handset without branching.
- */
+/** Composes the existing engine with registered visual vignettes. No judgement rules live here. */
 export class PlayScene extends BaseScene {
-  private bleed!: Phaser.GameObjects.Image;
-  private designPanel!: Phaser.GameObjects.Image;
-  private designOutline!: Phaser.GameObjects.Graphics;
-  private tapZone!: Phaser.GameObjects.Zone;
-  private track!: Phaser.GameObjects.Graphics;
-  private player!: Player;
-  private drag!: HorizontalDragBehaviour;
+  private audio: AudioEngine | null = null;
+  private controller: RoundController | null = null;
+  private taps!: TapInput;
+  private vignette!: Vignette;
+  private readonly previewAct = import.meta.env.DEV ? Math.max(0, SESSION.findIndex(act => act.vignette === new URLSearchParams(location.search).get('vignette'))) : 0;
+  private actIndex = this.previewAct;
+  private vignetteIndex = VIGNETTES.findIndex(v => v.id === SESSION[this.actIndex]!.vignette);
+  private get act() { return SESSION[this.actIndex]!; }
+  private sessionResults: number[] = [];
+  private summaryShown = false;
+  private get definition() { return VIGNETTES[this.vignetteIndex]!; }
+  private curtain!: Phaser.GameObjects.Graphics;
+  private headline!: Phaser.GameObjects.Text;
+  private edition!: Phaser.GameObjects.Text;
+  private caption!: Phaser.GameObjects.Text;
+  private invitation!: Phaser.GameObjects.Text;
+  private accuracy!: Phaser.GameObjects.Text;
+  private restart!: Phaser.GameObjects.Text;
+  private mute!: Phaser.GameObjects.Text;
+  private marks!: Phaser.GameObjects.Graphics;
+  private rule!: Phaser.GameObjects.Graphics;
+  private debug!: Phaser.GameObjects.Text;
+  private controlSize = 96;
+  private uiScale = 1;
+  private headlineY = 0;
+  private headlineAt = -Infinity;
+  private outcomes: ('perfect' | 'good' | 'miss' | 'pending')[] = [];
+  private sequence: TaskSequence | null = null;
+  private transition: { slide: number; swap: number; next: number; swapped: boolean; painter: TransitionPainter } | null = null;
+  private replayOffset: number | null = null;
+  private attempts = 0;
+  private demoCount = 0;
+  private finishUnlock = Infinity;
+  private startRequest = 0;
+  private disposed = false;
+  private starting = false;
+  private lastJudgement = '';
+  private replay: { roundId: number; targets: readonly number[]; next: number } | null = null;
+  private replayPanel: HTMLElement | null = null;
+  private pump: ReturnType<typeof setInterval> | null = null;
+  private readonly debugMode = import.meta.env.DEV && new URLSearchParams(location.search).has('debug');
 
-  private title!: Phaser.GameObjects.Text;
-  private hint!: Phaser.GameObjects.Text;
-  private readout!: Phaser.GameObjects.Text;
-  private diagnostics!: Phaser.GameObjects.Text;
-
-  /** Rail geometry, recomputed on every layout pass. */
-  private trackY = 0;
-  private trackLeft = 0;
-  private trackRight = 0;
-
-  private tapTween?: Phaser.Tweens.Tween | undefined;
-
-  public constructor() {
-    super(SceneKey.Play);
-  }
+  public constructor() { super(SceneKey.Play); }
 
   protected override build(): void {
-    // Two backgrounds: the deep fill covers the whole canvas including the
-    // region outside the 9:16 design box, and the panel marks the design box
-    // itself. Seeing where the bleed starts is the quickest way to catch a
-    // layout that only works at one aspect ratio.
-    this.bleed = this.add
-      .image(0, 0, TextureKey.Pixel)
-      .setOrigin(0, 0)
-      .setTint(COLORS.bleed)
-      .setDepth(DEPTH.background);
-
-    this.designPanel = this.add
-      .image(0, 0, TextureKey.Pixel)
-      .setOrigin(0, 0)
-      .setTint(COLORS.background)
-      .setDepth(DEPTH.background);
-
-    this.designOutline = this.add.graphics().setDepth(DEPTH.background);
-
-    // Catches taps that miss the player. `topOnly` (Phaser's default) means the
-    // player consumes its own touches, so grabbing it never also fires a tap.
-    this.tapZone = this.add
-      .zone(0, 0, 1, 1)
-      .setOrigin(0, 0)
-      .setDepth(DEPTH.background);
-    this.tapZone.setInteractive();
-    this.tapZone.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, this.handleTap, this);
-
-    this.track = this.add.graphics().setDepth(DEPTH.track);
-
-    this.title = this.add
-      .text(0, 0, 'Phaser 4 · Mobile Starter', {
-        fontFamily: FONT_FAMILY,
-        fontSize: '34px',
-        fontStyle: '600',
-        color: CSS_COLORS.text,
-      })
-      .setOrigin(0, 0)
-      .setDepth(DEPTH.hud);
-
-    this.hint = this.add
-      .text(0, 0, 'Drag the block, or tap anywhere to send it there.', {
-        fontFamily: FONT_FAMILY,
-        fontSize: '24px',
-        color: CSS_COLORS.textMuted,
-        wordWrap: { width: 100 }, // replaced in layout, once the width is known
-      })
-      .setOrigin(0, 0)
-      .setDepth(DEPTH.hud);
-
-    this.readout = this.add
-      .text(0, 0, '', {
-        fontFamily: FONT_FAMILY,
-        fontSize: '30px',
-        fontStyle: '600',
-        color: CSS_COLORS.accent,
-      })
-      .setOrigin(0.5, 1)
-      .setDepth(DEPTH.hud);
-
-    this.diagnostics = this.add
-      .text(0, 0, '', {
-        fontFamily: FONT_FAMILY,
-        fontSize: '20px',
-        color: CSS_COLORS.textMuted,
-        lineSpacing: 6,
-      })
-      .setOrigin(0, 1)
-      .setDepth(DEPTH.debug);
-
-    this.player = this.player ?? new Player(this, 0, 0);
-    this.player.setDepth(DEPTH.player);
-
-    // Pressing the player is fed back visually before any movement happens, so
-    // a touch feels acknowledged even if the finger has not moved yet.
-    this.player.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
-      this.stopTapGlide();
-      this.player.press();
-    });
-    this.player.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.player.release());
-    this.player.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => this.player.release());
-
-    this.drag = new HorizontalDragBehaviour(this.player, {
-      minX: 0,
-      maxX: 0,
-      onGrab: () => {
-        this.stopTapGlide();
-        this.player.press();
-      },
-      onMove: (_x, progress) => this.updateReadout(progress),
-      onRelease: (_x, progress) => {
-        this.player.release();
-        this.updateReadout(progress);
-      },
-    });
-
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.drag.destroy();
-      this.stopTapGlide();
-    });
+    this.disposed = false;
+    this.starting = false;
+    this.vignette = this.definition.create(this);
+    this.curtain = this.add.graphics().setDepth(100);
+    this.edition = this.text('SMALL ACTS     /     01', 17, 'monospace').setLetterSpacing(2);
+    this.headline = this.text(this.definition.intro, 104, 'Georgia, serif').setLineSpacing(-17);
+    this.caption = this.text(this.definition.title, 23, 'Georgia, serif').setOrigin(0.5).setFontStyle('italic');
+    this.invitation = this.text('TAP ANYWHERE TO BEGIN', 17, 'monospace').setLetterSpacing(2).setOrigin(0.5);
+    this.accuracy = this.text('', 18, 'monospace').setOrigin(0.5);
+    this.restart = this.text('↻', 38, 'Arial, sans-serif').setOrigin(0.5);
+    this.mute = this.text('♪', 32, 'Georgia, serif').setOrigin(0.5);
+    this.marks = this.add.graphics();
+    this.rule = this.add.graphics();
+    this.debug = this.text('', 16, 'monospace').setVisible(this.debugMode);
+    if (this.debugMode) this.installReplayPanel();
+    this.taps = new TapInput(this, tap => this.handleTap(tap));
+    this.pump = setInterval(() => this.tick(), RHYTHM.pumpMs);
+    document.addEventListener('visibilitychange', this.visibility);
+    window.addEventListener('pagehide', this.pageHide);
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.checkOrientation, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
+    this.events.once(Phaser.Scenes.Events.DESTROY, this.shutdown, this);
   }
-
+  private text(value: string, size: number, fontFamily: string): Phaser.GameObjects.Text {
+    return this.add.text(0, 0, value, { fontFamily, fontSize: `${size}px`, color: `#${this.definition.ink.toString(16).padStart(6, '0')}` });
+  }
   protected override layout(): void {
-    const { full, content, designBox } = this.viewport;
-
-    this.bleed.setPosition(full.left, full.top).setDisplaySize(full.width, full.height);
-
-    this.designPanel
-      .setPosition(designBox.left, designBox.top)
-      .setDisplaySize(designBox.width, designBox.height);
-
-    this.designOutline.clear();
-    this.designOutline.lineStyle(2, COLORS.surfaceRaised, 1);
-    this.designOutline.strokeRect(
-      designBox.left,
-      designBox.top,
-      designBox.width,
-      designBox.height,
-    );
-
-    this.tapZone.setPosition(full.left, full.top).setSize(full.width, full.height);
-    // A Zone's hit area is not rebuilt by `setSize`, so it is resized too.
-    this.tapZone.input?.hitArea?.setTo(0, 0, full.width, full.height);
-
-    // Header sits inside the content frame, which already excludes the notch.
-    this.title.setPosition(content.left, content.top);
-    this.hint
-      .setPosition(content.left, content.top + this.title.height + 12)
-      .setWordWrapWidth(content.width);
-
-    /*
-     * The rail is placed a fixed distance from the bottom edge rather than at a
-     * fraction of the height. Thumb reach is an absolute distance from where
-     * the hand grips the device, so a proportional offset would push the
-     * control out of reach on a tall handset. It is then clamped so it can
-     * never collide with the header on a short screen.
-     */
-    const preferredY = content.bottom - this.viewport.scaled(LAYOUT.trackOffsetFromBottom);
-    const minY = content.top + this.viewport.scaled(LAYOUT.headerHeight);
-    this.trackY = Math.max(minY, Math.min(preferredY, content.bottom));
-
-    const playerSize = this.viewport.scaled(PLAYER_DESIGN_SIZE);
-    this.player.resize(playerSize, this.viewport.touchTarget(playerSize));
-
-    // The rail is inset by half the player so the player's edges stay inside
-    // the content frame at both extremes of travel.
-    this.trackLeft = content.left + playerSize / 2;
-    this.trackRight = content.right - playerSize / 2;
-
-    this.drawTrack();
-
-    const progressBefore = this.drag.progress;
-    this.drag.setRange(this.trackLeft, this.trackRight);
-    this.player.setY(this.trackY);
-
-    // Preserve where the player sat relative to the rail across a resize,
-    // instead of letting a clamp snap it to an edge.
-    this.drag.moveTo(this.trackLeft + (this.trackRight - this.trackLeft) * progressBefore);
-
-    this.readout.setPosition(content.centerX, this.trackY - playerSize * 0.72);
-    this.diagnostics.setPosition(content.left, content.bottom);
-
-    this.updateReadout(this.drag.progress);
-    this.updateDiagnostics();
+    const { safe } = this.viewport;
+    this.vignette.layout(this.viewport);
+    const s = Math.min(safe.width / 720, safe.height / 1150);
+    this.uiScale = s;
+    const left = safe.centerX - 310 * s;
+    const top = safe.top;
+    this.edition.setPosition(left, top + 47 * s).setFontSize(16 * s);
+    this.headlineY = top + 135 * s;
+    this.headline.setPosition(left - 5 * s, this.headlineY).setFontSize(88 * s).setLineSpacing(-12 * s);
+    this.controlSize = Math.max(88 * s, 48 * this.viewport.unitScale);
+    this.restart.setPosition(safe.centerX + 175 * s, top + 55 * s).setFontSize(36 * s);
+    this.mute.setPosition(safe.centerX + 283 * s, top + 55 * s).setFontSize(32 * s);
+    this.caption.setPosition(safe.centerX, safe.bottom - 160 * s).setFontSize(23 * s);
+    this.invitation.setPosition(safe.centerX, safe.bottom - 72 * s).setFontSize(17 * s);
+    this.accuracy.setPosition(safe.centerX, safe.bottom - 115 * s).setFontSize(16 * s);
+    this.debug.setPosition(left, top + 360 * s).setFontSize(16 * s);
+    this.drawMarks();
+    this.rule.clear().lineStyle(1, this.definition.ink, 0.3).lineBetween(left, top + 100 * s, safe.centerX + 310 * s, top + 100 * s);
   }
+  private blocked(): boolean { return document.hidden || (isTouchPrimary() && this.scale.isLandscape); }
+  private now(): number { return this.audio?.clock.now() ?? performance.now() / 1000; }
 
-  protected override onResize(): void {
-    this.updateDiagnostics();
+  private async startRound(): Promise<void> {
+    const request = ++this.startRequest;
+    this.replay = null;
+    this.replayOffset = null;
+    this.transition = null;
+    this.lastJudgement = '';
+    this.actIndex = this.previewAct;
+    this.sessionResults = [];
+    this.summaryShown = false;
+    this.controller?.dispose();
+    this.audio?.cancel();
+    this.audio?.music.stop();
+    this.vignette.pause();
+    this.accuracy.setText('');
+    this.finishUnlock = Infinity;
+    this.demoCount = 0;
+    if (this.blocked()) return;
+    this.starting = true;
+    this.invitation.setText('ONE MOMENT');
+    try {
+      if (!this.audio) {
+        this.audio = new AudioEngine();
+        this.audio.setSounds(this.definition.sounds(this.audio.context));
+        this.audio.context.addEventListener('statechange', this.audioState);
+        this.controller = new RoundController(this.audio, {
+          phase: phase => this.showPhase(phase),
+          cue: cue => {
+            if (cue.kind === 'action') {
+              this.vignette.onDemonstrationBeat(cue.time);
+              this.demoCount++;
+              this.drawMarks();
+            }
+          },
+          tap: () => this.vignette.onPlayerHit(this.now()),
+          judgement: result => this.showJudgement(result),
+          complete: result => this.showResult(result),
+          interrupted: () => this.showPause(),
+        });
+      }
+      await this.audio.unlock();
+      if (this.disposed || request !== this.startRequest || this.blocked()) return;
+      this.invitation.setText('LOADING MUSIC');
+      await this.audio.music.load();
+      if (this.disposed || request !== this.startRequest || this.blocked()) return;
+      this.starting = false;
+      this.selectVignette();
+      const origin = this.audio.music.start();
+      this.sequence = new TaskSequence(MUSIC.sourceBpm, origin, 1);
+      this.beginTask(origin);
+    } catch (error) {
+      if (this.disposed || request !== this.startRequest) return;
+      this.starting = false;
+      this.controller?.dispose();
+      this.audio?.cancel();
+      this.audio?.music.stop();
+      this.changeHeadline('One more\ntry.');
+      this.caption.setText(error instanceof Error ? error.message : 'Sound could not start.');
+      this.invitation.setText('TAP TO RETRY');
+    }
   }
-
-  /** Redraws the rail and its tick marks for the current geometry. */
-  private drawTrack(): void {
-    const thickness = this.viewport.scaled(TRACK_THICKNESS, 2);
-    const width = this.trackRight - this.trackLeft;
-
-    this.track.clear();
-
-    if (width <= 0) {
+  private selectVignette(): void {
+    const index = VIGNETTES.findIndex(v => v.id === this.act.vignette);
+    if (index < 0) throw new Error(`Unregistered vignette: ${this.act.vignette}`);
+    if (index !== this.vignetteIndex) {
+      this.vignette.destroy();
+      this.vignetteIndex = index;
+      this.vignette = this.definition.create(this);
+    }
+    this.audio!.setSounds(this.definition.sounds(this.audio!.context));
+    const color = `#${this.definition.ink.toString(16).padStart(6, '0')}`;
+    for (const text of [this.headline, this.edition, this.caption, this.invitation, this.accuracy, this.restart, this.mute, this.debug]) text.setColor(color);
+    this.layout();
+  }
+  private beginTask(startAt: number): void {
+    this.attempts++;
+    this.demoCount = 0;
+    this.finishUnlock = Infinity;
+    this.accuracy.setText('');
+    this.edition.setText(`SMALL ACTS   /   ${this.actIndex + 1} OF ${SESSION.length}`);
+    this.outcomes = this.act.pattern.hits.map(() => 'pending');
+    this.controller!.start(this.act.pattern, this.sequence!.bpm, this.audio!.context.currentTime, performance.now(), startAt);
+    this.vignette.reset(this.controller!.plan!);
+    if (this.replayOffset !== null) {
+      const plan = this.controller!.plan!;
+      this.replay = { roundId: plan.id, targets: this.replayTargets(), next: 0 };
+    }
+    this.drawMarks();
+  }
+  private handleTap(tap: Tap): void {
+    if (this.blocked()) return;
+    if (Math.abs(tap.x - this.mute.x) < this.controlSize / 2 && Math.abs(tap.y - this.mute.y) < this.controlSize / 2) {
+      this.audio?.toggleMute();
+      this.mute.setText(this.audio?.muted ? '×' : '♪');
       return;
     }
-
-    this.track.fillStyle(COLORS.track, 1);
-    this.track.fillRoundedRect(
-      this.trackLeft,
-      this.trackY - thickness / 2,
-      width,
-      thickness,
-      thickness / 2,
-    );
-
-    this.track.fillStyle(COLORS.trackEdge, 1);
-    const tickWidth = Math.max(2, thickness * 0.25);
-    const tickHeight = thickness * 2.4;
-
-    for (let i = 0; i < TRACK_TICKS; i += 1) {
-      const t = i / (TRACK_TICKS - 1);
-      this.track.fillRect(
-        this.trackLeft + width * t - tickWidth / 2,
-        this.trackY - tickHeight / 2,
-        tickWidth,
-        tickHeight,
-      );
+    if (Math.abs(tap.x - this.restart.x) < this.controlSize / 2 && Math.abs(tap.y - this.restart.y) < this.controlSize / 2) {
+      void this.startRound(); return;
+    }
+    const phase = this.controller?.phase ?? 'idle';
+    if (phase === 'idle' || phase === 'paused') { if (!this.starting) void this.startRound(); return; }
+    if (phase === 'result') {
+      if (this.summaryShown) void this.startRound();
+      return;
+    }
+    if (!this.audio || !this.controller?.active) return;
+    this.audio.clock.refresh();
+    this.controller.tap(this.audio.clock.input(tap.timestamp), this.audio.context.currentTime, performance.now());
+  }
+  private tick(): void {
+    if (!this.audio || this.blocked()) return;
+    if (this.audio.context.state !== 'running') { this.interrupt(); return; }
+    this.audio.clock.refresh();
+    const transition = this.transition;
+    if (transition && this.now() >= transition.swap && !transition.swapped) {
+      if (this.audio.context.currentTime > transition.next - RHYTHM.leadSec) { this.interrupt(); return; }
+      transition.swapped = true;
+      this.actIndex++;
+      this.selectVignette();
+      this.sequence = new TaskSequence(MUSIC.sourceBpm, transition.next, 1);
+      this.beginTask(transition.next);
+    }
+    if (transition && this.now() >= transition.next) this.transition = null;
+    this.replayTick();
+    if (this.controller?.active) this.controller.tick(this.now(), performance.now());
+  }
+  /** Development-only integration exercise: actual DOM mouse events go through TapInput. */
+  private installReplayPanel(): void {
+    const panel = document.createElement('div');
+    panel.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:20;display:flex;gap:6px;';
+    panel.style.flexWrap = 'wrap';
+    for (const mode of ['Accurate replay', 'Good replay', 'Rough replay', 'Spam replay'] as const) {
+      const button = document.createElement('button');
+      button.textContent = mode;
+      button.style.cssText = 'padding:9px;border:1px solid #243e35;background:#eee8d8;color:#243e35;font:11px monospace;';
+      button.addEventListener('click', () => { void this.runReplay(mode === 'Accurate replay' ? 0 : mode === 'Good replay' ? 0.08 : mode === 'Spam replay' ? -1 : 0.24); });
+      panel.appendChild(button);
+    }
+    for (const id of STEM_IDS) {
+      const button = document.createElement('button');
+      button.textContent = id;
+      button.style.cssText = 'padding:6px;font:11px monospace';
+      button.addEventListener('click', () => {
+        const music = this.audio?.music;
+        if (!music) return;
+        music.setGain(id, music.gain(id) === 0 ? MUSIC.mix[id] : 0);
+        button.style.opacity = music.gain(id) === 0 ? '0.45' : '1';
+      });
+      panel.appendChild(button);
+    }
+    document.body.appendChild(panel);
+    this.replayPanel = panel;
+  }
+  private async runReplay(offsetSec: number): Promise<void> {
+    const request = this.startRequest + 1;
+    await this.startRound();
+    if (request !== this.startRequest || !this.controller?.active || !this.controller.plan) return;
+    const plan = this.controller.plan;
+    this.replayOffset = offsetSec;
+    this.replay = { roundId: plan.id, targets: this.replayTargets(), next: 0 };
+  }
+  private replayTargets(): readonly number[] {
+    const plan = this.controller!.plan!;
+    return this.replayOffset === -1
+      ? Array.from({ length: Math.ceil((plan.end + 3 * 60 / plan.bpm - plan.start) / 0.04) }, (_, i) => plan.start + i * 0.04)
+      : plan.targets.map(time => time + this.replayOffset!);
+  }
+  private replayTick(): void {
+    const replay = this.replay;
+    if (!replay || replay.roundId !== this.controller?.plan?.id || this.controller.phase === 'paused') { this.replay = null; return; }
+    const target = replay.targets[replay.next];
+    if (target === undefined || this.now() < target) return;
+    replay.next++;
+    const canvas = this.game.canvas;
+    const rect = canvas.getBoundingClientRect();
+    const options = { bubbles: true, clientX: rect.left + rect.width * 0.5, clientY: rect.top + rect.height * 0.58, button: 0 };
+    canvas.dispatchEvent(new MouseEvent('mousedown', { ...options, buttons: 1 }));
+    canvas.dispatchEvent(new MouseEvent('mouseup', { ...options, buttons: 0 }));
+  }
+  public override update(): void {
+    const now = this.now();
+    this.vignette.update(now);
+    const slide = this.transition;
+    if (slide && now >= slide.slide && now < slide.next) {
+      const p = slide.swapped ? (now - slide.swap) / (slide.next - slide.swap) : (now - slide.slide) / (slide.swap - slide.slide);
+      this.vignette.translate(this.viewport.full.width * (slide.swapped ? 1 - easeOut(p) : -(Math.min(1, Math.max(0, p)) ** 3)));
+    }
+    this.curtain.clear();
+    if (slide && now >= slide.slide && now < slide.next) {
+      const p = (now - slide.slide) / (slide.next - slide.slide);
+      slide.painter(this.curtain, this.viewport, p);
+    }
+    const reveal = easeOut((now - this.headlineAt) / 0.21);
+    const playing = this.controller?.active;
+    const endReveal = this.controller?.phase === 'result'
+      ? easeOut((now - (this.finishUnlock - this.definition.endingSec) - 0.28) / 0.3) : 1;
+    this.headline.setFontSize((playing ? 48 : 88) * this.uiScale).setAlpha(reveal * endReveal).setY(this.headlineY + (1 - reveal * endReveal) * 12 * this.uiScale);
+    this.caption.setAlpha(endReveal);
+    if (this.controller?.phase === 'result' && !this.transition && now >= this.finishUnlock && !this.summaryShown) {
+      this.summaryShown = true;
+      this.replay = null;
+      this.changeHeadline('Three small\nacts.');
+      this.caption.setText('A little rhythm goes a long way.');
+      this.accuracy.setText(`${Math.round(sessionAccuracy(this.sessionResults))}% IN TIME`);
+      this.invitation.setText('TAP TO PLAY AGAIN');
+    }
+    if (this.debugMode) {
+      const music = this.audio?.music;
+      this.debug.setText(`${this.definition.id} task ${this.attempts} · ${this.controller?.phase ?? 'idle'}\nvoices ${this.audio?.activeSources ?? 0} · handlers ${this.input.listenerCount(Phaser.Input.Events.POINTER_DOWN)} · objects ${this.children.length}\n${this.controller?.result?.accuracy.toFixed(0) ?? '—'}% · ${this.audio?.clock.mode ?? 'locked'} · ${this.game.loop.actualFps.toFixed(0)} fps\n${this.lastJudgement}\nstems ${music?.activeSources ?? 0} · run ${music?.playbackGeneration ?? 0} · loops ${music?.completedLoops ?? 0}\nstart ${music?.startTime?.toFixed(3) ?? '—'} · length ${music?.duration.toFixed(6) ?? '—'}\n${STEM_IDS.map(id => `${id[0]}:${music?.gain(id) ?? MUSIC.mix[id]}`).join(' ')}`);
     }
   }
-
-  /**
-   * Sends the player to a tapped x with a short glide.
-   *
-   * Tapping is a first-class way to move on a touch screen — reaching across a
-   * large phone to drag is uncomfortable — and the glide keeps the change of
-   * position readable rather than teleporting.
-   */
-  private handleTap(pointer: Phaser.Input.Pointer): void {
-    // `worldX` is in game units; `pointer.x` would be in canvas pixels.
-    const targetX = Phaser.Math.Clamp(pointer.worldX, this.trackLeft, this.trackRight);
-
-    this.stopTapGlide();
-    this.player.press();
-
-    this.tapTween = this.tweens.add({
-      targets: this.player,
-      x: targetX,
-      duration: TAP_MOVE_MS,
-      ease: 'Cubic.easeOut',
-      onUpdate: () => this.updateReadout(this.drag.progress),
-      onComplete: () => {
-        this.tapTween = undefined;
-        this.player.release();
-        this.updateReadout(this.drag.progress);
-      },
+  private changeHeadline(text: string): void {
+    if (this.headline.text === text) return;
+    this.headlineAt = this.now();
+    this.headline.setText(text).setAlpha(0).setY(this.headlineY + 12 * this.uiScale);
+  }
+  private showPhase(phase: Phase): void {
+    this.vignette.onPhase(phase, this.now());
+    if (phase === 'prepare') { this.changeHeadline('Watch.'); this.caption.setText(''); this.invitation.setText(''); }
+    if (phase === 'demonstrate') { this.changeHeadline('Watch.'); this.caption.setText(''); }
+    if (phase === 'handoff') { this.changeHeadline('Repeat.'); this.caption.setText(''); this.demoCount = 0; this.drawMarks(); }
+    if (phase === 'respond') { this.caption.setText(''); this.invitation.setText(''); }
+  }
+  private showJudgement(result: Judgement): void {
+    this.lastJudgement = `${result.kind} ${result.grade} ${result.deltaMs?.toFixed(0) ?? '—'} ms`;
+    this.vignette.onAccuracy(result, this.now());
+    if (result.index !== null) this.outcomes[result.index] = result.grade === 'Perfect' ? 'perfect' : result.grade === 'Good' ? 'good' : 'miss';
+    this.drawMarks();
+  }
+  private drawMarks(): void {
+    this.marks.clear();
+    if (!this.debugMode) return;
+    const phase = this.controller?.phase;
+    if (!phase || phase === 'idle' || phase === 'paused' || phase === 'result') return;
+    const { safe } = this.viewport;
+    const s = this.uiScale;
+    const length = this.outcomes.length;
+    this.outcomes.forEach((outcome, i) => {
+      const x = safe.centerX + (i - (length - 1) / 2) * 27 * s;
+      const y = safe.bottom - 210 * s;
+      const filled = phase === 'demonstrate' ? i < this.demoCount : outcome === 'perfect' || outcome === 'good';
+      this.marks.lineStyle(1.5 * s, this.definition.ink, 0.5).strokeCircle(x, y, 4 * s);
+      if (filled) this.marks.fillStyle(this.definition.ink).fillCircle(x, y, 4 * s);
+      if (outcome === 'miss') this.marks.lineBetween(x - 4 * s, y, x + 4 * s, y);
     });
   }
-
-  /** Cancels an in-flight tap glide so a touch always takes precedence. */
-  private stopTapGlide(): void {
-    this.tapTween?.remove();
-    this.tapTween = undefined;
+  private showResult(result: RoundResult): void {
+    const strong = result.accuracy >= this.definition.successAccuracy;
+    this.sequence!.complete(result.accuracy);
+    this.sessionResults[this.actIndex] = result.accuracy;
+    const ending = this.sequence!.ending(this.controller!.plan!.end);
+    const contact = ending.contact;
+    this.vignette.finish(strong, contact);
+    this.audio!.playFinish(contact, strong);
+    this.finishUnlock = contact + this.definition.endingSec;
+    this.transition = this.actIndex < SESSION.length - 1 ? { ...ending, swapped: false, painter: this.definition.transition } : null;
+    const copy = strong ? this.definition.success : this.definition.rough;
+    this.changeHeadline(copy[0]);
+    this.caption.setText(copy[1]);
+    this.accuracy.setText(this.debugMode ? `${Math.round(result.accuracy)}% IN TIME` : '');
+    this.invitation.setText('');
+    this.drawMarks();
   }
-
-  private updateReadout(progress: number): void {
-    this.readout.setText(`${Math.round(progress * 100)}%`);
+  private showPause(): void {
+    this.vignette.pause();
+    this.changeHeadline('Take a\nbreath.');
+    this.caption.setText('We’ll start that one again.');
+    this.invitation.setText('TAP TO RESUME');
   }
-
-  /**
-   * On-screen viewport diagnostics.
-   *
-   * Deliberately part of the test scene: these are the numbers needed to work
-   * out why a layout looks wrong on a specific handset, and on a real device
-   * there is no console to read them from.
-   */
-  private updateDiagnostics(): void {
-    const { width, height, insets, unitScale, designScale } = this.viewport;
-    const display = this.scale.displaySize;
-    const dpr = window.devicePixelRatio;
-    const hasInsets = insets.top + insets.right + insets.bottom + insets.left > 0;
-
-    this.diagnostics.setText([
-      `logical  ${Math.round(width)} x ${Math.round(height)}  (${(width / height).toFixed(3)})`,
-      `css      ${Math.round(display.width)} x ${Math.round(display.height)}  dpr ${dpr.toFixed(2)}`,
-      `scale    design x${designScale.toFixed(3)}  unit x${unitScale.toFixed(3)}`,
-      hasInsets
-        ? `insets   ${Math.round(insets.top)} / ${Math.round(insets.right)} / ${Math.round(insets.bottom)} / ${Math.round(insets.left)}`
-        : 'insets   none',
-    ]);
+  private interrupt(): void {
+    ++this.startRequest;
+    this.replay = null;
+    this.replayOffset = null;
+    this.transition = null;
+    const wasStarting = this.starting;
+    this.starting = false;
+    this.taps.reset();
+    const wasEnding = this.controller?.phase === 'result';
+    this.controller?.interrupt('Paused');
+    if (wasEnding || wasStarting) { this.controller?.dispose(); this.showPause(); }
+    this.audio?.cancel();
+    this.audio?.music.stop();
+    this.vignette.pause();
+  }
+  private readonly visibility = (): void => { if (document.hidden) this.interrupt(); };
+  private readonly pageHide = (): void => { this.interrupt(); };
+  private readonly audioState = (): void => { if (this.audio?.context.state !== 'running') this.interrupt(); };
+  private checkOrientation(): void { if (this.blocked()) this.interrupt(); }
+  private shutdown(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
+    this.events.off(Phaser.Scenes.Events.DESTROY, this.shutdown, this);
+    ++this.startRequest;
+    if (this.pump !== null) clearInterval(this.pump);
+    this.pump = null;
+    this.taps.dispose();
+    this.replayPanel?.remove();
+    this.replayPanel = null;
+    this.controller?.dispose();
+    this.vignette.destroy();
+    document.removeEventListener('visibilitychange', this.visibility);
+    window.removeEventListener('pagehide', this.pageHide);
+    this.scale.off(Phaser.Scale.Events.RESIZE, this.checkOrientation, this);
+    this.audio?.context.removeEventListener('statechange', this.audioState);
+    this.audio?.dispose();
+    this.audio = null;
   }
 }

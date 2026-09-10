@@ -25,6 +25,8 @@ export function createGameConfig(): Phaser.Types.Core.GameConfig {
 
     parent: getGameRootId(),
     backgroundColor: COLORS.background,
+    // The rhythm engine owns the only AudioContext and its scheduling/cancellation.
+    audio: { noAudio: true },
 
     scale: {
       /**

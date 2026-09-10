@@ -31,6 +31,7 @@ export abstract class BaseScene extends Phaser.Scene {
 
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
+    this.events.once(Phaser.Scenes.Events.DESTROY, this.handleShutdown, this);
 
     this.build();
     this.layout();
@@ -67,6 +68,8 @@ export abstract class BaseScene extends Phaser.Scene {
   }
 
   private handleShutdown(): void {
+    this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
+    this.events.off(Phaser.Scenes.Events.DESTROY, this.handleShutdown, this);
     // The Scale Manager outlives the scene, so an un-removed listener would
     // keep firing `layout()` against destroyed game objects.
     this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);

@@ -32,7 +32,10 @@ function start(): void {
     // Release the WebGL context and audio on navigation away. Without this,
     // Android Chrome can hold the context across a page transition and refuse
     // the next one.
-    window.addEventListener('pagehide', () => game.destroy(true), { once: true });
+    window.addEventListener('pagehide', event => {
+      // A cached page is restored with the same JS objects. Play interrupts its round.
+      if (!event.persisted) game.destroy(true);
+    });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     showBootError(`The game could not start on this device. (${detail})`);
