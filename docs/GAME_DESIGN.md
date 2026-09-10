@@ -4,15 +4,26 @@
 
 All rounds share the seven-stem composition at its measured 120 BPM. Each stem is normalized to an exact 60-bar loop whose origin is the first downbeat, so the count-in starts on the loop origin. Music continues through the final summary; restart schedules all stems anew. Authored patterns and judgement are unchanged, while the old 86/96/104 tempo progression is inactive. Supplied metadata also mentions 121 BPM and needs confirmation—see [music notes](MUSIC.md). No dynamic tempo or gameplay-driven stem mixing is implemented.
 
-## Current vertical slice: three rounds of three tasks
+## Endless level progression
 
-The slice is one finite session that starts from a main menu: Hammer round (three tasks) → impact-ring transition → Window round (three tasks) → squeegee transition → Bug round (three tasks) → summary. Tasks inside a round hand over with the beat-aligned table slide; only round boundaries change vignette, and consecutive rounds never share one. Restart returns to the first task; MENU returns to the title. All performances continue to the ending; there are no lives, fail gates, or random patterns.
+The game is an endless road of levels (`src/game/levels.ts`, tuned in `src/config/progression.ts`), reached from a scrollable map (`MapScene`) grouped into ten-level areas: Grass, Pavement, Sand, Snow, Dusk, then Grass II and so on forever. A level is one round of one vignette (Hammer, Window, Bug rotating by level), several tasks long. Clearing a level unlocks the next; stars record how far above the bar the player finished. Progress is saved locally.
 
-| Round | Tasks | Lesson |
-| --- | --- | --- |
-| Hammer | `X X X -`, `X X - X`, `X - X X` | Steady quarter-note vocabulary, then rests inside the bar |
-| Window | `X - X - X - - X`, `X - X - - X X -`, `X - - X X - X -` (half-beat steps) | One offbeat per phrase, moving around the bar |
-| Bug | three eight-beat phrases mixing rests and offbeats | Two similar halves combine what came before |
+One curve drives every difficulty knob so they move together and never contradict each other: `d(level) = 1 − e^(−(level−1)/25)`, which rises fast through the first two areas and saturates near level 60. From `d`:
+
+| Knob | Formula | Level 1 | Level 10 | Level 20 | Level 40 | Plateau |
+| --- | --- | --- | --- | --- | --- | --- |
+| Tasks per level | 3 + 5d | 3 | 5 | 6 | 7 | 8 |
+| Tempo ceiling (BPM) | 120 + 30·d^1.5, in 2 BPM steps | 120 | 124 | 132 | 142 | 150 |
+| Pattern tier reached | ⌊5·d^0.8⌋, spanning two tiers below | 0 | 1 | 3 | 4 | 4 |
+| Clear bar (mean accuracy) | 40 + 40d | 40% | 52% | 61% | 72% | 80% |
+| Stars | clear bar, then thirds of the headroom to 100% | 40/60/80 | 52/68/84 | 61/74/87 | 72/81/91 | 80/87/93 |
+| Length | | ~30 s | ~50 s | ~65 s | ~80 s | ~95 s |
+
+**Every level starts at 120 BPM**, the music's real tempo, and ramps task by task toward its ceiling: task `i` of `n` plays at `120 + (ceiling − 120)·i/(n−1)`, rounded. The music follows: on the downbeat that starts each new task the seven stems get the same playback-rate automation, so the beat grid and the backing track change tempo together. Pitch rises with tempo (Web Audio has no time-stretch), which is why the ceiling stops at +25%. Levels 1–3 are entirely flat: three quarter-note tasks at 120 BPM with a 40% bar, which mostly-Good tapping (70 points each) clears comfortably. Tempo and density use higher exponents than length and the clear bar, so the first things a new player notices are slightly longer levels and a slightly higher bar, not faster or denser music.
+
+Pattern tiers: 0 quarter notes only; 1 one offbeat per bar; 2 two offbeats; 3 eight-beat phrases; 4 dense eight-beat phrases. No pattern places hits closer than half a beat, so at the 150 BPM ceiling the tightest spacing is 200 ms, still wider than the 130 ms Good window. Within a level the tiers also ramp from two below the ceiling tier up to it, and patterns are chosen with a per-level seed so a level is identical on every attempt and can be learned.
+
+Failing shows the bar that would have cleared it and offers an immediate retry; the level itself does not get easier. Replaying a cleared level can only raise its best. The plateau is deliberate: past level 60 parameters hold while the seeded patterns keep changing, which keeps the road endless without becoming unfair.
 
 The earlier one-task-per-act table below is retained as history.
 

@@ -4,7 +4,6 @@ import type { Phase } from '@/game/RoundController';
 import type { RoundPlan } from '@/rhythm/RhythmScheduler';
 import type { Judgement } from '@/rhythm/judge';
 import type { VignetteSounds } from '@/audio/AudioEngine';
-import type { TransitionPainter } from './transitions';
 
 export interface Vignette {
   layout(viewport: Viewport): void;
@@ -29,7 +28,6 @@ export interface VignetteDefinition {
   readonly rough: readonly [string, string];
   readonly endingSec: number;
   readonly successAccuracy: number;
-  readonly transition: TransitionPainter;
   create(scene: Phaser.Scene): Vignette;
   sounds(context: AudioContext): VignetteSounds;
 }

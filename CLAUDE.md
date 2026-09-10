@@ -2,9 +2,11 @@
 
 ## Current state
 
-Boot → Preload → `MenuScene` (title, PLAY, sound) → `PlayScene`. A session is
-`SESSION` in `src/game/session.ts`: rounds of tasks, one vignette per round,
-consecutive rounds differ. Music is seven stems normalized to a 120 BPM,
+Boot → Preload → `MenuScene` → `MapScene` (endless scrollable road, ten-level
+areas) → `PlayScene` for one level → back to the map. `src/game/levels.ts`
+derives every level (tasks, per-task tempo ramp from 120 BPM, pattern tier,
+clear bar, stars) from one curve in `src/config/progression.ts`; keep new
+difficulty knobs on that curve. `src/game/progress.ts` owns saved progress. Music is seven stems normalized to a 120 BPM,
 60-bar loop (`docs/MUSIC.md`); the game ships MP3s encoded from the WAV
 masters by `npm run music:encode`. The `AudioEngine` is game-wide via `audio/sharedAudio.ts`
 and is unlocked by the menu's PLAY tap. The paragraphs below are history.

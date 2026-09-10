@@ -54,6 +54,7 @@ export class MusicSystem {
   private disposed = false;
   private origin: number | null = null;
   private leadInFrames = 0;
+  private rate = 1;
   private generation = 0;
   public constructor(private readonly context: AudioContext, destination: AudioNode) {
     this.bus = context.createGain();
@@ -77,6 +78,8 @@ export class MusicSystem {
   /** Diagnostic only. Gameplay never uses file position or loop count as its clock. */
   public get completedLoops(): number { return this.origin === null ? 0 : Math.floor(Math.max(0, this.context.currentTime - this.origin) / this.duration); }
   public gain(id: StemId): number { return this.levels[id]; }
+  /** Most recently scheduled playback rate (1 = the source tempo). */
+  public get playbackRate(): number { return this.rate; }
 
   /** Atomic load: no source can start until every fetch/decode and validation succeeds. */
   public load(): Promise<void> {
@@ -121,6 +124,7 @@ export class MusicSystem {
         source.loopStart = 0;
         source.loopEnd = end;
         source.playbackRate.value = 1;
+        this.rate = 1;
         source.connect(this.gains.get(id)!);
         this.sources.set(id, source);
       }
@@ -129,6 +133,18 @@ export class MusicSystem {
       this.generation++;
       return this.downbeatTime!;
     } catch (error) { this.stop(); throw error; }
+  }
+  /**
+   * Speeds every stem up together at one shared instant, which the caller places on a beat.
+   * Pitch rises with tempo (Web Audio has no time-stretch); the level curve caps this at
+   * +25% for that reason. All sources get the identical automation so they stay locked.
+   */
+  public setRate(rate: number, at: number): void {
+    if (this.disposed) return;
+    if (!Number.isFinite(rate) || rate < 0.5 || rate > 2) throw new Error('Playback rate must be between 0.5 and 2.');
+    if (!Number.isFinite(at)) throw new Error('Schedule the rate change at a finite time.');
+    for (const source of this.sources.values()) source.playbackRate.setValueAtTime(rate, Math.max(at, this.context.currentTime));
+    this.rate = rate;
   }
   public setGain(id: StemId, value: number): void {
     if (this.disposed) return;

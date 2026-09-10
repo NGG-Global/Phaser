@@ -2,11 +2,11 @@
 
 **Current music update:** seven synchronized WAV stems (drums, bass, guitar, keyboard, percussion, synth, brass) play continuously, including through the summary and the menu. Everything runs at the stems' measured 120 BPM; each stem is normalized to an exact 60-bar loop whose origin is the first downbeat. The WAV masters (161 MB) stay in `bgm/`; the game ships the MP3s in `bgm/mp3/` produced by `npm run music:encode` (see `docs/MUSIC.md`). Stem levels and URLs live in `src/config/music.ts`. DEV `?debug` adds stem mute/restore buttons and diagnostics. See [music implementation and metadata caveat](docs/MUSIC.md); the supplied 120/121 BPM discrepancy needs confirmation. Earlier tempo/session-duration notes below describe the music-free milestone.
 
-The current vertical slice starts at a main menu and runs a finite ~100-second session of three rounds, each three tasks of one vignette: **Hammer + Nail ×3 → Window Cleaning ×3 → Bug + Shoe ×3 → summary**. Press PLAY, watch each four-beat count-in/demonstration, then reproduce the rhythm with TAP. Each act has its own payoff and an action-inspired musical transition. The final summary shows average accuracy; tap to play again. ↻ always restarts the entire session; ♪ mutes sound.
+The game is an endless level road: menu → scrollable map (ten-level areas: Grass, Pavement, Sand, Snow, Dusk, then again with numerals) → a level of one vignette and several tasks → stars and the next level. Every level starts at 120 BPM and ramps in tempo, length, pattern density and clear bar along one difficulty curve (`docs/GAME_DESIGN.md`). Progress is saved in localStorage.
 
-Authored progression lives in `src/game/session.ts` as rounds of tasks: quarter-note phrases, then one offbeat per phrase, then eight-beat combinations, all at the music's tempo. Consecutive rounds always change vignette. Vignette factories, sound sets, copy and transition painters live in `src/vignettes/registry.ts`. No random difficulty, swipe/hold input or music assets are added. See [vertical-slice notes](docs/VERTICAL_SLICE.md).
+Progression lives in `src/game/levels.ts` with its knobs in `src/config/progression.ts`; `src/game/progress.ts` persists unlocks and best accuracies. Pattern vocabulary is `PATTERN_TIERS`.
 
-DEV `/?debug` includes Accurate, Good, Rough and Spam replay, all through Phaser pointer input. `?debug&vignette=bug` previews the final act only. Normal production always starts with Hammer.
+DEV `/?debug` includes Accurate, Good, Rough and Spam replay, all through Phaser pointer input. `?debug&level=25` opens the play scene directly at that level in development (audio then unlocks on the first tap).
 
 ## Android test build
 

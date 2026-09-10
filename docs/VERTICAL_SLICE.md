@@ -2,9 +2,9 @@
 
 ## Scope and content
 
-One authored session of three **rounds**, each three **tasks** of a single vignette: Hammer ×3 → Window ×3 → Bug ×3 → summary, roughly 100 seconds at 120 BPM. Consecutive rounds always change vignette (`validateSession` rejects a repeat). Inside a round, tasks hand over with the two-beat table slide and no curtain; a round boundary adds the outgoing vignette's transition painter. The summary uses the mean of all task accuracies. Another tap restarts from the first task; the top ↻ control does the same during any phase, and MENU returns to the title screen while the music keeps playing. There is no infinite difficulty escalation, randomness or new input mechanic.
+Menu → map → level → result → map. A level is one vignette and several tasks (see [Game design](GAME_DESIGN.md) for the progression curve); tasks hand over with the two-beat table slide, and the music's playback rate steps up on the same downbeat that starts the next task. The result screen records the level (`game/progress.ts`, localStorage), shows stars and either TAP TO CONTINUE back to the map or TAP TO TRY AGAIN. ↻ restarts the level; MAP leaves for the map; both reset the music to its source tempo. There is no infinite difficulty escalation, randomness or new input mechanic.
 
-Progression is `game/session.ts`: `SESSION` is a list of rounds (`{ vignette, tasks }`) and `sessionTasks()` flattens it for the host, which advances one task at a time. Hammer teaches quarter-note phrases, Window adds one offbeat per phrase, Bug combines both over eight beats. Everything plays at the music's measured 120 BPM (see [Music](MUSIC.md)). Adjacent half beats are 250 ms apart, closer than two 130 ms Good windows, so the judge's fixed nearest-target cells (midpoint tie to the earlier target) decide those, and Perfect windows never overlap. Four-beat count-ins and handoffs remain intact. Strong/rough outcomes are visual interpretations of the original score, not another judge.
+Progression is `game/levels.ts`: `levelSpec(level)` derives tasks, tempos, tier and clear bar from one difficulty curve, deterministically per level. `MapScene` draws the road from that and from saved progress and never decides difficulty itself. Adjacent half beats are 250 ms apart, closer than two 130 ms Good windows, so the judge's fixed nearest-target cells (midpoint tie to the earlier target) decide those, and Perfect windows never overlap. Four-beat count-ins and handoffs remain intact. Strong/rough outcomes are visual interpretations of the original score, not another judge.
 
 ## Bug + Shoe
 
@@ -12,9 +12,9 @@ Progression is `game/session.ts`: `SESSION` is a list of rounds (`{ vignette, ta
 
 `bugSounds.ts` supplies deterministic synthesized thump/rubber tones through the existing generic action/success/rough buffer slots. No external media, per-stroke listeners or timers are used.
 
-## Action-connected transitions
+## Transitions
 
-The registry now supplies a transition painter rather than the host choosing by vignette id. Hammer's last contact expands a warm pressure ring into the next scene. Window's rubber blade clears a pale glass-colored strip across the viewport. These effects use the outgoing act's existing two-beat slide interval and cover the scene swap at its midpoint. The next count-in is scheduled ahead on the planned downbeat, independent of frame rate or transition completion.
+Vignettes no longer swap inside a session (each level is one vignette and the map sits between levels), so the impact-ring and squeegee curtain painters were retired; they remain in Git history if a direct level-to-level flow ever wants them.
 
 ## Verification
 
@@ -32,7 +32,7 @@ DEV replay buttons: Accurate, Good (+80 ms), Rough (+240 ms), Spam (40 ms interv
 
 1. Implement `Vignette` with responsive layout, callbacks, absolute-time update and complete destroy.
 2. Register its factory, identity/copy, palette, sound buffers, outcome presentation settings and transition painter.
-3. Add a round `{ vignette, tasks }` to `SESSION`, or more tasks to an existing round; consecutive rounds must differ in vignette.
+3. Add it to `VIGNETTES`; levels rotate through the registry in order, so a fourth vignette appears at every fourth level automatically. New rhythmic vocabulary goes into `PATTERN_TIERS`.
 
 Do not add vignette-specific rules to `RoundController`, `judge.ts`, `TapInput`, or `AudioClock`.
 
@@ -58,3 +58,9 @@ Not changed, but observed: the outcome headline is fully legible for well under 
 `MenuScene` is the first interactive scene: title, a one-line invitation, the round/task count, a PLAY button anchored a fixed distance above the bottom edge, and the sound toggle. The hammer illustration's idle sway is reused as the title art. PLAY is the audio gesture: it creates or reuses the game-wide `AudioEngine` (`audio/sharedAudio.ts`, held in the Phaser registry and disposed with the game), awaits unlock and stem loading, then starts `PlayScene` with `autoStart`, which begins the first count-in on its create event. PlayScene no longer owns or disposes the engine; leaving for the menu cancels its voices and lets the music run on. `RoundController` now tolerates a pump stall that ends inside the count-in, because the scene switch and the first heavy frames of a fresh scene land there and no beat has been shown or judged yet; any later stall still pauses the attempt.
 
 Browser check: menu → PLAY reached the first count-in in about 6.7 s (161 MB of stems from localhost), nine tasks completed with the expected slides and two curtains, MENU mid-round and from the summary returned to the title with seven stems still running and one pointer handler, and PLAY again started a fresh session. Console error and warning logs were empty.
+
+## Level map and progression (10 September 2026)
+
+`MapScene` is a vertically scrolling road: level 1 at the bottom, ten levels per themed area, the road continuing twelve levels past the frontier. Drag scrolls with a little inertia; a tap under the slop threshold selects. Cleared nodes are filled with their stars, the frontier pulses, locked nodes are faded and ignore taps. The whole road is one static Graphics rebuilt in `layout()`; only the pulse ring and tap acknowledgement redraw per frame. `PlayScene` receives `{ level, autoStart }`, builds the vignette for that level, and steps `MusicSystem.setRate` on each task's downbeat; the last task's ending schedules the rate back to 1.
+
+Browser check: a fresh profile went menu → map → level 1 (Good replay, 70%, two stars) → TAP TO CONTINUE → map with level 2 unlocked and the frontier moved; level 2 with the Rough replay failed with the bar shown and TAP TO TRY AGAIN restarting the same level; MAP mid-level returned to the road with the music running at rate 1. A seeded profile at level 25 played six tasks from 120 to 134 BPM with the music rate stepping 1 → 1.025 → 1.05 → 1.067 → 1.092 → 1.117 on task downbeats and back to 1 at the end; every plan started exactly on the previous ending's `next`. Console error and warning logs were empty.

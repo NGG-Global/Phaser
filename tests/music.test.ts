@@ -18,7 +18,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 function setup(mismatch = false) {
   const nodes: ReturnType<typeof makeSource>[] = [];
-  const makeSource = () => ({ buffer: null as { length: number } | null, loop: false, loopStart: -1, loopEnd: -1, playbackRate: { value: 0 },
+  const makeSource = () => ({ buffer: null as { length: number } | null, loop: false, loopStart: -1, loopEnd: -1, playbackRate: { value: 0, setValueAtTime: vi.fn() },
     start: vi.fn(), stop: vi.fn(), connect: vi.fn(), disconnect: vi.fn(), onended: null });
   const gains: { gain: { value: number; cancelScheduledValues: ReturnType<typeof vi.fn>; setValueAtTime: ReturnType<typeof vi.fn>; linearRampToValueAtTime: ReturnType<typeof vi.fn> }; disconnect: ReturnType<typeof vi.fn> }[] = [];
   let decoded = 0;
@@ -115,6 +115,20 @@ describe('synchronized stems', () => {
     expect(nodes).toHaveLength(0);
     await system.load();
     expect(system.ready).toBe(true);
+  });
+  it('ramps every stem to the same tempo at one beat-aligned instant', async () => {
+    const { system, nodes, context } = setup();
+    await system.load(); system.start(12);
+    expect(system.playbackRate).toBe(1);
+    system.setRate(1.15, 20);
+    for (const node of nodes) expect(node.playbackRate.setValueAtTime).toHaveBeenCalledExactlyOnceWith(1.15, 20);
+    expect(system.playbackRate).toBe(1.15);
+    system.setRate(1, 5); // never in the past
+    for (const node of nodes) expect(node.playbackRate.setValueAtTime).toHaveBeenLastCalledWith(1, context.currentTime);
+    expect(() => system.setRate(3, 20)).toThrow(/between/);
+    expect(() => system.setRate(1, NaN)).toThrow(/finite/);
+    system.start(30);
+    expect(system.playbackRate).toBe(1);
   });
   it('rejects suspended or non-future starts and invalid gains', async () => {
     const { system, context, nodes } = setup();
