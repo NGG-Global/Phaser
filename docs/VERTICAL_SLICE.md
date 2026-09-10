@@ -1,4 +1,4 @@
-# Four vignettes — implementation and QA
+# Five vignettes — implementation and QA
 
 ## Scope and content
 
@@ -11,6 +11,41 @@ Progression is `game/levels.ts`: `levelSpec(level)` derives tasks, tempos, tier 
 `BugShoeVignette.ts` owns all cartoon motion and geometry. A cream-soled dark sneaker stomps over a plum bug on sage tiles. The bug looks around, wiggles its antenna and legs, briefly squashes like rubber on contact, then springs onto the toe or escapes beside it. It is never killed or graphically injured. Motion samples audio time: anticipatory lift before known demo beats, immediate contact for player input, a 35 ms pose hold, recovery, sparse contact rings and a final spring. Reduced-motion preference suppresses stage vibration and large transition travel.
 
 `bugSounds.ts` supplies deterministic synthesized thump/rubber tones through the existing generic action/success/rough buffer slots. No external media, per-stroke listeners or timers are used.
+
+
+## Saw + Timber
+
+`SawTimberVignette.ts` owns the illustration and `sawMotion.ts` its pure curves. A handsaw
+cuts a plank cantilevered past two sawhorses, in a deliberately cool palette so it cannot
+read as Hammer's warm workshop. One tap is one stroke and direction alternates; maximum
+tooth engagement lands on the beat, with the draw back as anticipation and the overshoot as
+follow-through. Accurate strokes deepen the kerf and throw sawdust; an extra tap skids and
+scuffs, a missed target judders, and neither cuts or invents a stroke. Fresh timber arrives
+on the handoff, and an unscored coda severs the plank. Stroke phases are fractions of a
+beat, so the stroke tightens with the level's tempo ramp. See [saw notes](SAW_TIMBER.md).
+
+`sawSounds.ts` supplies deterministic bite/skid/judder/sever/creak synthesis. The engine
+gained optional `scrape` and `judder` slots on the sound set with a `playAccent` that
+no-ops without them, because the action sound is scheduled before the tap is graded; the
+host plays them from `showJudgement`.
+
+## Knife + Tomato
+
+`TomatoKnifeVignette.ts` owns the illustration and `tomatoMotion.ts` its pure curves. A
+chef's knife slices a tomato on a board in a white-tiled kitchen, the fruit the only
+saturated thing in frame. One tap is one rocking chop: the tip stays near the board, the
+heel drops, and the edge meeting the board carries the timing; the windup before it and the
+rise after it do not. Each accurate chop takes a slice, which topples off the cut and leans
+on the pile as a disc showing its cross-section; an extra tap lands on bare board with a
+hollow clack and a nick, a missed target leaves the knife hovering with a tremble, and
+neither takes a slice. Off chops make the later slices uneven, so a rough ending is visible
+before it is announced. A whole tomato arrives on the handoff, and the unscored coda takes
+the standing heel; a rough coda squashes the last slice instead. Chop phases are fractions
+of a beat, so the knife is always back up before the next possible hit at any tempo. See
+[knife notes](TOMATO_KNIFE.md).
+
+`tomatoSounds.ts` supplies a deterministic board knock with a wet element, plus the shared
+`scrape`/`judder` accent slots.
 
 ## Transitions
 

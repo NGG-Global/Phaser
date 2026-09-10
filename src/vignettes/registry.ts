@@ -7,6 +7,8 @@ import { BugShoeVignette, GARDEN } from './BugShoeVignette';
 import { createBugSounds } from '@/audio/bugSounds';
 import { SawTimberVignette, TIMBER } from './SawTimberVignette';
 import { createSawSounds } from '@/audio/sawSounds';
+import { TomatoKnifeVignette, KITCHEN } from './TomatoKnifeVignette';
+import { createTomatoSounds } from '@/audio/tomatoSounds';
 
 export const VIGNETTES: readonly VignetteDefinition[] = [
   {
@@ -33,5 +35,11 @@ export const VIGNETTES: readonly VignetteDefinition[] = [
     success: ['Two planks\nnow.', 'Straight through, first time.'], rough: ['Nearly\nthrough.', 'It let go in its own time.'],
     endingSec: 1.35, successAccuracy: 70,
     create: scene => new SawTimberVignette(scene), sounds: createSawSounds,
+  },
+  {
+    id: 'tomato', title: 'Knife & tomato', intro: 'Mind your\nfingers.', ink: KITCHEN.ink,
+    success: ['Thin and\neven.', 'Every slice the same.'], rough: ['Roughly\nchopped.', 'Rustic. We are calling it rustic.'],
+    endingSec: 1.35, successAccuracy: 70,
+    create: scene => new TomatoKnifeVignette(scene), sounds: createTomatoSounds,
   },
 ];
