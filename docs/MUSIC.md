@@ -14,9 +14,13 @@ The delivery note said the music begins on the first beat at second 0 and loops 
 
 `MusicSystem.normalizeLoop()` therefore copies each decoded stem into an exact 120.000 s buffer: it drops the first `leadInSec` and pads the silent tail to `bars × beatsPerBar` beats. Beat 0 of the loop is the first downbeat, so `pickupBeats` is 0 and the count-in begins on the loop origin. The gameplay grid and the file loop then stay aligned indefinitely. Bar phase (which beat is "one") assumes the first audible beat is a downbeat; confirm with the composer.
 
-## Size and memory (unresolved)
+## Shipped format: MP3 from WAV masters
 
-Seven WAV stems are **161 MB** to download and about **322 MB** of decoded 32-bit float PCM in memory (the normalization copies transiently double the working set while loading). Headless Chromium loaded and decoded them in about 6.7 s from localhost; over a mobile connection this is minutes, and the decoded footprint is a memory-pressure risk on low-end handsets. No audio encoder was available in this environment to produce compressed versions. Options, in order of preference: deliver the stems as AAC (`.m4a`) or Opus at roughly 96–128 kb/s (about 12 MB total; decoded memory is unchanged), premix to one stereo track for gameplay (46 MB decoded, one fetch) if per-stem control is not needed, or mix the stems down at load time and release the individual buffers.
+The WAVs are 161 MB and are kept only as masters. `npm run music:encode` (`scripts/encode-music.mjs`, pure-JavaScript LAME at 160 kb/s joint stereo) writes `bgm/mp3/*.mp3`, about 2.4 MB each, 17 MB total; `config/music.ts` points at those, so the web bundle and the Android APK carry only the MP3s. Re-run it whenever a WAV changes.
+
+MP3 decoding is not sample-exact: Chromium's decode of every stem is 5,757,696 frames (119.952 s) and cross-correlation against the WAV shows the audio starting **1105 frames (23.02 ms) later** than in the file, the usual encoder-plus-decoder delay. Other decoders may trim that delay using the LAME header. The lead-in is therefore not a constant: at load, `detectLeadIn` finds the first frame of the drum stem above 1% full scale (the opening transient is sharp and preceded by dither-level noise), and every stem is normalized with that frame count. Measured in Chromium it lands within 2 ms of the true onset (0.1808 s versus 0.156 + 0.023). `fallbackSec` covers a silent or missing reference. Peak levels come out about 6% lower than the WAVs; no gain compensation is applied.
+
+Decoded memory is unchanged by compression: seven stereo 120 s buffers are about 322 MB of float PCM (transiently more while normalizing). That remains a memory-pressure risk on low-end handsets and the reason to consider a premix or a load-time mixdown if device testing shows trouble.
 
 ## Playback
 
@@ -38,4 +42,4 @@ Tests cover atomic loading, shared starts, full-buffer loops, silent running/res
 
 Browser QA used the actual files: four active stems, matching decoded durations, unchanged playback generation/start across multiple complete loops, independent mute/restore, all-silent looping, and rapid session restarts returning to exactly four music sources. No console warnings/errors were observed. Build/source hashes match. Loop counters are schedule diagnostics, not acoustic phase measurements.
 
-Remaining risks: confirm the bar phase and the 156 ms lead-in with the composer; deliver compressed stems or a premix before any device testing (see Size and memory); perform real listening checks for the padded loop seam, relative loudness and clipping; test iOS/Android unlock, interruption and output routes.
+Remaining risks: confirm the bar phase with the composer; verify the detected lead-in and the loop seam by ear on Android and iOS decoders; watch decoded-PCM memory on low-end devices (see Shipped format); perform real listening checks for the padded loop seam, relative loudness and clipping; test iOS/Android unlock, interruption and output routes.

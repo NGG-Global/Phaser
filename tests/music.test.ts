@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MusicSystem, normalizeLoop, validateStemBuffers, type StemBuffers } from '../src/audio/MusicSystem';
+import { MusicSystem, detectLeadIn, normalizeLoop, validateStemBuffers, type StemBuffers } from '../src/audio/MusicSystem';
 import { MUSIC, STEM_IDS, loopSeconds, pickupSeconds } from '../src/config/music';
 
 // A 100 Hz "sample rate" keeps the fake buffers tiny while exercising real frame arithmetic.
 const RATE = 100;
 const FILE_FRAMES = 11993; // 119.93 s: 75 ms short of 60 bars, like the delivered stems.
+const LEAD = 18; // the drums' first transient at 0.18 s in the decoded MP3
 const N = STEM_IDS.length;
 function fakeBuffer(length: number, rate = RATE, channels = 2) {
   const data = Array.from({ length: channels }, () => new Float32Array(length));
+  if (length > LEAD) data[1]![LEAD] = 0.5; // one decoded transient after silence
   return { length, sampleRate: rate, duration: length / rate, numberOfChannels: channels,
     getChannelData: (c: number) => data[c]!,
     copyToChannel: (source: Float32Array, c: number) => { data[c]!.set(source.subarray(0, length)); } };
@@ -16,7 +18,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 function setup(mismatch = false) {
   const nodes: ReturnType<typeof makeSource>[] = [];
-  const makeSource = () => ({ buffer: null as { length: number } | null, loop: false, loopStart: -1, loopEnd: -1, playbackRate: { value: 0 },
+  const makeSource = () => ({ buffer: null as { length: number } | null, loop: false, loopStart: -1, loopEnd: -1, playbackRate: { value: 0, setValueAtTime: vi.fn() },
     start: vi.fn(), stop: vi.fn(), connect: vi.fn(), disconnect: vi.fn(), onended: null });
   const gains: { gain: { value: number; cancelScheduledValues: ReturnType<typeof vi.fn>; setValueAtTime: ReturnType<typeof vi.fn>; linearRampToValueAtTime: ReturnType<typeof vi.fn> }; disconnect: ReturnType<typeof vi.fn> }[] = [];
   let decoded = 0;
@@ -45,6 +47,7 @@ describe('synchronized stems', () => {
     expect(fetcher).toHaveBeenCalledTimes(N);
     expect(context.decodeAudioData).toHaveBeenCalledTimes(N);
     expect(system.start(12)).toBeCloseTo(12 + pickupSeconds(MUSIC.sourceBpm, MUSIC.pickupBeats), 9);
+    expect(system.leadInSeconds).toBeCloseTo(LEAD / RATE, 9);
     expect(nodes).toHaveLength(N);
     for (const node of nodes) {
       expect(node.start).toHaveBeenCalledExactlyOnceWith(12, 0);
@@ -57,17 +60,23 @@ describe('synchronized stems', () => {
     await system.load();
     expect(fetcher).toHaveBeenCalledTimes(N);
   });
+  it('detects the lead-in from the reference stem and falls back for a silent one', () => {
+    expect(detectLeadIn(fakeBuffer(FILE_FRAMES) as unknown as AudioBuffer, 0.01, 0.5)).toBe(LEAD);
+    expect(detectLeadIn(fakeBuffer(FILE_FRAMES) as unknown as AudioBuffer, 0.9, 0.5)).toBe(50);
+    expect(detectLeadIn(fakeBuffer(4) as unknown as AudioBuffer, 0.01, 0.5)).toBe(50);
+  });
   it('normalizes a stem into an exact whole-bar loop: drops the lead-in and pads the tail', () => {
     const source = fakeBuffer(FILE_FRAMES);
     for (let i = 0; i < FILE_FRAMES; i++) source.getChannelData(0)[i] = i;
-    const lead = Math.round(MUSIC.leadInSec * RATE);
-    const loop = normalizeLoop({ createBuffer: (c: number, l: number, r: number) => fakeBuffer(l, r, c) } as unknown as AudioContext, source as unknown as AudioBuffer);
+    const lead = LEAD;
+    const loop = normalizeLoop({ createBuffer: (c: number, l: number, r: number) => fakeBuffer(l, r, c) } as unknown as AudioContext, source as unknown as AudioBuffer, lead);
     expect(loop.length).toBe(loopSeconds() * RATE);
     expect(loop.getChannelData(0)[0]).toBe(lead);
     expect(loop.getChannelData(0)[FILE_FRAMES - lead - 1]).toBe(FILE_FRAMES - 1);
     expect(loop.getChannelData(0)[FILE_FRAMES - lead]).toBe(0);
     expect(loop.getChannelData(0)[loop.length - 1]).toBe(0);
-    expect(() => normalizeLoop({} as AudioContext, fakeBuffer(lead) as unknown as AudioBuffer)).toThrow(/lead-in/);
+    expect(() => normalizeLoop({} as AudioContext, fakeBuffer(lead) as unknown as AudioBuffer, lead)).toThrow(/lead-in/);
+    expect(() => normalizeLoop({} as AudioContext, source as unknown as AudioBuffer, 1.5)).toThrow(/whole number/);
   });
   it('retains the same four sources through silent gains, restoration and multiple loops', async () => {
     const { system, nodes, gains, context } = setup();
@@ -106,6 +115,20 @@ describe('synchronized stems', () => {
     expect(nodes).toHaveLength(0);
     await system.load();
     expect(system.ready).toBe(true);
+  });
+  it('ramps every stem to the same tempo at one beat-aligned instant', async () => {
+    const { system, nodes, context } = setup();
+    await system.load(); system.start(12);
+    expect(system.playbackRate).toBe(1);
+    system.setRate(1.15, 20);
+    for (const node of nodes) expect(node.playbackRate.setValueAtTime).toHaveBeenCalledExactlyOnceWith(1.15, 20);
+    expect(system.playbackRate).toBe(1.15);
+    system.setRate(1, 5); // never in the past
+    for (const node of nodes) expect(node.playbackRate.setValueAtTime).toHaveBeenLastCalledWith(1, context.currentTime);
+    expect(() => system.setRate(3, 20)).toThrow(/between/);
+    expect(() => system.setRate(1, NaN)).toThrow(/finite/);
+    system.start(30);
+    expect(system.playbackRate).toBe(1);
   });
   it('rejects suspended or non-future starts and invalid gains', async () => {
     const { system, context, nodes } = setup();

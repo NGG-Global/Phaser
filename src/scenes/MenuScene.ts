@@ -2,7 +2,8 @@ import Phaser from 'phaser';
 import { currentAudio, sharedAudio } from '@/audio/sharedAudio';
 import { SceneKey } from '@/config/scenes';
 import { BaseScene } from '@/core/BaseScene';
-import { SESSION } from '@/game/session';
+import { areaOf } from '@/game/levels';
+import { loadProgress } from '@/game/progress';
 import { TapInput, type Tap } from '@/input/TapInput';
 import { VIGNETTES } from '@/vignettes/registry';
 import type { Vignette } from '@/vignettes/Vignette';
@@ -40,7 +41,8 @@ export class MenuScene extends BaseScene {
     this.edition = this.text('SMALL ACTS', 17, 'monospace').setLetterSpacing(2);
     this.headline = this.text('Small\nActs.', 104, 'Georgia, serif').setLineSpacing(-17);
     this.caption = this.text('Watch a rhythm. Tap it back.', 23, 'Georgia, serif').setFontStyle('italic');
-    this.note = this.text(`${SESSION.length} ROUNDS · ${SESSION.reduce((n, r) => n + r.tasks.length, 0)} SMALL TASKS`, 16, 'monospace').setLetterSpacing(2).setOrigin(0.5);
+    const progress = loadProgress();
+    this.note = this.text(progress.unlocked === 1 ? 'A NEW ROAD BEGINS' : `NEXT UP   LEVEL ${progress.unlocked}   ·   ${areaOf(progress.unlocked).name.toUpperCase()}`, 16, 'monospace').setLetterSpacing(2).setOrigin(0.5);
     this.button = this.add.graphics();
     this.playLabel = this.text('PLAY', 22, 'monospace').setLetterSpacing(6).setOrigin(0.5);
     this.mute = this.text(currentAudio(this)?.muted ? '×' : '♪', 32, 'Georgia, serif').setOrigin(0.5);
@@ -93,7 +95,7 @@ export class MenuScene extends BaseScene {
       this.playLabel.setText('LOADING');
       await audio.music.load();
       if (this.disposed || request !== this.request) return;
-      this.scene.start(SceneKey.Play, { autoStart: true });
+      this.scene.start(SceneKey.Map);
     } catch (error) {
       if (this.disposed || request !== this.request) return;
       this.busy = false;

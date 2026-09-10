@@ -11,14 +11,12 @@ import { RoundController, type Phase } from '@/game/RoundController';
 import type { RoundResult } from '@/game/scoring';
 import { TapInput, type Tap } from '@/input/TapInput';
 import type { Judgement } from '@/rhythm/judge';
-import { SESSION, sessionAccuracy, sessionTasks } from '@/game/session';
-import type { TransitionPainter } from '@/vignettes/transitions';
+import { levelSpec, meanAccuracy, starsFor, type LevelSpec } from '@/game/levels';
+import { loadProgress, recordResult, saveProgress } from '@/game/progress';
+import { drawStar } from '@/ui/star';
 import { VIGNETTES } from '@/vignettes/registry';
 import type { Vignette } from '@/vignettes/Vignette';
 import { easeOut } from '@/vignettes/motion';
-
-
-const TASKS = sessionTasks();
 
 /** Composes the existing engine with registered visual vignettes. No judgement rules live here. */
 export class PlayScene extends BaseScene {
@@ -26,14 +24,15 @@ export class PlayScene extends BaseScene {
   private controller: RoundController | null = null;
   private taps!: TapInput;
   private vignette!: Vignette;
-  private readonly previewTask = import.meta.env.DEV ? Math.max(0, TASKS.findIndex(task => task.vignette === new URLSearchParams(location.search).get('vignette'))) : 0;
-  private taskIndex = this.previewTask;
-  private vignetteIndex = VIGNETTES.findIndex(v => v.id === TASKS[this.taskIndex]!.vignette);
-  private get task() { return TASKS[this.taskIndex]!; }
-  private sessionResults: number[] = [];
+  /** The level is fixed for the scene's life; one vignette, tasks ramping in tempo and density. */
+  private spec: LevelSpec = levelSpec(1);
+  private taskIndex = 0;
+  private get task() { return this.spec.tasks[this.taskIndex]!; }
+  private results: number[] = [];
   private summaryShown = false;
-  private get definition() { return VIGNETTES[this.vignetteIndex]!; }
-  private curtain!: Phaser.GameObjects.Graphics;
+  private levelCleared = false;
+  private get definition() { return VIGNETTES.find(v => v.id === this.spec.vignette) ?? VIGNETTES[0]!; }
+  private stars!: Phaser.GameObjects.Graphics;
   private headline!: Phaser.GameObjects.Text;
   private edition!: Phaser.GameObjects.Text;
   private caption!: Phaser.GameObjects.Text;
@@ -52,8 +51,8 @@ export class PlayScene extends BaseScene {
   private headlineAt = -Infinity;
   private outcomes: ('perfect' | 'good' | 'miss' | 'pending')[] = [];
   private sequence: TaskSequence | null = null;
-  /** The curtain painter is only present when the next task changes vignette; same-vignette tasks just slide. */
-  private transition: { slide: number; swap: number; next: number; swapped: boolean; painter: TransitionPainter | null } | null = null;
+  /** Beat-aligned table slide between tasks; the next task and the music's new tempo both start at `next`. */
+  private transition: { slide: number; swap: number; next: number; swapped: boolean } | null = null;
   private replayOffset: number | null = null;
   private attempts = 0;
   private demoCount = 0;
@@ -72,15 +71,18 @@ export class PlayScene extends BaseScene {
   protected override build(): void {
     this.disposed = false;
     this.starting = false;
+    const data = this.sys.settings.data as { level?: number; autoStart?: boolean } | undefined;
+    const requested = data?.level ?? (import.meta.env.DEV ? Number(new URLSearchParams(location.search).get('level')) : 0);
+    this.spec = levelSpec(Number.isInteger(requested) && requested >= 1 ? requested : 1);
     this.vignette = this.definition.create(this);
-    this.curtain = this.add.graphics().setDepth(100);
-    this.edition = this.text('SMALL ACTS     /     01', 17, 'monospace').setLetterSpacing(2);
+    this.stars = this.add.graphics();
+    this.edition = this.text(`LEVEL ${this.spec.level}`, 17, 'monospace').setLetterSpacing(2);
     this.headline = this.text(this.definition.intro, 104, 'Georgia, serif').setLineSpacing(-17);
     this.caption = this.text(this.definition.title, 23, 'Georgia, serif').setOrigin(0.5).setFontStyle('italic');
     this.invitation = this.text('TAP ANYWHERE TO BEGIN', 17, 'monospace').setLetterSpacing(2).setOrigin(0.5);
     this.accuracy = this.text('', 18, 'monospace').setOrigin(0.5);
     this.restart = this.text('↻', 38, 'Arial, sans-serif').setOrigin(0.5);
-    this.menu = this.text('MENU', 16, 'monospace').setLetterSpacing(2).setOrigin(0.5);
+    this.menu = this.text('MAP', 16, 'monospace').setLetterSpacing(2).setOrigin(0.5);
     this.mute = this.text('♪', 32, 'Georgia, serif').setOrigin(0.5);
     this.marks = this.add.graphics();
     this.rule = this.add.graphics();
@@ -93,8 +95,7 @@ export class PlayScene extends BaseScene {
     this.scale.on(Phaser.Scale.Events.RESIZE, this.checkOrientation, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.shutdown, this);
-    // Arriving from the menu's PLAY tap: audio is already unlocked and loaded, so begin at once.
-    const data = this.sys.settings.data as { autoStart?: boolean } | undefined;
+    // Arriving from the map: audio is already unlocked and loaded, so begin at once.
     if (data?.autoStart) this.events.once(Phaser.Scenes.Events.CREATE, () => { void this.startRound(); });
   }
   private text(value: string, size: number, fontFamily: string): Phaser.GameObjects.Text {
@@ -120,6 +121,7 @@ export class PlayScene extends BaseScene {
     this.accuracy.setPosition(safe.centerX, safe.bottom - 115 * s).setFontSize(16 * s);
     this.debug.setPosition(left, top + 360 * s).setFontSize(16 * s);
     this.drawMarks();
+    this.drawStars();
     this.rule.clear().lineStyle(1, this.definition.ink, 0.3).lineBetween(left, top + 100 * s, safe.centerX + 310 * s, top + 100 * s);
   }
   private blocked(): boolean { return document.hidden || (isTouchPrimary() && this.scale.isLandscape); }
@@ -131,9 +133,11 @@ export class PlayScene extends BaseScene {
     this.replayOffset = null;
     this.transition = null;
     this.lastJudgement = '';
-    this.taskIndex = this.previewTask;
-    this.sessionResults = [];
+    this.taskIndex = 0;
+    this.results = [];
     this.summaryShown = false;
+    this.levelCleared = false;
+    this.stars.clear();
     this.controller?.dispose();
     this.audio?.cancel();
     this.audio?.music.stop();
@@ -171,9 +175,9 @@ export class PlayScene extends BaseScene {
       await this.audio!.music.load();
       if (this.disposed || request !== this.startRequest || this.blocked()) return;
       this.starting = false;
-      this.selectVignette();
-      const origin = this.audio!.music.start();
-      this.sequence = new TaskSequence(MUSIC.sourceBpm, origin, 1);
+      this.audio!.setSounds(this.definition.sounds(this.audio!.context));
+      const origin = this.audio!.music.start(); // fresh sources: every level starts at the base tempo
+      this.sequence = new TaskSequence(this.task.bpm, origin, 1);
       this.beginTask(origin);
     } catch (error) {
       if (this.disposed || request !== this.startRequest) return;
@@ -186,27 +190,14 @@ export class PlayScene extends BaseScene {
       this.invitation.setText('TAP TO RETRY');
     }
   }
-  private selectVignette(): void {
-    const index = VIGNETTES.findIndex(v => v.id === this.task.vignette);
-    if (index < 0) throw new Error(`Unregistered vignette: ${this.task.vignette}`);
-    if (index !== this.vignetteIndex) {
-      this.vignette.destroy();
-      this.vignetteIndex = index;
-      this.vignette = this.definition.create(this);
-    }
-    this.audio!.setSounds(this.definition.sounds(this.audio!.context));
-    const color = `#${this.definition.ink.toString(16).padStart(6, '0')}`;
-    for (const text of [this.headline, this.edition, this.caption, this.invitation, this.accuracy, this.restart, this.menu, this.mute, this.debug]) text.setColor(color);
-    this.layout();
-  }
   private beginTask(startAt: number): void {
     this.attempts++;
     this.demoCount = 0;
     this.finishUnlock = Infinity;
     this.accuracy.setText('');
-    this.edition.setText(`ROUND ${this.task.round + 1}/${SESSION.length}   ·   TASK ${this.task.task + 1}/${SESSION[this.task.round]!.tasks.length}`);
+    this.edition.setText(`LEVEL ${this.spec.level}   ·   TASK ${this.taskIndex + 1}/${this.spec.tasks.length}`);
     this.outcomes = this.task.pattern.hits.map(() => 'pending');
-    this.controller!.start(this.task.pattern, this.sequence!.bpm, this.audio!.context.currentTime, performance.now(), startAt);
+    this.controller!.start(this.task.pattern, this.task.bpm, this.audio!.context.currentTime, performance.now(), startAt);
     this.vignette.reset(this.controller!.plan!);
     if (this.replayOffset !== null) {
       const plan = this.controller!.plan!;
@@ -225,12 +216,13 @@ export class PlayScene extends BaseScene {
       void this.startRound(); return;
     }
     if (Math.abs(tap.x - this.menu.x) < this.controlSize / 2 && Math.abs(tap.y - this.menu.y) < this.controlSize / 2) {
-      this.scene.start(SceneKey.Menu); return;
+      this.leaveForMap(); return;
     }
     const phase = this.controller?.phase ?? 'idle';
     if (phase === 'idle' || phase === 'paused') { if (!this.starting) void this.startRound(); return; }
     if (phase === 'result') {
-      if (this.summaryShown) void this.startRound();
+      // Cleared: back to the road, centred on what just opened. Failed: straight into another go.
+      if (this.summaryShown) { if (this.levelCleared) this.leaveForMap(); else void this.startRound(); }
       return;
     }
     if (!this.audio || !this.controller?.active) return;
@@ -246,8 +238,10 @@ export class PlayScene extends BaseScene {
       if (this.audio.context.currentTime > transition.next - RHYTHM.leadSec) { this.interrupt(); return; }
       transition.swapped = true;
       this.taskIndex++;
-      this.selectVignette();
-      this.sequence = new TaskSequence(MUSIC.sourceBpm, transition.next, 1);
+      // The music speeds up on the same downbeat the next count-in starts, so the grid and
+      // the stems change tempo together. Every task's plan is whole beats, so `next` is on a beat.
+      this.audio.music.setRate(this.task.bpm / MUSIC.sourceBpm, transition.next);
+      this.sequence = new TaskSequence(this.task.bpm, transition.next, 1);
       this.beginTask(transition.next);
     }
     if (transition && this.now() >= transition.next) this.transition = null;
@@ -315,11 +309,6 @@ export class PlayScene extends BaseScene {
       const p = slide.swapped ? (now - slide.swap) / (slide.next - slide.swap) : (now - slide.slide) / (slide.swap - slide.slide);
       this.vignette.translate(this.viewport.full.width * (slide.swapped ? 1 - easeOut(p) : -(Math.min(1, Math.max(0, p)) ** 3)));
     }
-    this.curtain.clear();
-    if (slide?.painter && now >= slide.slide && now < slide.next) {
-      const p = (now - slide.slide) / (slide.next - slide.slide);
-      slide.painter(this.curtain, this.viewport, p);
-    }
     const reveal = easeOut((now - this.headlineAt) / 0.21);
     const playing = this.controller?.active;
     const endReveal = this.controller?.phase === 'result'
@@ -329,17 +318,10 @@ export class PlayScene extends BaseScene {
     if (headlineSize !== this.headlineSize) { this.headlineSize = headlineSize; this.headline.setFontSize(headlineSize); }
     this.headline.setAlpha(reveal * endReveal).setY(this.headlineY + (1 - reveal * endReveal) * 12 * this.uiScale);
     this.caption.setAlpha(endReveal);
-    if (this.controller?.phase === 'result' && !this.transition && now >= this.finishUnlock && !this.summaryShown) {
-      this.summaryShown = true;
-      this.replay = null;
-      this.changeHeadline(`${['One', 'Two', 'Three', 'Four', 'Five', 'Six'][SESSION.length - 1] ?? SESSION.length} small\nacts.`);
-      this.caption.setText('A little rhythm goes a long way.');
-      this.accuracy.setText(`${Math.round(sessionAccuracy(this.sessionResults))}% IN TIME`);
-      this.invitation.setText('TAP TO PLAY AGAIN');
-    }
+    if (this.controller?.phase === 'result' && !this.transition && now >= this.finishUnlock && !this.summaryShown) this.showSummary();
     if (this.debugMode) {
       const music = this.audio?.music;
-      this.debug.setText(`${this.definition.id} r${this.task.round + 1}t${this.task.task + 1} attempt ${this.attempts} · ${this.controller?.phase ?? 'idle'}\nvoices ${this.audio?.activeSources ?? 0} · handlers ${this.input.listenerCount(Phaser.Input.Events.POINTER_DOWN)} · objects ${this.children.length}\n${this.controller?.result?.accuracy.toFixed(0) ?? '—'}% · ${this.audio?.clock.mode ?? 'locked'} · ${this.game.loop.actualFps.toFixed(0)} fps\n${this.lastJudgement}\nstems ${music?.activeSources ?? 0} · run ${music?.playbackGeneration ?? 0} · loops ${music?.completedLoops ?? 0}\nstart ${music?.startTime?.toFixed(3) ?? '—'} · length ${music?.duration.toFixed(6) ?? '—'}\n${STEM_IDS.map(id => `${id[0]}:${music?.gain(id) ?? MUSIC.mix[id]}`).join(' ')}`);
+      this.debug.setText(`${this.definition.id} L${this.spec.level} t${this.taskIndex + 1}/${this.spec.tasks.length} ${this.task.bpm}bpm tier${this.task.tier} clear${this.spec.clearAccuracy} rate${music?.playbackRate ?? 1} attempt ${this.attempts} · ${this.controller?.phase ?? 'idle'}\nvoices ${this.audio?.activeSources ?? 0} · handlers ${this.input.listenerCount(Phaser.Input.Events.POINTER_DOWN)} · objects ${this.children.length}\n${this.controller?.result?.accuracy.toFixed(0) ?? '—'}% · ${this.audio?.clock.mode ?? 'locked'} · ${this.game.loop.actualFps.toFixed(0)} fps\n${this.lastJudgement}\nstems ${music?.activeSources ?? 0} · run ${music?.playbackGeneration ?? 0} · loops ${music?.completedLoops ?? 0}\nstart ${music?.startTime?.toFixed(3) ?? '—'} · length ${music?.duration.toFixed(6) ?? '—'}\n${STEM_IDS.map(id => `${id[0]}:${music?.gain(id) ?? MUSIC.mix[id]}`).join(' ')}`);
     }
   }
   private changeHeadline(text: string): void {
@@ -380,20 +362,49 @@ export class PlayScene extends BaseScene {
   private showResult(result: RoundResult): void {
     const strong = result.accuracy >= this.definition.successAccuracy;
     this.sequence!.complete(result.accuracy);
-    this.sessionResults[this.taskIndex] = result.accuracy;
+    this.results[this.taskIndex] = result.accuracy;
     const ending = this.sequence!.ending(this.controller!.plan!.end);
     const contact = ending.contact;
     this.vignette.finish(strong, contact);
     this.audio!.playFinish(contact, strong);
     this.finishUnlock = contact + this.definition.endingSec;
-    const next = TASKS[this.taskIndex + 1];
-    this.transition = next ? { ...ending, swapped: false, painter: this.task.closesRound ? this.definition.transition : null } : null;
+    const last = this.taskIndex >= this.spec.tasks.length - 1;
+    this.transition = last ? null : { ...ending, swapped: false };
+    if (last) this.audio!.music.setRate(1, ending.next); // back to the source tempo on the next downbeat
     const copy = strong ? this.definition.success : this.definition.rough;
     this.changeHeadline(copy[0]);
     this.caption.setText(copy[1]);
     this.accuracy.setText(this.debugMode ? `${Math.round(result.accuracy)}% IN TIME` : '');
     this.invitation.setText('');
     this.drawMarks();
+  }
+  private showSummary(): void {
+    this.summaryShown = true;
+    this.replay = null;
+    const accuracy = meanAccuracy(this.results);
+    const outcome = recordResult(loadProgress(), this.spec.level, accuracy);
+    this.levelCleared = outcome.cleared;
+    if (outcome.cleared) saveProgress(outcome.progress);
+    const stars = starsFor(accuracy, this.spec);
+    this.changeHeadline(outcome.cleared ? `Level ${this.spec.level}\ncleared.` : 'Not quite\nyet.');
+    this.caption.setText(outcome.cleared
+      ? (stars === 3 ? 'Every beat where it belongs.' : stars === 2 ? 'Steady hands.' : 'That will do nicely.')
+      : `${this.spec.clearAccuracy}% in time clears this one.`);
+    this.accuracy.setText(`${Math.round(accuracy)}% IN TIME`);
+    this.invitation.setText(outcome.cleared ? 'TAP TO CONTINUE' : 'TAP TO TRY AGAIN');
+    this.drawStars();
+  }
+  private drawStars(): void {
+    this.stars.clear();
+    if (!this.summaryShown) return;
+    const { safe } = this.viewport;
+    const s = this.uiScale;
+    const earned = starsFor(meanAccuracy(this.results), this.spec);
+    for (let k = 0; k < 3; k++) drawStar(this.stars, safe.centerX + (k - 1) * 46 * s, safe.bottom - 215 * s, 15 * s, this.definition.ink, k < earned, k < earned ? 1 : 0.35);
+  }
+  private leaveForMap(): void {
+    this.audio?.music.setRate(1, this.audio.context.currentTime);
+    this.scene.start(SceneKey.Map, { focus: this.levelCleared ? this.spec.level + 1 : this.spec.level });
   }
   private showPause(): void {
     this.vignette.pause();
