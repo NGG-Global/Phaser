@@ -8,6 +8,9 @@ import { easeOut } from './motion';
 
 export const GLASS = { wall: 0xe5dfe8, ink: 0x49394e, frame: 0x756278, blue: 0xa8ced4, light: 0xf9f1df, glove: 0xdc9775 };
 export const strokeProgress = (age: number): number => easeOut(age / 0.23);
+// Graphics re-tessellate every frame; ~400 grime marks at Phaser's default 32 segments were
+// the slice's heaviest per-frame JS cost. Eight segments are indistinguishable at this size.
+const GRIME_SEGMENTS = 8;
 
 /** All cleaning is presentation of existing outcomes; taps are never interpreted as swipes. */
 export class WindowCleaningVignette implements Vignette {
@@ -148,7 +151,7 @@ export class WindowCleaningVignette implements Vignette {
         const covered = lane % 2 ? x > 212 - 424 * p : x < -212 + 424 * p;
         const seed = (row * 43 + col * 29) % 19;
         const alpha = covered ? 0.02 : 0.17 + seed / 90;
-        g.fillStyle(seed % 2 ? 0x7c8e98 : 0xd5d2bd, alpha).fillEllipse(x + seed % 9 - 4, y + seed % 11 - 5, 31 + seed, 19 + seed % 13);
+        g.fillStyle(seed % 2 ? 0x7c8e98 : 0xd5d2bd, alpha).fillEllipse(x + seed % 9 - 4, y + seed % 11 - 5, 31 + seed, 19 + seed % 13, GRIME_SEGMENTS);
         if (seed < 5 && !covered) g.lineStyle(2, GLASS.ink, 0.12).lineBetween(x, y, x - 3, y + 26);
       }
     }

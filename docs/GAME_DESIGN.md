@@ -2,17 +2,25 @@
 
 ## Music integration update
 
-All three acts now share fixed configured 120 BPM and a four-stem backing composition. The original one-beat pickup is heard before the four-beat count-in; full-file loops preserve it. Music continues through the final summary; restart schedules all stems anew. Authored patterns and judgement are unchanged, while the old 86/96/104 tempo progression is inactive. Supplied metadata also mentions 121 BPM and needs confirmation—see [music notes](MUSIC.md). No dynamic tempo or gameplay-driven stem mixing is implemented.
+All rounds share the seven-stem composition at its measured 120 BPM. Each stem is normalized to an exact 60-bar loop whose origin is the first downbeat, so the count-in starts on the loop origin. Music continues through the final summary; restart schedules all stems anew. Authored patterns and judgement are unchanged, while the old 86/96/104 tempo progression is inactive. Supplied metadata also mentions 121 BPM and needs confirmation—see [music notes](MUSIC.md). No dynamic tempo or gameplay-driven stem mixing is implemented.
 
-## Current vertical slice: three small acts
+## Current vertical slice: three rounds of three tasks
 
-The slice is now one short finite session: Hammer result → impact-ring transition → Window result → squeegee transition → Bug result → minimal summary/restart. Each vignette gets one authored demonstration/response task, rather than the previous three tasks per vignette. Restart returns to Hammer. All performances continue to the ending; there are no lives, fail gates, or random patterns.
+The slice is one finite session that starts from a main menu: Hammer round (three tasks) → impact-ring transition → Window round (three tasks) → squeegee transition → Bug round (three tasks) → summary. Tasks inside a round hand over with the beat-aligned table slide; only round boundaries change vignette, and consecutive rounds never share one. Restart returns to the first task; MENU returns to the title. All performances continue to the ending; there are no lives, fail gates, or random patterns.
+
+| Round | Tasks | Lesson |
+| --- | --- | --- |
+| Hammer | `X X X -`, `X X - X`, `X - X X` | Steady quarter-note vocabulary, then rests inside the bar |
+| Window | `X - X - X - - X`, `X - X - - X X -`, `X - - X X - X -` (half-beat steps) | One offbeat per phrase, moving around the bar |
+| Bug | three eight-beat phrases mixing rests and offbeats | Two similar halves combine what came before |
+
+The earlier one-task-per-act table below is retained as history.
 
 | Act | Tempo | Phrase | Lesson |
 | --- | --- | --- | --- |
-| Hammer | 86 BPM | 4 beats; hits 0, 1, 2 | Steady quarter-note vocabulary |
-| Window | 96 BPM | 4 beats; hits 0, 1, 2, 3.5 | Familiar start, one offbeat ending |
-| Bug | 104 BPM | 8 beats; hits 0, 1, 2.5, 3, 4, 5, 6.5, 7 | Two similar halves combine rests and offbeats |
+| Hammer | music tempo | 4 beats; hits 0, 1, 2 | Steady quarter-note vocabulary |
+| Window | music tempo | 4 beats; hits 0, 1, 2, 3.5 | Familiar start, one offbeat ending |
+| Bug | music tempo | 8 beats; hits 0, 1, 2.5, 3, 4, 5, 6.5, 7 | Two similar halves combine rests and offbeats |
 
 Each act keeps four preparation beats and four handoff beats. Tempo changes only at the next act's prepared downbeat. The default session takes approximately 43 seconds including codas/transitions; it ends with the mean of the three existing weighted task accuracies, not a new scoring formula. Each timing window remains Perfect ±55 ms / Good ±130 ms. All neighboring targets are more than 260 ms apart.
 

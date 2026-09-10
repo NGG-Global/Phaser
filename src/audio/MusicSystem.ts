@@ -1,4 +1,4 @@
-import { MUSIC, STEM_IDS, pickupSeconds, type StemId } from '../config/music';
+import { MUSIC, STEM_IDS, loopSeconds, pickupSeconds, type StemId } from '../config/music';
 
 export type StemBuffers = Record<StemId, AudioBuffer>;
 export function validateStemBuffers(buffers: StemBuffers): number {
@@ -10,6 +10,24 @@ export function validateStemBuffers(buffers: StemBuffers): number {
     throw new Error(`Music stem duration mismatch. Files were not trimmed or stretched. ${details}`);
   }
   return first.duration;
+}
+
+/**
+ * Copies a decoded stem into an exact whole-bar loop buffer: the exported pre-roll
+ * before the first downbeat is dropped and the (silent) tail is padded or trimmed so
+ * the loop length is precisely `bars` bars. Native looping then keeps the bar grid
+ * aligned indefinitely instead of slipping by the export's rounding each cycle.
+ */
+export function normalizeLoop(context: BaseAudioContext, source: AudioBuffer): AudioBuffer {
+  const lead = Math.round(MUSIC.leadInSec * source.sampleRate);
+  const frames = Math.round(loopSeconds() * source.sampleRate);
+  if (source.length <= lead) throw new Error('Music stem is shorter than its lead-in.');
+  if (lead === 0 && source.length === frames) return source;
+  const target = context.createBuffer(source.numberOfChannels, frames, source.sampleRate);
+  for (let channel = 0; channel < source.numberOfChannels; channel++) {
+    target.copyToChannel(source.getChannelData(channel).subarray(lead, lead + frames), channel);
+  }
+  return target;
 }
 
 /** Four sample-synchronous full-file loops, on the existing AudioContext. */
@@ -59,7 +77,9 @@ export class MusicSystem {
       return [id, buffer] as const;
     })).then(entries => {
       if (this.disposed) throw new Error('Music was disposed during loading.');
-      const buffers = Object.fromEntries(entries) as StemBuffers;
+      const decoded = Object.fromEntries(entries) as StemBuffers;
+      validateStemBuffers(decoded);
+      const buffers = Object.fromEntries(STEM_IDS.map(id => [id, normalizeLoop(this.context, decoded[id])])) as StemBuffers;
       validateStemBuffers(buffers);
       this.buffers = buffers;
     }).catch((error: unknown) => {

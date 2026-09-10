@@ -39,15 +39,19 @@ export class RoundController {
     this.scheduler.schedule(this.plan);
     this.setPhase('prepare');
   }
-  private healthy(wallMs: number): boolean {
+  private healthy(now: number, wallMs: number): boolean {
     if (wallMs - this.lastPumpMs > RHYTHM.stallMs) {
+      // A stall that ends inside the count-in has hidden no demonstration beat and delayed
+      // no judgement; the scene switch and first heavy frames before a task land exactly
+      // here. A stall that reaches the demonstration or later invalidates the attempt.
+      if (this.plan && now < this.plan.demo) { this.lastPumpMs = wallMs; return true; }
       this.interrupt('Timing interrupted. Restart this round.');
       return false;
     }
     return true;
   }
   public tick(now: number, wallMs: number): void {
-    if (!this.active || !this.plan || !this.judge || !this.healthy(wallMs)) return;
+    if (!this.active || !this.plan || !this.judge || !this.healthy(now, wallMs)) return;
     this.lastPumpMs = wallMs;
     const plan = this.plan;
     this.setPhase(now < plan.demo ? 'prepare' : now < plan.handoff ? 'demonstrate' : now < plan.response ? 'handoff' : 'respond');
@@ -64,7 +68,7 @@ export class RoundController {
     }
   }
   public tap(inputSec: number, renderNow: number, wallMs: number): Judgement | null {
-    if (!this.active || !this.plan || !this.judge || !this.healthy(wallMs)) return null;
+    if (!this.active || !this.plan || !this.judge || !this.healthy(inputSec, wallMs)) return null;
     if (inputSec < this.plan.response - RHYTHM.goodMs / 1000 || inputSec > this.plan.end + RHYTHM.goodMs / 1000) return null;
     this.events.tap();
     this.sound.play(renderNow, 'action');

@@ -113,10 +113,12 @@ export class HammerNailVignette implements Vignette {
     this.wood.fillStyle(WORKSHOP.cream, 0.18).fillRect(-2500, 0, 5700, 3);
     this.wood.lineStyle(1.5, WORKSHOP.woodDark, 0.18);
     // Widely spaced growth lines, interrupted by a knot; baked geometry, no texture download.
+    // Graphics paths are re-stroked every frame, so the sample step is as coarse as the
+    // ~1160-unit wave allows before it reads as segments.
     for (let row = 0; row < 15; row++) {
       const y = 48 + row * 38;
       this.wood.beginPath();
-      for (let x = -900; x <= 1650; x += 15) {
+      for (let x = -900; x <= 1650; x += 45) {
         const wave = Math.sin(x / 185 + row * 0.65) * 8 + Math.exp(-(((x - 540) / 100) ** 2)) * (row % 2 ? 12 : -12);
         if (x === -900) this.wood.moveTo(x, y + wave); else this.wood.lineTo(x, y + wave);
       }

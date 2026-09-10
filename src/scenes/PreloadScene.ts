@@ -40,7 +40,7 @@ export class PreloadScene extends Phaser.Scene {
     // slow first paint never shows a blank canvas.
     hideBootOverlay();
 
-    this.scene.start(SceneKey.Play);
+    this.scene.start(SceneKey.Menu);
   }
 
   /**
