@@ -13,14 +13,26 @@ export function validateStemBuffers(buffers: StemBuffers): number {
 }
 
 /**
- * Copies a decoded stem into an exact whole-bar loop buffer: the exported pre-roll
- * before the first downbeat is dropped and the (silent) tail is padded or trimmed so
- * the loop length is precisely `bars` bars. Native looping then keeps the bar grid
- * aligned indefinitely instead of slipping by the export's rounding each cycle.
+ * First frame on which any channel exceeds the threshold: the reference stem's opening
+ * transient marks the first downbeat. Returns the fallback when nothing exceeds it, so a
+ * silent or missing reference cannot produce an absurd offset.
  */
-export function normalizeLoop(context: BaseAudioContext, source: AudioBuffer): AudioBuffer {
-  const lead = Math.round(MUSIC.leadInSec * source.sampleRate);
+export function detectLeadIn(reference: AudioBuffer, threshold: number, fallbackSec: number): number {
+  const channels = Array.from({ length: reference.numberOfChannels }, (_, c) => reference.getChannelData(c));
+  const limit = Math.min(reference.length, Math.round(reference.sampleRate * 2));
+  for (let i = 0; i < limit; i++) for (const data of channels) if (Math.abs(data[i]!) > threshold) return i;
+  return Math.round(fallbackSec * reference.sampleRate);
+}
+
+/**
+ * Copies a decoded stem into an exact whole-bar loop buffer: `lead` frames of exported
+ * pre-roll (and decoder delay) before the first downbeat are dropped and the (silent) tail
+ * is padded or trimmed so the loop length is precisely `bars` bars. Native looping then
+ * keeps the bar grid aligned indefinitely instead of slipping by the export's rounding.
+ */
+export function normalizeLoop(context: BaseAudioContext, source: AudioBuffer, lead: number): AudioBuffer {
   const frames = Math.round(loopSeconds() * source.sampleRate);
+  if (!Number.isInteger(lead) || lead < 0) throw new Error('Lead-in must be a whole number of frames.');
   if (source.length <= lead) throw new Error('Music stem is shorter than its lead-in.');
   if (lead === 0 && source.length === frames) return source;
   const target = context.createBuffer(source.numberOfChannels, frames, source.sampleRate);
@@ -41,6 +53,7 @@ export class MusicSystem {
   private abort: AbortController | null = null;
   private disposed = false;
   private origin: number | null = null;
+  private leadInFrames = 0;
   private generation = 0;
   public constructor(private readonly context: AudioContext, destination: AudioNode) {
     this.bus = context.createGain();
@@ -58,6 +71,8 @@ export class MusicSystem {
   public get startTime(): number | null { return this.origin; }
   public get downbeatTime(): number | null { return this.origin === null ? null : this.origin + pickupSeconds(MUSIC.sourceBpm, MUSIC.pickupBeats); }
   public get duration(): number { return this.buffers?.drums.duration ?? 0; }
+  /** Diagnostic: frames dropped before the first downbeat of the shipped decode. */
+  public get leadInSeconds(): number { return this.buffers ? this.leadInFrames / this.buffers.drums.sampleRate : 0; }
   public get playbackGeneration(): number { return this.generation; }
   /** Diagnostic only. Gameplay never uses file position or loop count as its clock. */
   public get completedLoops(): number { return this.origin === null ? 0 : Math.floor(Math.max(0, this.context.currentTime - this.origin) / this.duration); }
@@ -79,7 +94,9 @@ export class MusicSystem {
       if (this.disposed) throw new Error('Music was disposed during loading.');
       const decoded = Object.fromEntries(entries) as StemBuffers;
       validateStemBuffers(decoded);
-      const buffers = Object.fromEntries(STEM_IDS.map(id => [id, normalizeLoop(this.context, decoded[id])])) as StemBuffers;
+      const lead = detectLeadIn(decoded[MUSIC.leadIn.stem], MUSIC.leadIn.threshold, MUSIC.leadIn.fallbackSec);
+      const buffers = Object.fromEntries(STEM_IDS.map(id => [id, normalizeLoop(this.context, decoded[id], lead)])) as StemBuffers;
+      this.leadInFrames = lead;
       validateStemBuffers(buffers);
       this.buffers = buffers;
     }).catch((error: unknown) => {

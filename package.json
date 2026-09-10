@@ -12,15 +12,22 @@
     "test": "vitest run",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "preview:host": "vite preview --host"
+    "preview:host": "vite preview --host",
+    "music:encode": "node scripts/encode-music.mjs",
+    "android:sync": "npm run build && npx cap sync android",
+    "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
     "phaser": "^4.2.1"
   },
   "devDependencies": {
+    "@breezystack/lamejs": "^1.2.7",
+    "@capacitor/cli": "^8.5.1",
     "@types/node": "^26.5.0",
     "oxlint": "^1.82.0",
     "typescript": "^7.0.2",
