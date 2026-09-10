@@ -58,3 +58,23 @@ it('schedules hammer/coda sources at absolute times and cancels every voice on r
   for (const node of nodes.slice(3)) expect(node.stop).toHaveBeenCalledTimes(1);
   expect(close).toHaveBeenCalledTimes(1);
 });
+
+it('gives up on an unlock whose resume() never settles instead of waiting forever', async () => {
+  vi.useFakeTimers();
+  try {
+    vi.stubGlobal('AudioContext', class {
+      currentTime = 0;
+      state = 'suspended';
+      sampleRate = 8000;
+      destination = {};
+      close = vi.fn(() => Promise.resolve());
+      resume = vi.fn(() => new Promise<void>(() => { /* a blocked route never resolves */ }));
+      createGain() { return { gain: { value: 1 }, connect: vi.fn((target: object) => target), disconnect: vi.fn() }; }
+    });
+    const engine = new AudioEngine();
+    const unlock = engine.unlock();
+    const outcome = unlock.then(() => 'resolved', (error: Error) => error.message);
+    await vi.advanceTimersByTimeAsync(3500);
+    expect(await outcome).toMatch(/blocked/);
+  } finally { vi.useRealTimers(); }
+});

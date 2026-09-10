@@ -32,7 +32,7 @@ describe('synchronized stems', () => {
     await first;
     expect(fetcher).toHaveBeenCalledTimes(4);
     expect(context.decodeAudioData).toHaveBeenCalledTimes(4);
-    expect(system.start(12)).toBe(12.5);
+    expect(system.start(12)).toBeCloseTo(12 + pickupSeconds(MUSIC.sourceBpm, MUSIC.pickupBeats), 9);
     expect(nodes).toHaveLength(4);
     for (const node of nodes) {
       expect(node.start).toHaveBeenCalledExactlyOnceWith(12, 0);
@@ -97,10 +97,14 @@ describe('synchronized stems', () => {
     await expect(loading).rejects.toThrow(/disposed/);
     expect(system.ready).toBe(false); expect(nodes).toHaveLength(0);
   });
-  it('keeps pickup musical and does not require a whole-bar file loop', () => {
-    expect(pickupSeconds(120, 1)).toBe(0.5);
+  it('keeps the measured pickup musical and loops the stems on a whole bar', () => {
+    expect(pickupSeconds(MUSIC.sourceBpm, MUSIC.pickupBeats)).toBeCloseTo(0.248, 3);
     expect(pickupSeconds(100, 1)).toBe(0.6);
     const buffer = { length: 2475742, sampleRate: 48000, duration: 2475742 / 48000 } as AudioBuffer;
+    // 51.578 s at 121 BPM is 104.02 beats: 26 bars, within 8 ms. At 120 it would be 103.16.
+    const beats = buffer.duration * MUSIC.sourceBpm / 60;
+    expect(Math.abs(beats - Math.round(beats)) * 60 / MUSIC.sourceBpm).toBeLessThan(0.01);
+    expect(Math.round(beats) % MUSIC.beatsPerBar).toBe(0);
     expect(validateStemBuffers(Object.fromEntries(STEM_IDS.map(id => [id, buffer])) as StemBuffers)).toBe(buffer.duration);
   });
 });

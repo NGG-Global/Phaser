@@ -4,11 +4,13 @@
 
 Unmodified files: `bgm/0 Drums.wav`, `bgm/1 Bass.wav`, `bgm/2 Keyboard.wav`, `bgm/3 Synth.wav`. All are stereo 16-bit PCM at 48 kHz with 2,475,742 frames: **51.577958333 seconds**. Browser decoding also reported matching 51.577958-second buffers. SHA-256 checks of source and production assets matched for each file. No trimming, normalization, independent offsets or time stretching occurred.
 
-## Musical metadata caveat
+## Musical metadata (measured)
 
-`config/music.ts` follows the explicit requested model: `sourceBpm: 120`, `beatsPerBar: 4`, `pickupBeats: 1`. The request also names 121 BPM; this discrepancy remains unresolved. At 120 BPM the full files contain approximately 103.155917 quarter-note beats, not an integer number of bars. Do not claim that the gameplay bar grid remains aligned to the composition across loops until its tempo/arrangement metadata is confirmed. This does not affect alignment among stems, which share identical lengths and schedules.
+The tempo was previously configured as 120 BPM with a note that the composer had also said 121. Onset analysis of `0 Drums.wav` (2 ms RMS hops, comb-filter tempo scan from 110 to 130 BPM in 0.05 steps) settles it: **121 BPM** scores roughly ten times higher than 120 or any neighbour, and the 51.577958 s file is 104.016 beats at 121, i.e. 26 bars within 8 ms, so the file loops cleanly on a bar. At 120 it would be 103.16 beats and the count-in would drift 4 ms per beat, landing about half a beat off the drums before the third act. `config/music.ts` now records `sourceBpm: 121`, `pickupBeats: 0.5`.
 
-The first musical downbeat is `sharedStart + pickupBeats * 60 / sourceBpm`. At the current configuration it is half a second after playback starts, but no permanent 500 ms offset is stored. Source playback starts at zero and the pickup is audible. File-loop boundaries and musical bar boundaries are independent.
+The first beat lands about 0.248 s into the file, an eighth note after the opening drum hit; the harmonic stems enter one beat later. Bar phase (which of those beats is "one") is inferred from kick accents, which are strongest at beats 0, 2 and every eighth beat from 0.248 s, and from the drum pattern reading as `X X X -` per bar from there. This inference should be confirmed with the composer; if the downbeat is actually 0.744 s, change `pickupBeats` to 1.5. Either way the beat grid is the same, so the count-in stays on the beat.
+
+The first musical downbeat is `sharedStart + pickupBeats * 60 / sourceBpm`. Source playback starts at zero and the pickup is audible. File-loop boundaries and musical bar boundaries coincide to within 8 ms per loop at this tempo.
 
 ## Playback
 
@@ -16,7 +18,7 @@ The first musical downbeat is `sharedStart + pickupBeats * 60 / sourceBpm`. At t
 
 After a direct gesture resumes AudioContext, the scene awaits loading and rechecks cancellation before choosing one future start (context time + configured 200 ms lead). It creates all four BufferSourceNodes, then gives each exactly `start(sharedTime, 0)`. Every source has `loop = true`, `loopStart = 0`, `loopEnd = commonBuffer.duration`, and playback rate 1. Native Web Audio handles loops: no bar timers, boundary restarts or resynchronization.
 
-The gameplay count-in begins on the calculated first musical downbeat. All three acts use fixed configured 120 BPM; the previous 86/96/104 tempo ramp is inactive. Pattern progression remains, but no tempo progression or playback-rate control is implemented. Gameplay uses the existing AudioContext clock and absolute targets, never stem position or loop counters.
+The gameplay count-in begins on the calculated first musical downbeat. All three acts use the stems' 121 BPM; `SESSION` entries no longer carry a tempo of their own (the earlier 86/96/104 values were never played). Pattern progression remains, but no tempo progression or playback-rate control is implemented. Gameplay uses the existing AudioContext clock and absolute targets, never stem position or loop counters.
 
 ## Gains and cleanup
 
@@ -30,4 +32,4 @@ Tests cover atomic loading, shared starts, full-buffer loops, silent running/res
 
 Browser QA used the actual files: four active stems, matching decoded durations, unchanged playback generation/start across multiple complete loops, independent mute/restore, all-silent looping, and rapid session restarts returning to exactly four music sources. No console warnings/errors were observed. Build/source hashes match. Loop counters are schedule diagnostics, not acoustic phase measurements.
 
-Remaining risks: confirm 120 versus 121 BPM and loop arrangement; perform real listening checks for seams, relative loudness and clipping; test iOS/Android unlock, interruption and output routes. Four ~9.9 MB WAVs require ~39.6 MB transfer and ~79.2 MB decoded float PCM at 48 kHz stereo, plus decode overhead. Lower-memory devices need testing. Browser decoding may resample all files to the context rate; identical decoded lengths are checked, with no custom per-stem compensation.
+Remaining risks: confirm the bar phase (downbeat at 0.248 s or 0.744 s) with the composer; perform real listening checks for seams, relative loudness and clipping; test iOS/Android unlock, interruption and output routes. Four ~9.9 MB WAVs require ~39.6 MB transfer and ~79.2 MB decoded float PCM at 48 kHz stereo, plus decode overhead. Lower-memory devices need testing. Browser decoding may resample all files to the context rate; identical decoded lengths are checked, with no custom per-stem compensation.

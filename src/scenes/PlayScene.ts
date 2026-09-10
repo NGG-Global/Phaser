@@ -44,6 +44,7 @@ export class PlayScene extends BaseScene {
   private controlSize = 96;
   private uiScale = 1;
   private headlineY = 0;
+  private headlineSize = 0;
   private headlineAt = -Infinity;
   private outcomes: ('perfect' | 'good' | 'miss' | 'pending')[] = [];
   private sequence: TaskSequence | null = null;
@@ -99,7 +100,8 @@ export class PlayScene extends BaseScene {
     const top = safe.top;
     this.edition.setPosition(left, top + 47 * s).setFontSize(16 * s);
     this.headlineY = top + 135 * s;
-    this.headline.setPosition(left - 5 * s, this.headlineY).setFontSize(88 * s).setLineSpacing(-12 * s);
+    this.headlineSize = (this.controller?.active ? 48 : 88) * s;
+    this.headline.setPosition(left - 5 * s, this.headlineY).setFontSize(this.headlineSize).setLineSpacing(-12 * s);
     this.controlSize = Math.max(88 * s, 48 * this.viewport.unitScale);
     this.restart.setPosition(safe.centerX + 175 * s, top + 55 * s).setFontSize(36 * s);
     this.mute.setPosition(safe.centerX + 283 * s, top + 55 * s).setFontSize(32 * s);
@@ -308,7 +310,10 @@ export class PlayScene extends BaseScene {
     const playing = this.controller?.active;
     const endReveal = this.controller?.phase === 'result'
       ? easeOut((now - (this.finishUnlock - this.definition.endingSec) - 0.28) / 0.3) : 1;
-    this.headline.setFontSize((playing ? 48 : 88) * this.uiScale).setAlpha(reveal * endReveal).setY(this.headlineY + (1 - reveal * endReveal) * 12 * this.uiScale);
+    // setFontSize re-measures and re-rasterises the text canvas; only pay for it on change.
+    const headlineSize = (playing ? 48 : 88) * this.uiScale;
+    if (headlineSize !== this.headlineSize) { this.headlineSize = headlineSize; this.headline.setFontSize(headlineSize); }
+    this.headline.setAlpha(reveal * endReveal).setY(this.headlineY + (1 - reveal * endReveal) * 12 * this.uiScale);
     this.caption.setAlpha(endReveal);
     if (this.controller?.phase === 'result' && !this.transition && now >= this.finishUnlock && !this.summaryShown) {
       this.summaryShown = true;
@@ -378,7 +383,7 @@ export class PlayScene extends BaseScene {
   private showPause(): void {
     this.vignette.pause();
     this.changeHeadline('Take a\nbreath.');
-    this.caption.setText('We’ll start that one again.');
+    this.caption.setText('We’ll take it from the top.');
     this.invitation.setText('TAP TO RESUME');
   }
   private interrupt(): void {
@@ -390,11 +395,13 @@ export class PlayScene extends BaseScene {
     this.starting = false;
     this.taps.reset();
     const wasEnding = this.controller?.phase === 'result';
+    const wasRunning = this.controller !== null && this.controller.phase !== 'idle';
     this.controller?.interrupt('Paused');
     if (wasEnding || wasStarting) { this.controller?.dispose(); this.showPause(); }
     this.audio?.cancel();
     this.audio?.music.stop();
-    this.vignette.pause();
+    // Freezing the idle illustration would leave it stuck until the next round begins.
+    if (wasRunning || wasStarting) this.vignette.pause();
   }
   private readonly visibility = (): void => { if (document.hidden) this.interrupt(); };
   private readonly pageHide = (): void => { this.interrupt(); };

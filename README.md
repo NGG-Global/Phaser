@@ -1,10 +1,10 @@
 # Small Acts — a three-act rhythm game
 
-**Current music update:** four synchronized WAV stems play continuously, including through the session summary. All acts run at fixed configured 120 BPM; no music tempo progression is active. The one-beat pickup is retained and the first gameplay downbeat is calculated musically. Stem levels and URLs live in `src/config/music.ts`. DEV `?debug` adds stem mute/restore buttons and diagnostics. See [music implementation and metadata caveat](docs/MUSIC.md); the supplied 120/121 BPM discrepancy needs confirmation. Earlier tempo/session-duration notes below describe the music-free milestone.
+**Current music update:** four synchronized WAV stems play continuously, including through the session summary. All acts run at the stems' measured 121 BPM. The one-beat pickup is retained and the first gameplay downbeat is calculated musically. Stem levels and URLs live in `src/config/music.ts`. DEV `?debug` adds stem mute/restore buttons and diagnostics. See [music implementation and metadata caveat](docs/MUSIC.md); the supplied 120/121 BPM discrepancy needs confirmation. Earlier tempo/session-duration notes below describe the music-free milestone.
 
 The current vertical slice is a finite ~43-second session: **Hammer + Nail → Window Cleaning → Bug + Shoe → summary**. Tap anywhere to begin, watch each four-beat count-in/demonstration, then reproduce the rhythm with TAP. Each act has its own payoff and an action-inspired musical transition. The final summary shows average accuracy; tap to play again. ↻ always restarts the entire session; ♪ mutes sound.
 
-Authored progression lives in `src/game/session.ts`: steady taps at 86 BPM, an offbeat at 96 BPM, then an eight-beat phrase at 104 BPM. Vignette factories, sound sets, copy and transition painters live in `src/vignettes/registry.ts`. No random difficulty, swipe/hold input or music assets are added. See [vertical-slice notes](docs/VERTICAL_SLICE.md).
+Authored progression lives in `src/game/session.ts`: steady taps, an offbeat, then an eight-beat phrase, all at the music's tempo. Vignette factories, sound sets, copy and transition painters live in `src/vignettes/registry.ts`. No random difficulty, swipe/hold input or music assets are added. See [vertical-slice notes](docs/VERTICAL_SLICE.md).
 
 DEV `/?debug` includes Accurate, Good, Rough and Spam replay, all through Phaser pointer input. `?debug&vignette=bug` previews the final act only. Normal production always starts with Hammer.
 

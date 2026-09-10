@@ -4,6 +4,8 @@ import type { SoundKind, SoundSink } from '../rhythm/RhythmScheduler';
 
 const TONE = { count: 440, ready: 660, action: 880 } as const;
 const DURATION = 0.065;
+/** A resume() that never settles (no gesture credit, blocked route) must not leave the scene waiting forever. */
+const UNLOCK_TIMEOUT_MS = 3000;
 export interface VignetteSounds { readonly action: AudioBuffer; readonly success: AudioBuffer; readonly rough: AudioBuffer }
 
 /** Tiny synthesized clicks keep the prototype independent of asset downloads. */
@@ -23,8 +25,14 @@ export class AudioEngine implements SoundSink {
   public setSounds(sounds: VignetteSounds): void { this.cancel(); this.sounds = sounds; }
   public async unlock(): Promise<void> {
     if (this.disposed) throw new Error('Audio has been disposed.');
-    await this.context.resume();
-    if (this.context.state !== 'running') throw new Error('Sound is blocked. Tap Start again.');
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        this.context.resume(),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Sound is blocked. Tap to try again.')), UNLOCK_TIMEOUT_MS); }),
+      ]);
+    } finally { clearTimeout(timer); }
+    if (this.context.state !== 'running') throw new Error('Sound is blocked. Tap to try again.');
     this.clock.reset();
   }
   public get activeSources(): number { return this.sources.size; }

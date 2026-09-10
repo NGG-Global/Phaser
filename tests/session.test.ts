@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SESSION, sessionAccuracy } from '../src/game/session';
+import { MUSIC } from '../src/config/music';
+import { RHYTHM } from '../src/config/rhythm';
 import { RoundController, type RoundEvents } from '../src/game/RoundController';
 import { TaskSequence } from '../src/game/TaskSequence';
 import { synthesizeStomp } from '../src/audio/bugSounds';
@@ -12,12 +14,16 @@ describe('authored three-act session', () => {
     expect(shoeLift(0.315)).toBeCloseTo(245);
     expect(shoeLift(100)).toBe(245);
   });
-  it('teaches steady taps, one offbeat, then a longer phrase without overlapping hit windows', () => {
+  it('teaches steady taps, one offbeat, then a longer phrase at the music tempo', () => {
     expect(SESSION.map(a => a.vignette)).toEqual(['hammer', 'window', 'bug']);
-    expect(SESSION.map(a => a.bpm)).toEqual([86, 96, 104]);
     expect(SESSION.map(a => a.pattern.lengthBeats)).toEqual([4, 4, 8]);
+    const beat = 60 / MUSIC.sourceBpm;
     for (const act of SESSION) for (let i = 1; i < act.pattern.hits.length; i++) {
-      expect((act.pattern.hits[i]! - act.pattern.hits[i - 1]!) * 60 / act.bpm).toBeGreaterThan(0.26);
+      const gap = (act.pattern.hits[i]! - act.pattern.hits[i - 1]!) * beat;
+      // Adjacent half beats (about 248 ms) are closer than two Good windows, so the
+      // judge's nearest-target cells decide those; Perfect windows must never overlap.
+      expect(gap).toBeGreaterThan(2 * RHYTHM.perfectMs / 1000);
+      expect(gap).toBeGreaterThan(RHYTHM.goodMs / 1000);
     }
   });
   it.each([0, 0.08, 0.24, -1])('runs three complete sessions with offset %s and ignores non-response input', offset => {
@@ -28,7 +34,7 @@ describe('authored three-act session', () => {
       let origin = 0.2;
       const accuracies: number[] = [];
       for (const act of SESSION) {
-        controller.start(act.pattern, act.bpm, origin - 0.2, (origin - 0.2) * 1000, origin);
+        controller.start(act.pattern, MUSIC.sourceBpm, origin - 0.2, (origin - 0.2) * 1000, origin);
         const plan = controller.plan!;
         let target = 0;
         for (let now = origin; now <= plan.end + 0.22; now += 0.01) {
@@ -42,7 +48,7 @@ describe('authored three-act session', () => {
         expect(controller.result).not.toBeNull();
         expect(controller.tap(plan.end + 0.5, plan.end + 0.5, (plan.end + 0.5) * 1000)).toBeNull();
         accuracies.push(controller.result!.accuracy);
-        origin = new TaskSequence(act.bpm, origin).ending(plan.end).next;
+        origin = new TaskSequence(MUSIC.sourceBpm, origin).ending(plan.end).next;
       }
       if (offset === 0.24) expect(sessionAccuracy(accuracies)).toBeLessThan(15); // A late hit can coincide with a later offbeat.
       else expect(sessionAccuracy(accuracies)).toBe(offset === 0 ? 100 : offset === 0.08 ? 70 : 0);

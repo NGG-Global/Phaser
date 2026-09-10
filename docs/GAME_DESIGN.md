@@ -2,7 +2,7 @@
 
 ## Music integration update
 
-All three acts now share fixed configured 120 BPM and a four-stem backing composition. The original one-beat pickup is heard before the four-beat count-in; full-file loops preserve it. Music continues through the final summary; restart schedules all stems anew. Authored patterns and judgement are unchanged, while the old 86/96/104 tempo progression is inactive. Supplied metadata also mentions 121 BPM and needs confirmation—see [music notes](MUSIC.md). No dynamic tempo or gameplay-driven stem mixing is implemented.
+All three acts share the stems' measured 121 BPM and a four-stem backing composition. The half-beat drum pickup is heard before the four-beat count-in; full-file loops preserve it. Music continues through the final summary; restart schedules all stems anew. Authored patterns and judgement are unchanged, while the old 86/96/104 tempo progression is inactive. Supplied metadata also mentions 121 BPM and needs confirmation—see [music notes](MUSIC.md). No dynamic tempo or gameplay-driven stem mixing is implemented.
 
 ## Current vertical slice: three small acts
 
@@ -10,9 +10,9 @@ The slice is now one short finite session: Hammer result → impact-ring transit
 
 | Act | Tempo | Phrase | Lesson |
 | --- | --- | --- | --- |
-| Hammer | 86 BPM | 4 beats; hits 0, 1, 2 | Steady quarter-note vocabulary |
-| Window | 96 BPM | 4 beats; hits 0, 1, 2, 3.5 | Familiar start, one offbeat ending |
-| Bug | 104 BPM | 8 beats; hits 0, 1, 2.5, 3, 4, 5, 6.5, 7 | Two similar halves combine rests and offbeats |
+| Hammer | music tempo | 4 beats; hits 0, 1, 2 | Steady quarter-note vocabulary |
+| Window | music tempo | 4 beats; hits 0, 1, 2, 3.5 | Familiar start, one offbeat ending |
+| Bug | music tempo | 8 beats; hits 0, 1, 2.5, 3, 4, 5, 6.5, 7 | Two similar halves combine rests and offbeats |
 
 Each act keeps four preparation beats and four handoff beats. Tempo changes only at the next act's prepared downbeat. The default session takes approximately 43 seconds including codas/transitions; it ends with the mean of the three existing weighted task accuracies, not a new scoring formula. Each timing window remains Perfect ±55 ms / Good ±130 ms. All neighboring targets are more than 260 ms apart.
 
