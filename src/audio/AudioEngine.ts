@@ -6,7 +6,16 @@ const TONE = { count: 440, ready: 660, action: 880 } as const;
 const DURATION = 0.065;
 /** A resume() that never settles (no gesture credit, blocked route) must not leave the scene waiting forever. */
 const UNLOCK_TIMEOUT_MS = 3000;
-export interface VignetteSounds { readonly action: AudioBuffer; readonly success: AudioBuffer; readonly rough: AudioBuffer }
+export interface VignetteSounds {
+  readonly action: AudioBuffer;
+  readonly success: AudioBuffer;
+  readonly rough: AudioBuffer;
+  /** Optional judgement accents. The action sound is scheduled before the tap is
+      graded, so a reaction to the grade needs its own voice. Absent slots stay silent. */
+  readonly scrape?: AudioBuffer;
+  readonly judder?: AudioBuffer;
+}
+export type AccentKind = 'scrape' | 'judder';
 
 /** Tiny synthesized clicks keep the prototype independent of asset downloads. */
 export class AudioEngine implements SoundSink {
@@ -55,6 +64,14 @@ export class AudioEngine implements SoundSink {
   /** A non-scoring coda, scheduled by presentation only after the round is resolved. */
   public playFinish(time: number, successful: boolean): void {
     if (this.sounds) this.playBuffer(time, successful ? this.sounds.success : this.sounds.rough, 0.8);
+  }
+  /**
+   * A reaction to a grade the judge has already returned. It sits under the action
+   * sound rather than replacing it, and no-ops for a sound set that declares neither.
+   */
+  public playAccent(time: number, kind: AccentKind): void {
+    const buffer = this.sounds?.[kind];
+    if (buffer) this.playBuffer(time, buffer, 0.5);
   }
   private playBuffer(time: number, buffer: AudioBuffer, gain: number): void {
     if (this.disposed) return;

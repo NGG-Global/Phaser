@@ -339,6 +339,10 @@ export class PlayScene extends BaseScene {
   private showJudgement(result: Judgement): void {
     this.lastJudgement = `${result.kind} ${result.grade} ${result.deltaMs?.toFixed(0) ?? '—'} ms`;
     this.vignette.onAccuracy(result, this.now());
+    // The action sound is scheduled before the tap is graded, so a reaction to the
+    // grade needs its own voice. Sound sets that declare neither accent stay silent.
+    if (result.kind === 'extra') this.audio?.playAccent(this.now(), 'scrape');
+    else if (result.kind === 'omission') this.audio?.playAccent(this.now(), 'judder');
     if (result.index !== null) this.outcomes[result.index] = result.grade === 'Perfect' ? 'perfect' : result.grade === 'Good' ? 'good' : 'miss';
     this.drawMarks();
   }

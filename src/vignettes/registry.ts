@@ -5,6 +5,8 @@ import { WindowCleaningVignette, GLASS } from './WindowCleaningVignette';
 import type { VignetteDefinition } from './Vignette';
 import { BugShoeVignette, GARDEN } from './BugShoeVignette';
 import { createBugSounds } from '@/audio/bugSounds';
+import { SawTimberVignette, TIMBER } from './SawTimberVignette';
+import { createSawSounds } from '@/audio/sawSounds';
 
 export const VIGNETTES: readonly VignetteDefinition[] = [
   {
@@ -25,5 +27,11 @@ export const VIGNETTES: readonly VignetteDefinition[] = [
     success: ['New\npassenger.', 'Small feet. Big personality.'], rough: ['Missed\nme.', 'A very determined little dot.'],
     endingSec: 1.35, successAccuracy: 70,
     create: scene => new BugShoeVignette(scene), sounds: createBugSounds,
+  },
+  {
+    id: 'saw', title: 'Saw & timber', intro: 'Follow\nthe line.', ink: TIMBER.ink,
+    success: ['Two planks\nnow.', 'Straight through, first time.'], rough: ['Nearly\nthrough.', 'It let go in its own time.'],
+    endingSec: 1.35, successAccuracy: 70,
+    create: scene => new SawTimberVignette(scene), sounds: createSawSounds,
   },
 ];
