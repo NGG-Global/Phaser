@@ -1,4 +1,4 @@
-# Synchronized composition stems
+# Music: one premixed loop from seven composition stems
 
 ## Files and inspection
 
@@ -12,34 +12,105 @@ The delivery note said the music begins on the first beat at second 0 and loops 
 - **Lead-in 0.156 s.** Drums, percussion and keyboard all first exceed 1% of full scale between 0.156 and 0.158 s; the first 156 ms hold only dither-level noise. The first downbeat is therefore ~156 ms into the file, not at zero. Bass enters at 16.1 s, synth 10.4 s, brass 44.4 s, guitar 67.6 s.
 - **Loop is 75 ms short of 60 bars.** 119.925 s is 239.85 beats at 120 BPM; 60 bars would be 120.000 s. Looping the raw file would slip the grid by 75 ms every cycle, and the signal ends at 119.89 s, so the tail is already silent.
 
-`MusicSystem.normalizeLoop()` therefore copies each decoded stem into an exact 120.000 s buffer: it drops the first `leadInSec` and pads the silent tail to `bars × beatsPerBar` beats. Beat 0 of the loop is the first downbeat, so `pickupBeats` is 0 and the count-in begins on the loop origin. The gameplay grid and the file loop then stay aligned indefinitely. Bar phase (which beat is "one") assumes the first audible beat is a downbeat; confirm with the composer.
+`MusicSystem.normalizeLoop()` therefore copies the decoded track into an exact 120.000 s buffer: it drops the detected lead-in and pads the silent tail to `bars × beatsPerBar` beats. Beat 0 of the loop is the first downbeat, so `pickupBeats` is 0 and the count-in begins on the loop origin. The gameplay grid and the file loop then stay aligned indefinitely. Bar phase (which beat is "one") assumes the first audible beat is a downbeat; confirm with the composer.
 
-## Shipped format: MP3 from WAV masters
+## Shipped format: one premixed MP3 from the WAV masters
 
-The WAVs are 161 MB and are kept only as masters. `npm run music:encode` (`scripts/encode-music.mjs`, pure-JavaScript LAME at 160 kb/s joint stereo) writes `bgm/mp3/*.mp3`, about 2.4 MB each, 17 MB total; `config/music.ts` points at those, so the web bundle and the Android APK carry only the MP3s. Re-run it whenever a WAV changes.
+The WAVs are 161 MB and are kept only as masters. `npm run music:encode`
+(`scripts/encode-music.mjs`, pure-JavaScript LAME at 160 kb/s joint stereo) sums the seven
+masters at the `MIX` weights and writes one stereo track, `bgm/mix/tiny-tempo.mp3`, 2.40 MB.
+`config/music.ts` points at that file, so the web bundle and the Android APK carry one
+music asset instead of seven. Pass `--stems` to also write `bgm/mp3/*.mp3`, which is what a
+future dynamic mix would need; nothing loads them today. Re-run the script whenever a WAV
+changes, and re-measure the lead-in afterwards.
 
-MP3 decoding is not sample-exact: Chromium's decode of every stem is 5,757,696 frames (119.952 s) and cross-correlation against the WAV shows the audio starting **1105 frames (23.02 ms) later** than in the file, the usual encoder-plus-decoder delay. Other decoders may trim that delay using the LAME header. The lead-in is therefore not a constant: at load, `detectLeadIn` finds the first frame of the drum stem above 1% full scale (the opening transient is sharp and preceded by dither-level noise), and every stem is normalized with that frame count. Measured in Chromium it lands within 2 ms of the true onset (0.1808 s versus 0.156 + 0.023). `fallbackSec` covers a silent or missing reference. Peak levels come out about 6% lower than the WAVs; no gain compensation is applied.
+The premix is summed and scaled in float, never in 16-bit: the seven stems together peak at
+**1.3658 (+2.71 dBFS)**, so a 16-bit sum would clip irreversibly. The script normalises to
+0.97 peak — a factor of 0.710183 — and reports the bus gain that gives it back.
+`MUSIC.masterGain` is therefore 0.5632 (0.4 / 0.710183), which puts the track at exactly the
+level the seven stems played at while keeping the extra signal-to-noise the normalisation
+bought through the lossy encode.
 
-Decoded memory is unchanged by compression: seven stereo 120 s buffers are about 322 MB of float PCM (transiently more while normalizing). That remains a memory-pressure risk on low-end handsets and the reason to consider a premix or a load-time mixdown if device testing shows trouble.
+Why one file: nothing mixes stems at runtime. `MUSIC.mix` was all 1 and `setGain` was
+reachable only from the DEV replay panel, so seven decodes bought nothing and cost a great
+deal — see the memory note below.
+
+MP3 decoding is not sample-exact. Chromium decodes the premix to 5,289,883 frames
+(119.951995 s) at its own 44.1 kHz context rate, with the usual encoder-plus-decoder delay
+ahead of the music; other decoders may trim that delay using the LAME header. The lead-in is
+therefore detected at load rather than configured: `detectLeadIn` returns the first frame
+above `threshold`, and `normalizeLoop` drops exactly that many frames.
+
+`threshold` is **0.05 (-26 dBFS)**, not the -40 dBFS this carried while the drum stem was the
+reference. MP3 pre-echo smears energy backwards into the granule before a transient, and
+-40 dBFS is exactly that level: measured in Chromium, the drum stem and the premix disagree
+by 64 frames (1.45 ms) at -40 dBFS but by only 4 frames (0.09 ms) at -26 dBFS. The opening
+drum hit rises from -26 to -14 dBFS within 1 ms, so the higher threshold still lands on the
+attack. `detectLeadIn` also rejects a crossing outside `minSec`-`maxSec` (0.05-0.5 s) and
+falls back: a silent head, a wrong file or a hit later in the opening bar would otherwise
+shift the beat grid against the music permanently, with no resync. It does **not** catch a
+trigger one granule early, which stays inside that range — the threshold is what handles
+that case.
+
+Measured in the running game: detected lead **0.181814 s** (8018 frames at 44.1 kHz), loop
+length exactly 120.000000 s, one active source. Against the seven-stem build, which detected
+7973 frames at -40 dBFS on the drum stem, the music now sits **1.02 ms later** relative to
+the beat grid. That is 0.4% of a half beat at 120 BPM and 0.8% of the Good window's
+half-width; it has not been checked by ear.
+
+Decoded memory, by arithmetic rather than measurement: one stereo 120 s buffer at 44.1 kHz
+is about 42 MB of float PCM, and `normalizeLoop` holds the decode and the copy at once, so
+roughly 85 MB transiently. The seven-stem load was seven times that — about 296 MB steady
+and 592 MB transient, allocated during the PLAY tap before the player had seen anything.
+Download went from 16.8 MB to 2.4 MB, and `dist/` from 28 MB to 3.8 MB with sourcemaps off.
 
 ## Playback
 
-`MusicSystem` replaces the old single-buffer `MusicBed`. It shares `AudioEngine.context` and master output/mute, never creating another live context. `load()` fetches/decodes all stems concurrently and commits them atomically after validation. Concurrent callers share one promise; decoded buffers are cached. Failure or a decoded frame-count/sample-rate mismatch rejects playback with a visible retry error. No partial set starts. Disposal aborts downloads and prevents late decodes from committing.
+`MusicSystem` shares `AudioEngine.context` and master output/mute, never creating another
+live context. `load()` fetches and decodes the one track and commits it atomically after
+validation. Concurrent callers share one promise; the decoded buffer is cached. A failed
+fetch, an empty decode or an invalid sample rate rejects playback with a visible retry
+error, and nothing partial starts. Disposal aborts the download and prevents a late decode
+from committing.
 
-After the menu's PLAY gesture resumes the shared AudioContext and awaits loading, the play scene starts and schedules one future start (context time + configured 200 ms lead). It creates all seven BufferSourceNodes from the normalized loop buffers, then gives each exactly `start(sharedTime, 0)`. Every source has `loop = true`, `loopStart = 0`, `loopEnd = 120`, and playback rate 1. Native Web Audio handles loops: no bar timers, boundary restarts or resynchronization.
+After the menu's PLAY gesture resumes the shared AudioContext and awaits loading, the play
+scene schedules one future start (context time + the configured 200 ms lead) with
+`start(sharedTime, 0)`, `loop = true`, `loopStart = 0`, `loopEnd = 120` and playback rate 1.
+Native Web Audio handles looping: no bar timers, boundary restarts or resynchronization.
 
-The gameplay count-in begins on the loop origin, which is the first musical downbeat. Every task in every round uses the stems' 120 BPM; rounds and tasks carry no tempo of their own. No tempo progression or playback-rate control is implemented.
+The gameplay count-in begins on the loop origin, which is the first musical downbeat. The
+track is authored at 120 BPM; each level starts there and `setRate` ramps the playback rate
+on a task downbeat as the level's tempo curve rises, up to +25%. Pitch rises with tempo,
+which is why the level curve caps there.
 
-## Gains and cleanup
+## Gain and cleanup
 
-The delivered stems are balanced against each other, so every stem gain starts at 1.0. Each stem feeds its own GainNode, then a music bus at 0.4 for SFX headroom, then master output. `setGain(id, value)` validates 0–1 and ramps over 25 ms. Zero gain leaves the source running silently. Global mute likewise changes only gain. Stem gain choices persist across session restarts.
+One GainNode carries the whole track at `MUSIC.masterGain`, feeding master output. `setGain`
+validates 0-1 and ramps over 25 ms; zero gain leaves the source running silently, and global
+mute likewise changes only gain. There is no per-stem control any more, and no player-facing
+mixer — the DEV replay panel has a single music toggle.
 
-Music continues through task slides, vignette changes, the final summary and the return to the menu. Task SFX cancellation/profile changes do not touch it. Explicit session restart stops/disconnects all four old sources and schedules four fresh sources using cached buffers. Background interruption/audio suspension stops music alongside the attempt; resume needs a fresh gesture/count-in. Disposal stops sources, disconnects gains and releases buffers. No player-facing mixer was added; individual controls are available through the API and DEV panel.
+Music continues through task slides, vignette changes, the final summary and the return to
+the menu. Task SFX cancellation and profile changes do not touch it. An explicit session
+restart stops and disconnects the old source and schedules a fresh one from the cached
+buffer. Background interruption or audio suspension stops music alongside the attempt;
+resuming needs a fresh gesture and count-in. Disposal stops the source, disconnects the
+gain and releases the buffer.
 
 ## Validation and risks
 
-Tests cover atomic loading, shared starts, full-buffer loops, silent running/restoration, repeated loops without source creation, restart/disposal, failed-load retry, disposal during loading, invalid starts/gains, one-frame mismatch rejection and musical pickup calculation. Audio integration tests verify task cancellation cannot stop music.
+`tests/music.test.ts` covers a single atomic load, the full-buffer loop, silent running and
+restoration, repeated loops without source creation, restart and disposal, failed-load
+retry, disposal during loading, invalid starts and gains, lead-in detection including both
+out-of-range cases, whole-bar normalisation, and the musical pickup calculation.
+`tests/audio.test.ts` verifies that task SFX cancellation cannot stop music.
 
-Browser QA used the actual files: four active stems, matching decoded durations, unchanged playback generation/start across multiple complete loops, independent mute/restore, all-silent looping, and rapid session restarts returning to exactly four music sources. No console warnings/errors were observed. Build/source hashes match. Loop counters are schedule diagnostics, not acoustic phase measurements.
+Browser QA used the actual file, driven in headless Chromium at 393x851: one active source,
+loop length exactly 120.000000 s, detected lead 0.181814 s, bus gain 0.5632, unchanged
+across task transitions and round restarts, with no console errors and no failed requests.
 
-Remaining risks: confirm the bar phase with the composer; verify the detected lead-in and the loop seam by ear on Android and iOS decoders; watch decoded-PCM memory on low-end devices (see Shipped format); perform real listening checks for the padded loop seam, relative loudness and clipping; test iOS/Android unlock, interruption and output routes.
+Remaining risks, none of which a browser can settle: confirm the bar phase with the
+composer; verify the detected lead-in and the loop seam by ear on Android and iOS decoders,
+including whether either trims the encoder delay via the LAME header; check the premix's
+relative loudness and headroom against the SFX by ear now that `masterGain` compensates for
+normalisation; and test iOS/Android unlock, interruption and output routing.

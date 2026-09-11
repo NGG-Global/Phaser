@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import type { AudioEngine } from '@/audio/AudioEngine';
 import { sharedAudio } from '@/audio/sharedAudio';
-import { MUSIC, STEM_IDS } from '@/config/music';
+import { MUSIC } from '@/config/music';
 import { TaskSequence } from '@/game/TaskSequence';
 import { SceneKey } from '@/config/scenes';
 import { RHYTHM } from '@/config/rhythm';
@@ -265,18 +265,16 @@ export class PlayScene extends BaseScene {
       button.addEventListener('click', () => { void this.runReplay(mode === 'Accurate replay' ? 0 : mode === 'Good replay' ? 0.08 : mode === 'Spam replay' ? -1 : 0.24); });
       panel.appendChild(button);
     }
-    for (const id of STEM_IDS) {
-      const button = document.createElement('button');
-      button.textContent = id;
-      button.style.cssText = 'padding:6px;font:11px monospace';
-      button.addEventListener('click', () => {
-        const music = this.audio?.music;
-        if (!music) return;
-        music.setGain(id, music.gain(id) === 0 ? MUSIC.mix[id] : 0);
-        button.style.opacity = music.gain(id) === 0 ? '0.45' : '1';
-      });
-      panel.appendChild(button);
-    }
+    const mute = document.createElement('button');
+    mute.textContent = 'music';
+    mute.style.cssText = 'padding:6px;font:11px monospace';
+    mute.addEventListener('click', () => {
+      const music = this.audio?.music;
+      if (!music) return;
+      music.setGain(music.gain === 0 ? MUSIC.masterGain : 0);
+      mute.style.opacity = music.gain === 0 ? '0.45' : '1';
+    });
+    panel.appendChild(mute);
     document.body.appendChild(panel);
     this.replayPanel = panel;
   }
@@ -326,7 +324,7 @@ export class PlayScene extends BaseScene {
     if (this.controller?.phase === 'result' && !this.transition && now >= this.finishUnlock && !this.summaryShown) this.showSummary();
     if (this.debugMode) {
       const music = this.audio?.music;
-      this.debug.setText(`${this.definition.id} L${this.spec.level} t${this.taskIndex + 1}/${this.spec.tasks.length} ${this.task.bpm}bpm tier${this.task.tier} clear${this.spec.clearAccuracy} rate${music?.playbackRate ?? 1} attempt ${this.attempts} · ${this.controller?.phase ?? 'idle'}\nvoices ${this.audio?.activeSources ?? 0} · handlers ${this.input.listenerCount(Phaser.Input.Events.POINTER_DOWN)} · objects ${this.children.length}\n${this.controller?.result?.accuracy.toFixed(0) ?? '—'}% · ${this.audio?.clock.mode ?? 'locked'} · ${this.game.loop.actualFps.toFixed(0)} fps\n${this.lastJudgement}\nstems ${music?.activeSources ?? 0} · run ${music?.playbackGeneration ?? 0} · loops ${music?.completedLoops ?? 0}\nstart ${music?.startTime?.toFixed(3) ?? '—'} · length ${music?.duration.toFixed(6) ?? '—'}\n${STEM_IDS.map(id => `${id[0]}:${music?.gain(id) ?? MUSIC.mix[id]}`).join(' ')}`);
+      this.debug.setText(`${this.definition.id} L${this.spec.level} t${this.taskIndex + 1}/${this.spec.tasks.length} ${this.task.bpm}bpm tier${this.task.tier} clear${this.spec.clearAccuracy} rate${music?.playbackRate ?? 1} attempt ${this.attempts} · ${this.controller?.phase ?? 'idle'}\nvoices ${this.audio?.activeSources ?? 0} · handlers ${this.input.listenerCount(Phaser.Input.Events.POINTER_DOWN)} · objects ${this.children.length}\n${this.controller?.result?.accuracy.toFixed(0) ?? '—'}% · ${this.audio?.clock.mode ?? 'locked'} · ${this.game.loop.actualFps.toFixed(0)} fps\n${this.lastJudgement}\nmusic ${music?.activeSources ?? 0} · run ${music?.playbackGeneration ?? 0} · loops ${music?.completedLoops ?? 0}\nstart ${music?.startTime?.toFixed(3) ?? '—'} · length ${music?.duration.toFixed(6) ?? '—'}\ngain ${(music?.gain ?? MUSIC.masterGain).toFixed(3)} · lead ${music?.leadInSeconds.toFixed(3) ?? '—'}`);
     }
   }
   private changeHeadline(text: string): void {
