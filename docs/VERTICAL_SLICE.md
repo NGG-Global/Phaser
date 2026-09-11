@@ -2,7 +2,7 @@
 
 ## Scope and content
 
-Menu → map → level → result → map. A level is one vignette and several tasks (see [Game design](GAME_DESIGN.md) for the progression curve); tasks hand over with the two-beat table slide, and the music's playback rate steps up on the same downbeat that starts the next task. The result screen records the level (`game/progress.ts`, localStorage), shows stars and either TAP TO CONTINUE back to the map or TAP TO TRY AGAIN. ↻ restarts the level; MAP leaves for the map; both reset the music to its source tempo. There is no infinite difficulty escalation, randomness or new input mechanic.
+Menu → map → level → result → map. A level is one vignette and several tasks (see [Game design](GAME_DESIGN.md) for the progression curve); tasks hand over with the two-beat table slide, and the music's playback rate steps up on the same downbeat that starts the next task. The level is recorded (`game/progress.ts`, localStorage) the instant the last task resolves, not when the result screen draws — backgrounding the app during the coda used to discard a clear. The result screen shows stars and either TAP TO CONTINUE back to the map or TAP TO TRY AGAIN. ↻ restarts the level; MAP leaves for the map; both reset the music to its source tempo. There is no infinite difficulty escalation, randomness or new input mechanic.
 
 Progression is `game/levels.ts`: `levelSpec(level)` derives tasks, tempos, tier and clear bar from one difficulty curve, deterministically per level. `MapScene` draws the road from that and from saved progress and never decides difficulty itself. Adjacent half beats are 250 ms apart, closer than two 130 ms Good windows, so the judge's fixed nearest-target cells (midpoint tie to the earlier target) decide those, and Perfect windows never overlap. Four-beat count-ins and handoffs remain intact. Strong/rough outcomes are visual interpretations of the original score, not another judge.
 
@@ -53,7 +53,7 @@ Vignettes no longer swap inside a session (each level is one vignette and the ma
 
 ## Verification
 
-Final checks: typecheck, lint, all 65 tests and the production build pass. A no-input browser session also completed at 0%; repeated restarts during the first transition returned to Hammer without stale scene or sound activity.
+Final checks: typecheck, lint, the full test suite and the production build pass. A no-input browser session also completed at 0%; repeated restarts during the first transition returned to Hammer without stale scene or sound activity.
 
 Automated coverage includes authored ordering/tempos/lengths, non-overlapping hit windows, three repeated complete sessions at accurate/Good/late/spam input, rejection of demonstration and transition input, cartoon contact/recovery curves, and finite bounded sound buffers. The full suite also retains clock, input, source cancellation, pattern, judgement and lifecycle tests.
 

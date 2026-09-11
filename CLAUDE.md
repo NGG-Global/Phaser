@@ -3,31 +3,53 @@
 ## Current state
 
 Boot → Preload → `MenuScene` → `MapScene` (endless scrollable road, ten-level
-areas) → `PlayScene` for one level → back to the map. `src/game/levels.ts`
-derives every level (tasks, per-task tempo ramp from 120 BPM, pattern tier,
-clear bar, stars) from one curve in `src/config/progression.ts`; keep new
-difficulty knobs on that curve. `src/game/progress.ts` owns saved progress. Music is one premixed stereo MP3
-normalized to a 120 BPM, 60-bar loop (`docs/MUSIC.md`), encoded from the seven
-WAV masters by `npm run music:encode`. The `AudioEngine` is game-wide via `audio/sharedAudio.ts`
-and is unlocked by the menu's PLAY tap. The paragraphs below are history.
+areas) → `PlayScene` for one level → back to the map, with `SettingsScene`
+reachable from the menu and the map. `src/game/levels.ts` derives every level
+(tasks, per-task tempo ramp from 120 BPM, pattern tier, clear bar, stars) from
+one curve in `src/config/progression.ts`; keep new difficulty knobs on that
+curve. `src/game/progress.ts` owns saved progress and `src/game/settings.ts`
+owns player settings; both validate every field on read, because storage can be
+blocked, stale or tampered with.
 
-## Earlier: Hammer + Nail vignette
+Five vignettes rotate strictly by registry order: `levelSpec` picks
+`VIGNETTES[(level - 1) % VIGNETTES.length]`, so reordering or inserting an entry
+in `src/vignettes/registry.ts` silently reassigns every level's vignette.
+Presentation lives inside the vignette; the rhythm controller, judge and scorer
+stay authoritative, as `docs/VERTICAL_SLICE.md` sets out.
+
+Music is one premixed stereo MP3 normalized to a 120 BPM, 60-bar loop
+(`docs/MUSIC.md`), encoded from the seven WAV masters by `npm run music:encode`.
+The `AudioEngine` is game-wide via `audio/sharedAudio.ts` and is unlocked by the
+menu's PLAY tap. `AudioClock.calibrationMs` is the one place output latency is
+corrected, and it applies to judged input only — never to cue scheduling or
+visuals, which the device does not delay.
+
+Two standing rules that predate the current state and still hold: debug replay
+controls exist only with DEV and `?debug`, and **do not add a vignette without a
+request** — a new entry in the registry reassigns every level.
+
+## History
+
+Superseded, and kept only for the reasoning that produced the current design.
+Nothing below is a description of the code as it stands.
+
+### The two-vignette milestone
 
 The default was the Hammer + Nail vignette (see `docs/HAMMER_NAIL.md`).
 Keep presentation inside `src/vignettes/HammerNailVignette.ts`; the existing
-rhythm controller/judge/scorer remain authoritative. Debug replay controls exist
-only with DEV and `?debug`. Do not add other vignettes without a request.
-The paragraph below records the earlier timing-only milestone.
+rhythm controller/judge/scorer remain authoritative.
 
-PlayScene is now Rhythm Lab. Consult the implementation notes at the top of
-`docs/TECHNICAL_ARCHITECTURE.md` before the historical starter guidance below.
-Use `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build`.
-Gameplay has one TAP action using Phaser's unified pointer event and original
-DOM timestamp. Drag/player helpers remain unused legacy starter code. Do not
-restore drag-to-position behavior to the rhythm scene. AudioEngine owns the
-only AudioContext; Phaser sound is disabled. Visual frame/tween time must never
-become the musical clock. Current grades are Perfect/Good/Miss with thresholds
-in `src/config/rhythm.ts`. Vignettes and progression are not implemented.
+### The timing-only milestone
+
+PlayScene was Rhythm Lab: one authored phrase, a tempo toggle, and no vignettes
+or progression. Four rules survive from it and are not negotiable. Gameplay has
+one TAP action, using Phaser's unified pointer event and the original DOM
+timestamp. The drag and player helpers are unused starter code, and
+drag-to-position must not return to the rhythm scene. `AudioEngine` owns the only
+AudioContext; Phaser sound is disabled. Visual frame or tween time must never
+become the musical clock.
+
+## Conventions
 
 Mobile-first Phaser 4 game project. Portrait, touch-first, with Android as the
 intended primary platform.
@@ -41,9 +63,16 @@ rather than working around it.
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Dev server with HMR on port 5173, exposed on the LAN |
+| `npm run typecheck` | Type-check only |
+| `npm run lint` | oxlint over `src` and `tests`, warnings are errors |
+| `npm test` | vitest, node environment, no config file |
 | `npm run build` | Type-check, then produce the production bundle in `dist/` |
 | `npm run preview` | Serve the built bundle on port 4173 |
-| `npm run typecheck` | Type-check only |
+| `npm run music:encode` | Premix the WAV masters to the shipped MP3 |
+| `npm run android:apk` | Build, sync and assemble a debug APK |
+
+The first four are the gate. CI runs exactly those on every push and pull
+request, and also fails if a sourcemap reaches `dist/`.
 
 `npm run build` runs `tsc --noEmit` first, so a type error fails the build.
 Vite does not type-check on its own — `npm run dev` will happily serve code
@@ -80,9 +109,18 @@ Three version-specific traps, all of which cost time if assumed away:
 ```
 src/
   main.ts              Entry point; creates the game, reports boot failure
+  audio/
+    AudioEngine.ts     The only AudioContext; SFX scheduling and mute
+    AudioClock.ts      DOM event time to output time, plus the input offset
+    MusicSystem.ts     The premixed loop: load, normalize, start, rate, gain
+    *Sounds.ts         Deterministic per-vignette synthesis, one file per act
+    sharedAudio.ts     Game-wide engine in the registry; applies stored settings
   config/
     design.ts          Design resolution, layout metrics, depth ordering
     game.ts            Phaser game config (every non-default value is justified)
+    music.ts           Measured musical model of the shipped track
+    progression.ts     The one difficulty curve and its knobs
+    rhythm.ts          Timing windows and scheduling constants
     scenes.ts          Scene keys
     theme.ts           Palette and font stack
   core/
@@ -90,16 +128,40 @@ src/
     Viewport.ts        Live layout frames (full / safe / content / designBox)
     safeArea.ts        Reads env(safe-area-inset-*) via a probe element
     shell.ts           Controls the DOM overlays in index.html
+  game/
+    levels.ts          Derives a level spec from the curve
+    RoundController.ts Phase machine for one task
+    TaskSequence.ts    Task ordering within a level
+    scoring.ts         Pure weighted accuracy
+    progress.ts        Saved unlocks and best accuracies
+    settings.ts        Saved audio offset and mute
   input/
-    HorizontalDragBehaviour.ts   Reusable axis-constrained drag
+    TapInput.ts        Unified pointer taps, original DOM timestamp preserved
+    HorizontalDragBehaviour.ts   Unused starter code; do not reintroduce
   objects/
-    Player.ts          The draggable player
+    Player.ts          Unused starter code
+  rhythm/
+    patterns.ts        Seeded pattern vocabulary by tier
+    RhythmScheduler.ts Absolute-time cue scheduling
+    judge.ts           Pure timing judgement; owns Perfect/Good/Miss
   scenes/
     BootScene.ts       Input tuning, orientation guard
     PreloadScene.ts    Asset loading and progress bar
-    PlayScene.ts       The playable test scene
+    MenuScene.ts       Title; owns the first audio gesture
+    MapScene.ts        The endless road, rendered as a bounded window
+    PlayScene.ts       One level: hosts a vignette, never judges
+    SettingsScene.ts   Latency calibration, mute, reset progress
   textures/
     generateCoreTextures.ts   Procedural placeholder art
+  ui/
+    colour.ts          hex / mix / shade, so depth tones derive from one palette
+    path.ts            Catmull-Rom smoothing and dash spacing
+    star.ts            The star glyph
+  vignettes/
+    registry.ts        The rotation. Order is the level assignment.
+    Vignette.ts        The contract a vignette implements
+    *Vignette.ts       One per act: all geometry, palette and motion
+    *Motion.ts         Pure curves, no Phaser import, unit-tested under node
 ```
 
 Add new directories along the same axis — by role, not by feature — until a
@@ -203,10 +265,17 @@ Verified by testing, and easy to reintroduce:
 
 ## Assets
 
-The repository ships **no binary assets**. Placeholder art is generated at boot
-in `textures/generateCoreTextures.ts` and looked up by key from `TextureKey`.
+All art is procedural: drawn as Phaser Graphics inside each vignette and scene,
+or generated at boot in `textures/generateCoreTextures.ts` and looked up by key
+from `TextureKey`. There are no image files.
 
-Real assets go in `public/assets/` and load in `PreloadScene.preload()`. Prefer
+The repository does ship binary audio — the WAV masters in `bgm/` and the MP3s
+encoded from them — and that is the great majority of the checkout. Only the
+premixed MP3 reaches the bundle; sound effects are synthesized locally per
+vignette in `src/audio/`, so the game downloads one music track and nothing else.
+
+Real image assets, if any are ever added, go in `public/assets/` and load in
+`PreloadScene.preload()`. Prefer
 one texture atlas over many loose images: each separate texture is a
 state change for the GPU, and on mobile draw-call count is usually what limits
 frame rate. Generate textures larger than their on-screen size — scaling down

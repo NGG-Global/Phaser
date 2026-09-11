@@ -98,7 +98,7 @@ which is what the note above is about.
 
 ## Verification
 
-`npm run typecheck`, `npm run lint`, `npm test` (103 tests, up from 70, including Tomato's) and `npm run build`
+`npm run typecheck`, `npm run lint`, `npm test` and `npm run build`
 all pass. `tests/saw.test.ts` pins the curve boundaries the way `tests/hammer.test.ts`
 does — the bite exactly on contact, the follow-through settling at rest, kerf and blade
 depth clamped at both ends, a flawless response stopping short of severing — and adds
@@ -113,7 +113,7 @@ changing; `tests/levels.test.ts` checks only that level 1 is Hammer and that nei
 levels differ, so `tests/saw.test.ts` pins the actual cycle — reordering or inserting a
 registry entry silently reassigns every level's vignette, and nothing else would catch it.
 
-Driven in headless Chromium at 393x851 via `?debug&vignette=saw`, through preparation,
+Driven in headless Chromium at 393x851, entering the saw's level from the map, through preparation,
 demonstration, handoff, response, both codas and into the following task, with no console
 or page errors: one pointer handler and a bounded 14 scene objects throughout; the kerf
 deepening only on accurate strokes and holding still through a miss; the handoff swapping

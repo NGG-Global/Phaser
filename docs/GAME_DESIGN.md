@@ -1,6 +1,12 @@
 # Game design
 
-## Music integration update
+> **Part archive, as of 11 September 2026.** The endless-progression section below is
+> current. The music-integration note at the top and the "current prototype
+> scope" section further down describe superseded milestones — the seven-stem
+> playback and the deleted Rhythm Lab respectively. For the state of the code,
+> read `CLAUDE.md` and the README.
+
+## Superseded: the seven-stem music integration
 
 All rounds share the seven-stem composition at its measured 120 BPM. Each stem is normalized to an exact 60-bar loop whose origin is the first downbeat, so the count-in starts on the loop origin. Music continues through the final summary; restart schedules all stems anew. Authored patterns and judgement are unchanged, while the old 86/96/104 tempo progression is inactive. Supplied metadata also mentions 121 BPM and needs confirmation—see [music notes](MUSIC.md). No dynamic tempo or gameplay-driven stem mixing is implemented.
 
@@ -61,7 +67,7 @@ Hammer + Nail is now playable with a procedural workshop illustration, anticipat
 
 Status: core timing prototype implemented, 9 September 2026. The vignette design below remains a future proposal. See [Technical architecture](TECHNICAL_ARCHITECTURE.md) for implementation details and the original audit.
 
-## Current prototype scope (takes precedence over future slice settings below)
+## Superseded: the Rhythm Lab prototype scope
 
 PlayScene is now a temporary Rhythm Lab with a large pulsing circle, Watch/Your turn labels, immediate tap reaction, signed timing error, result and restart. There are no vignettes, progression or polished assets. Start/Restart repeats the selected phrase and BPM; Pattern and BPM cycle the available options and immediately begin a fresh attempt. Sound toggles output without stopping the timing clock. The notation remains visible as a debugging aid.
 

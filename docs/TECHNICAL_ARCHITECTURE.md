@@ -1,10 +1,20 @@
 # Technical architecture
 
-## Current audio: synchronized full-file stems
+> **Archive, as of 11 September 2026.** This document accreted one section per milestone
+> and the sections still titled "Current" describe superseded ones — seven music
+> stems, four URLs, a `SESSION` table, no playback-rate control. For the state of
+> the code, read `CLAUDE.md` and the README; for music, [MUSIC.md](MUSIC.md); for
+> the vignette contract, [VERTICAL_SLICE.md](VERTICAL_SLICE.md). What is kept
+> here is the reasoning, the measurements and the rules that produced the design,
+> and those remain worth reading. The timing model below — the output-clock
+> mapping, the window arithmetic, and the rule that visual time is never the
+> musical clock — is still authoritative.
+
+## Superseded: synchronized full-file stems
 
 `audio/MusicSystem.ts` replaces `MusicBed`; `config/music.ts` owns four URLs, fixed tempo/pickup metadata, mix, output headroom and gain ramp. All stems load/decode before one common future start at source offset zero. Identical full-file loops retain the pickup. Each source remains active at zero gain and across task/vignette/summary transitions; explicit restart/interruption/disposal stops music. Core timing remains `AudioClock` and `RoundController` on the same context. Seven stems are normalized at load into exact 60-bar loops at their measured 120 BPM; the count-in starts on the loop origin. The engine is game-wide (`audio/sharedAudio.ts`), unlocked by the menu's PLAY tap. See [Music](MUSIC.md) for the measurement, normalization and the unresolved asset-size problem. This supersedes prior single-bed and tempo-progression notes.
 
-## Current vertical slice: authored session + third vignette
+## Superseded: authored session + third vignette
 
 `game/levels.ts` generates each level from one difficulty curve (`config/progression.ts`): tasks, a per-task tempo ramp from 120 BPM, pattern tier and clear bar, deterministic per level. `MapScene` is the scrollable level road; `game/progress.ts` persists unlocks and stars. The host advances one task at a time, slides between tasks, steps the music's playback rate on each task downbeat, and records the level at the summary. `MenuScene` precedes the map and owns the audio gesture. It reuses `TaskSequence.ending()` for absolute coda/slide/swap/downbeat times, and `RoundController` still owns each task's timing and scoring. Session difficulty is content, not special cases in the controller. No clock, input, scheduler or judgement rules changed for this milestone.
 
@@ -12,9 +22,9 @@
 
 `PlayScene.selectVignette()` centralizes disposal, registry lookup, audio-profile replacement, shared text palette and layout. Restart clears session results, pending transition, replay and music before a new origin is established. The summary stops the optional music and leaves the final cartoon illustration visible. No giant vignette switch is present.
 
-For a new vignette, implement `Vignette`, provide a sound set and transition painter in the registry, then add an authored entry to `SESSION`. Full details and verification limits are in [vertical-slice notes](VERTICAL_SLICE.md). Earlier sections describe superseded milestones.
+For a new vignette, implement `Vignette`, provide a sound set and transition painter in the registry, and add one entry to `VIGNETTES`. (`SESSION` was deleted; levels come from the progression curve now, and registry order alone decides which level gets which vignette.) Full details and verification limits are in [vertical-slice notes](VERTICAL_SLICE.md). Earlier sections describe superseded milestones.
 
-## Current milestone: two implementations of one vignette API
+## Superseded: two implementations of one vignette API
 
 `src/vignettes/Vignette.ts` formalizes the previously implicit lifecycle: layout, reset, phase, demonstration beat, immediate player hit, judgement (including omissions/extras), finish, pause, update, translation and destroy. Both Hammer and Window implement it. `registry.ts` provides factories, palette ink, copy, ending presentation threshold/duration and generated sound buffers. Shared easing is in `motion.ts`; Hammer's contact/recoil curves remain local.
 
