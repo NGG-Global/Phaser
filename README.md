@@ -93,8 +93,9 @@ it into `android/`, and produces
 `android/app/build/outputs/apk/debug/app-debug.apk` (debug-signed,
 portrait-locked, `com.ngg.smallacts`). It needs JDK 21 and an Android SDK with
 platform 36 and build-tools 36.0.0, pointed at by the untracked
-`android/local.properties` (`sdk.dir=...`). The launcher icon is still the
-Capacitor placeholder.
+`android/local.properties` (`sdk.dir=...`). A clean debug APK is about 7.3 MB;
+an incremental one can carry stale merged assets, so run `./gradlew clean
+assembleDebug` before shipping a build to anyone.
 
 ## Layout
 
@@ -131,8 +132,10 @@ version-specific traps in this stack that are easy to reintroduce.
 
 ## Assets
 
-All art is procedural Phaser geometry drawn at runtime; there are no image
-files. The repository does ship binary audio: the WAV masters in `bgm/` and the
+All art is procedural Phaser geometry drawn at runtime. The one authored image is
+the icon master, `assets/icon/tiny-tempo-1024.jpg`; `npm run icons` cuts every
+Android launcher icon and the web favicon from it, so no generated PNG is ever
+edited by hand. It needs `ffmpeg` on PATH. The repository does ship binary audio: the WAV masters in `bgm/` and the
 MP3s encoded from them, which together are the great majority of the checkout.
 Only the premixed MP3 reaches the bundle. Sound effects are synthesized locally
 per vignette in `src/audio/`, so nothing is downloaded at runtime but the one
