@@ -15,8 +15,12 @@ Boot → Preload → **menu** → **map** → **play** → back to the map, with
 - **The map** is an endless scrollable road grouped into ten-level areas:
   Grass, Pavement, Sand, Snow, Dusk, then the same five again numbered II, III
   and so on. It renders a bounded window of levels, not the whole road.
-- **A level** is one vignette and three to eight tasks. Each task is four beats
-  of preparation, a demonstration, a handoff, then the player's response.
+- **A level** is one vignette and three to eight tasks. A task is a demonstration
+  phrase and then the player's response, back to back on the bar line — nothing
+  waits between the two, and nothing waits between one task and the next. One
+  preparation bar opens the level so the player can find the pulse, and a level
+  of six tasks or more gets one four-bar breather at its midpoint with the beat
+  kept alive through it.
 - **Five vignettes** rotate strictly by registry order in
   `src/vignettes/registry.ts`: Hammer & nail, Window cleaning, Bug & shoe, Saw &
   timber, Knife & tomato. `levelSpec` picks `VIGNETTES[(level - 1) % length]`, so

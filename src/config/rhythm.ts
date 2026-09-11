@@ -5,8 +5,8 @@ export const RHYTHM = {
   deliveryGraceMs: 50,
   leadSec: 0.2,
   beatsPerBar: 4,
-  prepareBeats: 4,
-  handoffBeats: 4,
+  /** One bar, once at the start of a level. Tasks after the first have no lead-in at all. */
+  leadInBeats: 4,
   pumpMs: 20,
   stallMs: 250,
   clockStampMaxAgeMs: 250,

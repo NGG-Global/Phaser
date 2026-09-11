@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AREAS, PATTERN_TIERS, areaOf, difficulty, levelSpec, meanAccuracy, starsFor } from '../src/game/levels';
+import { AREAS, PATTERN_TIERS, areaOf, breatherTask, difficulty, levelSpec, meanAccuracy, starsFor } from '../src/game/levels';
 import { PROGRESSION } from '../src/config/progression';
 import { RHYTHM } from '../src/config/rhythm';
 import { RoundController, type RoundEvents } from '../src/game/RoundController';
@@ -77,7 +77,7 @@ describe('level progression', () => {
     expect(starsFor(39.9, spec)).toBe(0); expect(starsFor(40, spec)).toBe(1); expect(starsFor(60, spec)).toBe(2); expect(starsFor(80, spec)).toBe(3);
     expect(meanAccuracy([100, 70, 40])).toBe(70); expect(meanAccuracy([])).toBe(0);
   });
-  it.each([1, 12, 45])('plays level %s end to end on one grid with the music tempo changing on task downbeats', level => {
+  it.each([1, 12, 19, 45])('plays level %s end to end on one grid with the music tempo changing on task downbeats', level => {
     const spec = levelSpec(level);
     const sound = { play: vi.fn(), cancel: vi.fn() };
     const events: RoundEvents = { phase: vi.fn(), cue: vi.fn(), tap: vi.fn(), judgement: vi.fn(), complete: vi.fn(), interrupted: vi.fn() };
@@ -85,11 +85,11 @@ describe('level progression', () => {
     let origin = 0.2;
     const accuracies: number[] = [];
     for (const task of spec.tasks) {
-      controller.start(task.pattern, task.bpm, origin - 0.2, (origin - 0.2) * 1000, origin);
+      controller.start(task.pattern, task.bpm, origin - 0.2, (origin - 0.2) * 1000, origin, task.leadBeats);
       const plan = controller.plan!;
       expect(plan.start).toBe(origin);
       // Whole beats at this task's tempo: the swap downbeat is a beat of the new grid too.
-      for (const point of [plan.demo, plan.handoff, plan.response, plan.end]) { const beats = (point - origin) / (60 / task.bpm); expect(Math.abs(beats - Math.round(beats))).toBeLessThan(1e-6); }
+      for (const point of [plan.demo, plan.response, plan.end]) { const beats = (point - origin) / (60 / task.bpm); expect(Math.abs(beats - Math.round(beats))).toBeLessThan(1e-6); }
       let target = 0;
       for (let now = origin; now <= plan.end + 0.22; now += 0.01) {
         controller.tick(now, now * 1000);
@@ -102,5 +102,25 @@ describe('level progression', () => {
     expect(meanAccuracy(accuracies)).toBe(100);
     expect(events.interrupted).not.toHaveBeenCalled();
     expect(events.complete).toHaveBeenCalledTimes(spec.tasks.length);
+  });
+  it('waits once at the start of a level and nowhere else, until a level is long enough to rest', () => {
+    const bar = PROGRESSION.breatherBars * RHYTHM.beatsPerBar;
+    // Short levels run straight through: one bar to find the pulse, then task after task.
+    expect(levelSpec(1).tasks.map(t => t.leadBeats)).toEqual([RHYTHM.leadInBeats, 0, 0]);
+    expect(breatherTask(PROGRESSION.tasksMin)).toBe(-1);
+    expect(breatherTask(PROGRESSION.breatherFromTasks - 1)).toBe(-1);
+    expect(breatherTask(PROGRESSION.breatherFromTasks)).toBe(3);
+    expect(breatherTask(PROGRESSION.tasksMax)).toBe(4);
+    // Level 19 is the first to reach six tasks on the curve, so it is the first to rest.
+    expect(levelSpec(18).tasks).toHaveLength(PROGRESSION.breatherFromTasks - 1);
+    expect(levelSpec(19).tasks).toHaveLength(PROGRESSION.breatherFromTasks);
+    expect(levelSpec(18).tasks.map(t => t.leadBeats)).toEqual([RHYTHM.leadInBeats, 0, 0, 0, 0]);
+    expect(levelSpec(19).tasks.map(t => t.leadBeats)).toEqual([RHYTHM.leadInBeats, 0, 0, bar, 0, 0]);
+    // However long a level gets, it never waits more than twice.
+    for (const level of [1, 19, 45, 200, 5000]) {
+      const leads = levelSpec(level).tasks.map(t => t.leadBeats);
+      expect(leads.filter(n => n > 0).length).toBeLessThanOrEqual(2);
+      expect(leads[0]).toBe(RHYTHM.leadInBeats);
+    }
   });
 });

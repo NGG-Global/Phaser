@@ -74,8 +74,6 @@ export class SawTimberVignette implements Vignette {
   private judderAt = -100;
   /** 1 while the teeth are in the kerf, 0 while the saw is held clear of the board. */
   private engaged = 1;
-  private handoffAt = -100;
-  private swapped = false;
   private finishAt: number | null = null;
   private finished = false;
   private successful = false;
@@ -174,8 +172,6 @@ export class SawTimberVignette implements Vignette {
     this.drift = 0;
     this.scuffs = [];
     this.judderAt = -100;
-    this.handoffAt = -100;
-    this.swapped = false;
     this.finishAt = null;
     this.finished = false;
     this.successful = false;
@@ -183,9 +179,9 @@ export class SawTimberVignette implements Vignette {
 
   public onPhase(phase: Phase, now: number): void {
     this.phase = phase;
-    // The demonstrated cut leaves the frame and an uncut length arrives, so the
-    // demonstration never consumes the player's board.
-    if (phase === 'handoff') { this.handoffAt = now; this.swapped = false; }
+    // The demonstration strokes the board without cutting it, so the player starts on the
+    // board they watched and nothing has to be swapped in the instant before their turn.
+    if (phase === 'respond') { this.strokes = 0; this.strokeAt = -100; this.setKerf(0, now); }
   }
 
   private setKerf(value: number, now: number): void {
@@ -203,10 +199,9 @@ export class SawTimberVignette implements Vignette {
     const accepted = acceptDemoBeat(this.lastDemo, time);
     if (accepted === null) return;
     this.lastDemo = accepted;
+    // The stroke, the teeth and the dust all play; only the cut itself is withheld. There
+    // is no bar between the demonstration and the response in which to replace the board.
     this.stroke(time);
-    this.bites = advanceBite(this.bites, 'hit');
-    // The demonstration only ever cuts about halfway; the handoff supplies fresh timber.
-    this.setKerf(kerfDepth(this.bites, (this.plan?.targets.length ?? 3) * 2), time);
   }
 
   public onPlayerHit(now: number): void { this.stroke(now); }
@@ -270,63 +265,36 @@ export class SawTimberVignette implements Vignette {
       if (!this.successful) this.drift = Math.max(this.drift, 14);
     }
     const beat = this.beat();
-    const swap = this.handoffSlide(now, beat);
     const age = now - this.strokeAt;
     const { dustSec } = sawTiming(beat);
     const bite = age >= 0 && age < dustSec ? 1 - age / dustSec : 0;
     const press = age >= 0 && age < 0.16 ? Math.sin(age / 0.16 * Math.PI) : 0;
-    // Both offsets are relative to the board's own anchor, which the slide and the
-    // flex add to rather than replace.
-    this.timber.setPosition(TIMBER_X + swap, TIMBER_Y + (this.reducedMotion ? 0 : press * 1.8));
+    // The offset is relative to the board's own anchor, which the flex adds to rather
+    // than replaces.
+    this.timber.setPosition(TIMBER_X, TIMBER_Y + (this.reducedMotion ? 0 : press * 1.8));
     const shake = this.reducedMotion || age < 0 || age > 0.19 ? 0 : Math.sin(age * 112) * Math.exp(-age * 21) * 2.2;
     this.stage.setPosition(this.baseX + shake * this.scale, this.baseY + shake * this.scale * 0.4);
-    this.poseSaw(now, beat);
+    this.poseSaw(now);
     this.drawKerf();
     this.drawMarks(now);
     this.drawDust(now, bite);
     this.settleOffcut(now);
   }
 
-  /**
-   * The cut length slides out and an uncut length arrives on the readiness beat.
-   * Reduced motion changes the board in place instead of travelling.
-   */
-  private handoffSlide(now: number, beat: number): number {
-    if (this.phase !== 'handoff' || this.handoffAt < 0) return 0;
-    const p = clamp01((now - this.handoffAt) / (2 * beat));
-    if (p >= 0.5 && !this.swapped) {
-      this.swapped = true;
-      this.bites = 0;
-      this.drift = 0;
-      this.scuffs = [];
-      this.setKerf(0, now);
-    }
-    if (this.reducedMotion) return 0;
-    const travel = 1500;
-    return p < 0.5 ? -easeOut(p * 2) * travel : (1 - easeOut((p - 0.5) * 2)) * travel;
-  }
-
-  private poseSaw(now: number, beat: number): void {
+  private poseSaw(now: number): void {
     const age = now - this.strokeAt;
     let lift = 0;
-    const parked = age > 0.5 && (this.phase === 'idle' || this.phase === 'prepare' || this.phase === 'handoff');
-    if (parked) {
-      lift = 30 + (this.reducedMotion ? 0 : Math.sin(now * 1.5) * 2.5);
-      // The handoff offers the saw over the fresh board rather than holding it clear.
-      if (this.phase === 'handoff' && this.plan && !this.reducedMotion) {
-        const p = clamp01((now - this.plan.handoff) / (this.plan.response - this.plan.handoff));
-        lift -= Math.sin(p * Math.PI) ** 2 * 14;
-      }
-    }
+    const parked = age > 0.5 && (this.phase === 'idle' || this.phase === 'prepare');
+    if (parked) lift = 30 + (this.reducedMotion ? 0 : Math.sin(now * 1.5) * 2.5);
     this.sawG.y = -lift;
     this.engaged = lift > 4 ? 0 : 1;
     const slide = parked ? -0.55 * SAW_MOTION.travel : this.offset(now);
     const judder = now - this.judderAt < 0.22 && !this.finished
       ? Math.sin((now - this.judderAt) * 96) * Math.exp(-(now - this.judderAt) * 14) * 5 : 0;
-    this.drawSaw(slide + judder, beat, now);
+    this.drawSaw(slide + judder);
   }
 
-  private drawSaw(slide: number, beat: number, now: number): void {
+  private drawSaw(slide: number): void {
     const g = this.sawG.clear();
     const tip = Math.max(0, BLADE_TIP + slide);
     const heel = BLADE_BACK + slide;
@@ -360,12 +328,6 @@ export class SawTimberVignette implements Vignette {
     const [n1x, n1y] = this.blade(heel - 26, 26);
     const [n2x, n2y] = this.blade(heel - 70, 34);
     g.fillCircle(n1x, n1y, 6).fillCircle(n2x, n2y, 6);
-    if (this.phase === 'handoff' && this.plan && this.engaged === 0) {
-      // The readiness beats already sound; this only shows where the cut resumes.
-      const p = clamp01(((now - this.plan.handoff) % beat) / beat);
-      g.lineStyle(2, TIMBER.ink, Math.sin(p * Math.PI) * 0.3);
-      g.strokeCircle(CUT_X, 0, 26 + (1 - easeOut(p)) * 74);
-    }
   }
 
   private drawKerf(): void {

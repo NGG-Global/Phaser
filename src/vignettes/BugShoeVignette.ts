@@ -76,7 +76,9 @@ export class BugShoeVignette implements Vignette {
   }
   public onPhase(phase: Phase, _now: number): void {
     this.phase = phase;
-    if (phase === 'handoff') { this.steps = 0; this.previousX = this.contactX = 0; }
+    // The bug is never consumed, so this only returns the shoe to the first stop of its
+    // cycle for the player's turn.
+    if (phase === 'respond') { this.steps = 0; this.previousX = this.contactX = 0; }
   }
   private strike(time: number): void {
     this.previousX = this.contactX;

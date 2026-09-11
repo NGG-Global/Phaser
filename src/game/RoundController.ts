@@ -4,7 +4,7 @@ import { createRoundPlan, RhythmScheduler, type RoundPlan, type ScheduledCue, ty
 import type { Pattern } from '../rhythm/patterns';
 import { scoreRound, type RoundResult } from './scoring';
 
-export type Phase = 'idle' | 'prepare' | 'demonstrate' | 'handoff' | 'respond' | 'result' | 'paused';
+export type Phase = 'idle' | 'prepare' | 'demonstrate' | 'respond' | 'result' | 'paused';
 export interface RoundEvents {
   phase(phase: Phase): void;
   cue(cue: ScheduledCue): void;
@@ -29,9 +29,9 @@ export class RoundController {
     this.scheduler = new RhythmScheduler(sound);
   }
   public get active(): boolean { return this.plan !== null && this.phase !== 'result' && this.phase !== 'paused'; }
-  public start(pattern: Pattern, bpm: number, renderNow: number, wallMs: number, startAt = renderNow + RHYTHM.leadSec): void {
+  public start(pattern: Pattern, bpm: number, renderNow: number, wallMs: number, startAt = renderNow + RHYTHM.leadSec, leadBeats = 0): void {
     this.scheduler.cancel();
-    this.plan = createRoundPlan(++this.generation, pattern, bpm, startAt);
+    this.plan = createRoundPlan(++this.generation, pattern, bpm, startAt, leadBeats);
     this.judge = createJudge(this.plan.targets);
     this.result = null;
     this.cueIndex = 0;
@@ -39,12 +39,17 @@ export class RoundController {
     this.scheduler.schedule(this.plan);
     this.setPhase('prepare');
   }
+  /** Absolute time of the first demonstration beat, which is the first thing a stall can hide. */
+  private firstBeat(): number {
+    return this.plan?.cues.find(cue => cue.kind === 'action')?.time ?? Infinity;
+  }
   private healthy(now: number, wallMs: number): boolean {
     if (wallMs - this.lastPumpMs > RHYTHM.stallMs) {
-      // A stall that ends inside the count-in has hidden no demonstration beat and delayed
-      // no judgement; the scene switch and first heavy frames before a task land exactly
-      // here. A stall that reaches the demonstration or later invalidates the attempt.
-      if (this.plan && now < this.plan.demo) { this.lastPumpMs = wallMs; return true; }
+      // A stall that ends before the first demonstration beat has hidden nothing and delayed
+      // no judgement; the swap into a task and its first heavy frames land exactly here.
+      // Expressed against that beat rather than against the lead-in, because most tasks have
+      // no lead-in at all now: only the first of a level and a long level's breather do.
+      if (this.plan && now < this.firstBeat()) { this.lastPumpMs = wallMs; return true; }
       this.interrupt('Timing interrupted. Restart this round.');
       return false;
     }
@@ -54,7 +59,7 @@ export class RoundController {
     if (!this.active || !this.plan || !this.judge || !this.healthy(now, wallMs)) return;
     this.lastPumpMs = wallMs;
     const plan = this.plan;
-    this.setPhase(now < plan.demo ? 'prepare' : now < plan.handoff ? 'demonstrate' : now < plan.response ? 'handoff' : 'respond');
+    this.setPhase(now < plan.demo ? 'prepare' : now < plan.response ? 'demonstrate' : 'respond');
     while (this.cueIndex < plan.cues.length && plan.cues[this.cueIndex]!.time <= now) {
       const cue = plan.cues[this.cueIndex++]!;
       if (now - cue.time < RHYTHM.stallMs / 1000) this.events.cue(cue);

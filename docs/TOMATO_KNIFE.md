@@ -31,9 +31,10 @@ An extra tap lands the knife on bare board beside the fruit with a hollow clack 
 a nick; a missed target leaves the knife hovering with a tremble and a faint ring. Neither
 takes a slice, and an omission never invents a chop. Off chops accumulate as unevenness
 that decides how crooked the later slices land, so a rough result is visible before it is
-announced. The demonstration slices about halfway; on the handoff the sliced fruit and its
-pile slide out and a whole tomato arrives on the readiness beat. Reduced-motion preference
-suppresses board press, impact shake and the idle bob, and swaps the fruit in place.
+announced. The demonstration rocks the knife over the fruit without slicing it, so the
+player starts on the tomato they watched; there is no bar between the demonstration and
+the response in which a whole one could arrive. Reduced-motion preference suppresses board
+press, impact shake and the idle bob.
 
 The coda is an unscored finishing chop that takes the standing heel once the controller
 has resolved the response; it never changes the result. Strong (70%, as every act) lays

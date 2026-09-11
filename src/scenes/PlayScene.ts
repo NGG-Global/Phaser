@@ -216,7 +216,7 @@ export class PlayScene extends BaseScene {
     this.accuracy.setText('');
     this.edition.setText(`LEVEL ${String(this.spec.level).padStart(2, '0')}`);
     this.outcomes = this.task.pattern.hits.map(() => 'pending');
-    this.controller!.start(this.task.pattern, this.task.bpm, this.audio!.context.currentTime, performance.now(), startAt);
+    this.controller!.start(this.task.pattern, this.task.bpm, this.audio!.context.currentTime, performance.now(), startAt, this.task.leadBeats);
     this.vignette.reset(this.controller!.plan!);
     if (this.replayOffset !== null) {
       const plan = this.controller!.plan!;
@@ -353,10 +353,14 @@ export class PlayScene extends BaseScene {
   }
   private showPhase(phase: Phase): void {
     this.vignette.onPhase(phase, this.now());
-    if (phase === 'prepare') { this.changeHeadline('Watch.'); this.caption.setText(''); this.invitation.setText(''); }
+    // A lead-in longer than the level's opening bar is the breather, and it is the only
+    // place in a level where nothing is being asked of the player.
+    const resting = this.task.leadBeats > RHYTHM.leadInBeats;
+    if (phase === 'prepare') { this.changeHeadline(resting ? 'Breathe.' : 'Watch.'); this.caption.setText(''); this.invitation.setText(''); }
     if (phase === 'demonstrate') { this.changeHeadline('Watch.'); this.caption.setText(''); }
-    if (phase === 'handoff') { this.changeHeadline('Repeat.'); this.caption.setText(''); this.demoCount = 0; this.drawMarks(); }
-    if (phase === 'respond') { this.caption.setText(''); this.invitation.setText(''); }
+    // The demonstration runs straight into the response, so this flip is the only thing
+    // that tells the player their turn has started. It cannot be deferred a frame.
+    if (phase === 'respond') { this.changeHeadline('Repeat.'); this.caption.setText(''); this.invitation.setText(''); this.demoCount = 0; this.drawMarks(); }
   }
   private showJudgement(result: Judgement): void {
     this.lastJudgement = `${result.kind} ${result.grade} ${result.deltaMs?.toFixed(0) ?? '—'} ms`;

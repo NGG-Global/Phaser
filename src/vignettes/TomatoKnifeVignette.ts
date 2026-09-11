@@ -90,8 +90,6 @@ export class TomatoKnifeVignette implements Vignette {
   private uneven = 0;
   private nicks: number[] = [];
   private judderAt = -100;
-  private handoffAt = -100;
-  private swapped = false;
   private finishAt: number | null = null;
   private finished = false;
   private successful = false;
@@ -178,8 +176,6 @@ export class TomatoKnifeVignette implements Vignette {
     this.uneven = 0;
     this.nicks = [];
     this.judderAt = -100;
-    this.handoffAt = -100;
-    this.swapped = false;
     this.finishAt = null;
     this.finished = false;
     this.successful = false;
@@ -187,9 +183,10 @@ export class TomatoKnifeVignette implements Vignette {
 
   public onPhase(phase: Phase, now: number): void {
     this.phase = phase;
-    // The demonstrated tomato leaves and a whole one arrives, so the demonstration never
-    // eats into the player's fruit.
-    if (phase === 'handoff') { this.handoffAt = now; this.swapped = false; }
+    // The demonstration rocks the knife over the fruit without cutting it, so the player
+    // starts on the tomato they watched and nothing has to arrive in the instant before
+    // their turn.
+    if (phase === 'respond') { this.strikeAt = -100; this.setCut(0, now); }
   }
 
   private setCut(fraction: number, now: number): void {
@@ -216,10 +213,10 @@ export class TomatoKnifeVignette implements Vignette {
     const accepted = acceptDemoBeat(this.lastDemo, time);
     if (accepted === null) return;
     this.lastDemo = accepted;
+    // The rock, the board contact and its sound all play; only the slice is withheld.
+    // There is no bar between the demonstration and the response in which to replace
+    // the fruit.
     this.strike(time);
-    this.slices = advanceSlice(this.slices, 'hit');
-    // The demonstration only ever slices about halfway; the handoff supplies a whole fruit.
-    this.takeSlice(time, (this.plan?.targets.length ?? 3) * 2);
   }
 
   public onPlayerHit(now: number): void { this.strike(now); }
@@ -283,7 +280,7 @@ export class TomatoKnifeVignette implements Vignette {
     const press = age >= 0 && age < 0.14 ? Math.sin(age / 0.14 * Math.PI) : 0;
     const shake = this.reducedMotion || age < 0 || age > 0.16 ? 0 : Math.sin(age * 120) * Math.exp(-age * 24) * 1.8;
     this.stage.setPosition(this.baseX + shake * this.scale, this.baseY + shake * this.scale * 0.5);
-    this.produce.setPosition(this.handoffSlide(now, beat), this.reducedMotion ? 0 : press * 1.4);
+    this.produce.setPosition(0, this.reducedMotion ? 0 : press * 1.4);
     this.poseKnife(now, beat, age);
     this.drawTomato();
     this.drawSlices(now, beat);
@@ -292,28 +289,8 @@ export class TomatoKnifeVignette implements Vignette {
     this.drawRings(age);
   }
 
-  /** The sliced fruit slides out and a whole one arrives on the readiness beat. */
-  private handoffSlide(now: number, beat: number): number {
-    if (this.phase !== 'handoff' || this.handoffAt < 0) return 0;
-    const p = clamp01((now - this.handoffAt) / (2 * beat));
-    if (p >= 0.5 && !this.swapped) {
-      this.swapped = true;
-      this.slices = 0;
-      this.sliceAt = [];
-      this.sliceFrom = [];
-      this.sliceWobble = [];
-      this.nicks = [];
-      this.uneven = 0;
-      this.cut = this.cutFrom = this.cutTo = this.cutStart();
-      this.strikeX = this.cutStart();
-    }
-    if (this.reducedMotion) return 0;
-    const travel = 1500;
-    return p < 0.5 ? -easeOut(p * 2) * travel : (1 - easeOut((p - 0.5) * 2)) * travel;
-  }
-
   private poseKnife(now: number, beat: number, age: number): void {
-    const parked = age > 0.5 && (this.phase === 'idle' || this.phase === 'prepare' || this.phase === 'handoff');
+    const parked = age > 0.5 && (this.phase === 'idle' || this.phase === 'prepare');
     let lift = knifeLift(age, beat);
     const next = this.upcoming(now);
     if (next !== null && next - now < tomatoTiming(beat).windupSec) lift = knifeWindup(next - now, lift, beat);

@@ -21,7 +21,6 @@ export class HammerNailVignette implements Vignette {
   private readonly nail: Phaser.GameObjects.Graphics;
   private readonly hammer: Phaser.GameObjects.Container;
   private readonly dust: Phaser.GameObjects.Graphics;
-  private readonly halo: Phaser.GameObjects.Graphics;
   private readonly grain: Phaser.GameObjects.TileSprite;
   private phase: Phase = 'idle';
   private plan: RoundPlan | null = null;
@@ -42,21 +41,21 @@ export class HammerNailVignette implements Vignette {
   private scale = 1;
   private lastNow = 0;
   private lastDemoStrike = -Infinity;
-  private handoffAt = -100;
+  /** When the player's turn began. The spotlight opens toward them from here. */
+  private respondAt = -100;
   private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   public constructor(private readonly scene: Phaser.Scene, private readonly cover = false) {
     this.backdrop = scene.add.graphics().setDepth(-20);
     this.stage = scene.add.container(0, 0).setDepth(-10);
     this.disc = scene.add.circle(270, -285, 258, WORKSHOP.sun, 0.36);
-    this.halo = scene.add.graphics();
     this.wood = scene.add.graphics();
     this.shadow = scene.add.ellipse(340, 8, 142, 22, WORKSHOP.ink, 0.12);
     this.nail = scene.add.graphics();
     this.hammer = scene.add.container(0, 0);
     this.drawHammer();
     this.dust = scene.add.graphics();
-    this.stage.add([this.disc, this.halo, this.wood, this.shadow, this.nail, this.hammer, this.dust]);
+    this.stage.add([this.disc, this.wood, this.shadow, this.nail, this.hammer, this.dust]);
     this.makeGrain();
     this.grain = scene.add.tileSprite(0, 0, 1, 1, 'workshop-grain').setOrigin(0).setAlpha(0.23).setDepth(-9);
   }
@@ -136,15 +135,17 @@ export class HammerNailVignette implements Vignette {
     this.bend = 0;
     this.finishAt = null;
     this.finishDone = false;
-    this.handoffAt = -100;
+    this.respondAt = -100;
     this.lastDemoStrike = -Infinity;
     this.phase = 'prepare';
   }
   public onPhase(phase: Phase, now: number): void {
     this.phase = phase;
-    if (phase === 'handoff') {
+    // The demonstration strikes the nail without sinking it, so the player's nail is
+    // already standing proud when their turn arrives; this only anchors the spotlight.
+    if (phase === 'respond') {
       this.setDepth(0, now);
-      this.handoffAt = now;
+      this.respondAt = now;
     }
   }
   private setDepth(value: number, now: number): void {
@@ -155,8 +156,9 @@ export class HammerNailVignette implements Vignette {
   public onDemonstrationBeat(time: number): void {
     if (time <= this.lastDemoStrike) return;
     this.lastDemoStrike = time;
+    // The swing, the impact and its sound all play; only the nail is left where it was.
+    // There is no bar between the demonstration and the response in which to reset it.
     this.strike(time, 0.8);
-    this.setDepth(this.depthTo + 0.65 / (this.plan?.targets.length ?? 4), time);
   }
   public onPlayerHit(now: number): void { this.strike(now, 1); }
   public onAccuracy(result: Judgement, now: number): void {
@@ -194,7 +196,7 @@ export class HammerNailVignette implements Vignette {
         if (cue.kind === 'action' && cue.time <= now) this.onDemonstrationBeat(cue.time);
       }
     }
-    this.depth = this.depthFrom + (this.depthTo - this.depthFrom) * easeOut((now - this.depthAt) / (this.phase === 'handoff' ? 0.3 : 0.085));
+    this.depth = this.depthFrom + (this.depthTo - this.depthFrom) * easeOut((now - this.depthAt) / 0.085);
     if (this.finishAt !== null && now >= this.finishAt && !this.finishDone) {
       this.finishDone = true;
       this.strike(this.finishAt, this.successful ? 1.6 : 0.7);
@@ -207,10 +209,6 @@ export class HammerNailVignette implements Vignette {
     const upcoming = this.finishAt !== null && !this.finishDone ? this.finishAt : next;
     if (upcoming !== undefined && upcoming !== null && upcoming - now < HAMMER_MOTION.anticipationSec) angle = anticipation(upcoming - now, angle);
     if (this.phase === 'idle') angle += Math.sin(now * 1.25) * 0.025;
-    if (this.phase === 'handoff' && this.plan && !this.reducedMotion) {
-      const offer = clamp01((now - this.handoffAt) / (this.plan.response - this.plan.handoff));
-      angle += Math.sin(offer * Math.PI) ** 2 * 0.18;
-    }
     if (this.finishDone && !this.successful) {
       this.bend = easeOut((now - this.finishAt!) / 0.36);
       angle += Math.sin((now - this.finishAt!) * 14) * Math.exp(-(now - this.finishAt!) * 3) * 0.1;
@@ -228,19 +226,12 @@ export class HammerNailVignette implements Vignette {
     this.wood.y = this.reducedMotion ? 0 : pressure * 1.6;
     this.drawNail(now);
     this.drawDust(age);
-    this.halo.clear();
-    const transfer = easeOut((now - this.handoffAt) / 0.7);
-    const offered = this.phase === 'handoff' || this.phase === 'respond' || this.phase === 'result';
-    // The spotlight opens toward the player's side, then two existing audio
-    // ready cues contract onto the nail. No independent visual beat timer.
+    // The spotlight opens toward the player's side the instant their turn starts. It is
+    // the handover now that no bar separates the demonstration from the response.
+    const transfer = easeOut((now - this.respondAt) / 0.7);
+    const offered = this.phase === 'respond' || this.phase === 'result';
     this.disc.setPosition(270 + (offered ? transfer * 40 : 0), -285 + (offered ? transfer * 28 : 0));
     this.disc.setScale(offered ? 1 + transfer * 0.09 : 1).setAlpha(offered ? 0.36 + transfer * 0.18 : 0.36);
-    if (this.phase === 'handoff' && this.plan) {
-      const beat = 60 / this.plan.bpm;
-      const p = clamp01(((now - this.plan.handoff) % beat) / beat);
-      const radius = 45 + (1 - easeOut(p)) * 130;
-      this.halo.lineStyle(2, WORKSHOP.ink, Math.sin(p * Math.PI) * 0.35).strokeCircle(310, -nailHeight(this.depth) - 10, radius);
-    }
   }
   private drawNail(now: number): void {
     const h = nailHeight(this.depth);

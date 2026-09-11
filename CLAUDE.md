@@ -24,6 +24,16 @@ menu's PLAY tap. `AudioClock.calibrationMs` is the one place output latency is
 corrected, and it applies to judged input only — never to cue scheduling or
 visuals, which the device does not delay.
 
+A task is a demonstration phrase and then the player's response, back to back on
+the bar line: nothing waits between them, and nothing waits between one task and
+the next. The only pauses in a level are its opening `RHYTHM.leadInBeats` bar and,
+for a level of `PROGRESSION.breatherFromTasks` tasks or more, one
+`PROGRESSION.breatherBars` breather at its midpoint. Both are the same mechanism —
+`LevelTask.leadBeats`, counted in by `createRoundPlan`. Because no bar separates
+the demonstration from the response, **a vignette's demonstration must not consume
+its subject**: it plays the action in full and leaves the cumulative state alone,
+since there is no longer anywhere to restore it.
+
 Two standing rules that predate the current state and still hold: debug replay
 controls exist only with DEV and `?debug`, and **do not add a vignette without a
 request** — a new entry in the registry reassigns every level.

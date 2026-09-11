@@ -4,7 +4,7 @@
 
 Menu → map → level → result → map. A level is one vignette and several tasks (see [Game design](GAME_DESIGN.md) for the progression curve); tasks hand over with the two-beat table slide, and the music's playback rate steps up on the same downbeat that starts the next task. The level is recorded (`game/progress.ts`, localStorage) the instant the last task resolves, not when the result screen draws — backgrounding the app during the coda used to discard a clear. The result screen shows stars and either TAP TO CONTINUE back to the map or TAP TO TRY AGAIN. ↻ restarts the level; MAP leaves for the map; both reset the music to its source tempo. There is no infinite difficulty escalation, randomness or new input mechanic.
 
-Progression is `game/levels.ts`: `levelSpec(level)` derives tasks, tempos, tier and clear bar from one difficulty curve, deterministically per level. `MapScene` draws the road from that and from saved progress and never decides difficulty itself. Adjacent half beats are 250 ms apart, closer than two 130 ms Good windows, so the judge's fixed nearest-target cells (midpoint tie to the earlier target) decide those, and Perfect windows never overlap. Four-beat count-ins and handoffs remain intact. Strong/rough outcomes are visual interpretations of the original score, not another judge.
+Progression is `game/levels.ts`: `levelSpec(level)` derives tasks, tempos, tier and clear bar from one difficulty curve, deterministically per level. `MapScene` draws the road from that and from saved progress and never decides difficulty itself. Adjacent half beats are 250 ms apart, closer than two 130 ms Good windows, so the judge's fixed nearest-target cells (midpoint tie to the earlier target) decide those, and Perfect windows never overlap. One four-beat count-in opens a level; after that a task runs demonstration straight into response, with a four-bar breather at the midpoint of a level long enough to need one. Strong/rough outcomes are visual interpretations of the original score, not another judge.
 
 ## Bug + Shoe
 
@@ -21,7 +21,8 @@ read as Hammer's warm workshop. One tap is one stroke and direction alternates; 
 tooth engagement lands on the beat, with the draw back as anticipation and the overshoot as
 follow-through. Accurate strokes deepen the kerf and throw sawdust; an extra tap skids and
 scuffs, a missed target judders, and neither cuts or invents a stroke. Fresh timber arrives
-on the handoff, and an unscored coda severs the plank. Stroke phases are fractions of a
+during the demonstration, which strokes the board without cutting it so the player starts on
+the board they watched; an unscored coda severs the plank. Stroke phases are fractions of a
 beat, so the stroke tightens with the level's tempo ramp. See [saw notes](SAW_TIMBER.md).
 
 `sawSounds.ts` supplies deterministic bite/skid/judder/sever/creak synthesis. The engine
@@ -39,7 +40,7 @@ rise after it do not. Each accurate chop takes a slice, which topples off the cu
 on the pile as a disc showing its cross-section; an extra tap lands on bare board with a
 hollow clack and a nick, a missed target leaves the knife hovering with a tremble, and
 neither takes a slice. Off chops make the later slices uneven, so a rough ending is visible
-before it is announced. A whole tomato arrives on the handoff, and the unscored coda takes
+before it is announced. The demonstration rocks the knife without slicing, so the tomato the player is given is the one they watched, and the unscored coda takes
 the standing heel; a rough coda squashes the last slice instead. Chop phases are fractions
 of a beat, so the knife is always back up before the next possible hit at any tempo. See
 [knife notes](TOMATO_KNIFE.md).

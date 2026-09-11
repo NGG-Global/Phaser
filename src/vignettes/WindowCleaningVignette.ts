@@ -91,13 +91,17 @@ export class WindowCleaningVignette implements Vignette {
   }
   public onPhase(phase: Phase, _now: number): void {
     this.phase = phase;
-    if (phase === 'handoff') { this.cleanAt.fill(Infinity); this.strokes = 0; this.strokeAt = -100; }
+    // The demonstration wipes without clearing the grime, so the pane the player is given
+    // is the one they watched and nothing has to be re-dirtied in the instant before
+    // their turn.
+    if (phase === 'respond') { this.cleanAt.fill(Infinity); this.strokes = 0; this.strokeAt = -100; }
   }
   public onDemonstrationBeat(time: number): void {
     if (time <= this.lastDemo) return;
     this.lastDemo = time;
+    // The blade travels its lane and sounds; only the glass is left dirty. There is no
+    // bar between the demonstration and the response in which to restore it.
     this.stroke(time);
-    this.cleanAt[this.lane] = time;
   }
   private stroke(now: number): void {
     this.lane = this.strokes++ % (this.plan?.targets.length ?? 4);
@@ -124,7 +128,7 @@ export class WindowCleaningVignette implements Vignette {
     this.tool.setRotation(direction * Math.sin(p * Math.PI) * 0.08);
     this.tool.setScale(1, 1 - Math.sin(p * Math.PI) * 0.06);
     if (age > 0.5) this.tool.y += Math.sin(now * 1.6) * (this.reducedMotion ? 0 : 2);
-    if (age > 0.5 && (this.phase === 'idle' || this.phase === 'prepare' || this.phase === 'handoff')) this.tool.setPosition(-190, 165).setRotation(-0.15);
+    if (age > 0.5 && (this.phase === 'idle' || this.phase === 'prepare')) this.tool.setPosition(-190, 165).setRotation(-0.15);
   }
   public update(now: number): void {
     if (this.phase === 'paused') now = this.lastNow; else this.lastNow = now;
@@ -159,10 +163,6 @@ export class WindowCleaningVignette implements Vignette {
     const clean = this.cleanAt.reduce((sum, time) => sum + strokeProgress(now - time), 0) / count;
     shine.lineStyle(4, GLASS.light, 0.15 + clean * 0.65).lineBetween(-192, 76, -34, -185);
     shine.lineStyle(12, GLASS.light, clean * 0.3).lineBetween(-169, 82, -12, -179);
-    if (this.phase === 'handoff' && this.plan) {
-      const p = ((now - this.plan.handoff) / (60 / this.plan.bpm)) % 1;
-      shine.lineStyle(2, GLASS.light, Math.sin(p * Math.PI) * 0.7).strokeEllipse(0, 20, 400 + p * 40, 435 + p * 30);
-    }
     if (this.finished && this.finishAt !== null) {
       const p = easeOut((now - this.finishAt) / 0.45);
       if (this.successful) {
