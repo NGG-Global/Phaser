@@ -45,7 +45,7 @@ export class HammerNailVignette implements Vignette {
   private handoffAt = -100;
   private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  public constructor(private readonly scene: Phaser.Scene) {
+  public constructor(private readonly scene: Phaser.Scene, private readonly cover = false) {
     this.backdrop = scene.add.graphics().setDepth(-20);
     this.stage = scene.add.container(0, 0).setDepth(-10);
     this.disc = scene.add.circle(270, -285, 258, WORKSHOP.sun, 0.36);
@@ -102,7 +102,8 @@ export class HammerNailVignette implements Vignette {
 
   public layout(viewport: Viewport): void {
     const { full, safe } = viewport;
-    this.scale = Math.min(safe.width / 650, safe.height / 1000);
+    // The cover reserves an editorial title above the tool; gameplay retains its large pose.
+    this.scale = this.cover ? Math.min(safe.width / 720, safe.height / 1550) : Math.min(safe.width / 650, safe.height / 1000);
     this.baseX = safe.centerX - 350 * this.scale;
     this.baseY = safe.top + safe.height * 0.68;
     this.stage.setPosition(this.baseX, this.baseY).setScale(this.scale);

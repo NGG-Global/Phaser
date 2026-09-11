@@ -8,10 +8,13 @@ import { loadProgress, type Progress } from '@/game/progress';
 import { hex, mix, shade } from '@/ui/colour';
 import { dashes, smoothPath, type Point } from '@/ui/path';
 import { drawStar } from '@/ui/star';
+import { resizedScroll, scrollStep } from '@/ui/navigation';
+import { SceneCurtain } from '@/ui/SceneCurtain';
+import { VIGNETTES } from '@/vignettes/registry';
 
 /** Design-unit metrics of the road map; every one is multiplied by the viewport scale. */
 const MAP = {
-  step: 176, nodeRadius: 42, wobble: 0.29, topPad: 320, bottomPad: 250,
+  step: 202, nodeRadius: 46, wobble: 0.27, topPad: 320, bottomPad: 660,
   roadWidth: 58, tapSlop: 14, friction: 5,
   /** Spline samples per level span. Enough that the curve reads smooth at any width. */
   smoothing: 14,
@@ -40,6 +43,17 @@ export class MapScene extends BaseScene {
   private status!: Phaser.GameObjects.Text;
   private menu!: Phaser.GameObjects.Text;
   private mute!: Phaser.GameObjects.Text;
+  private dock!: Phaser.GameObjects.Graphics;
+  private dockLabel!: Phaser.GameObjects.Text;
+  private dockTitle!: Phaser.GameObjects.Text;
+  private dockHint!: Phaser.GameObjects.Text;
+  private location!: Phaser.GameObjects.Text;
+  private curtain!: SceneCurtain;
+  private footerTop = 0;
+  private lastHeight = 0;
+  private feedbackAt = -Infinity;
+  private lockedIndex = -1;
+  private dockRect = new Phaser.Geom.Rectangle();
   private numbers: Phaser.GameObjects.Text[] = [];
   private areaTitles: Phaser.GameObjects.Text[] = [];
   private areaRanges: Phaser.GameObjects.Text[] = [];
@@ -51,7 +65,7 @@ export class MapScene extends BaseScene {
   private hudHeight = 0;
   private scrollY = 0;
   private velocity = 0;
-  private drag: { lastY: number; lastAt: number; startX: number; startY: number; moved: boolean } | null = null;
+  private drag: { id: number; scrollable: boolean; lastY: number; lastAt: number; startX: number; startY: number; moved: boolean } | null = null;
   private touchAt = -Infinity;
   private touchPoint = { x: 0, y: 0 };
   private focus = 1;
@@ -64,6 +78,10 @@ export class MapScene extends BaseScene {
   protected override build(): void {
     this.disposed = false;
     this.centered = false;
+    this.drag = null;
+    this.velocity = 0;
+    this.feedbackAt = this.touchAt = -Infinity;
+    this.lockedIndex = -1;
     this.progress = loadProgress();
     const data = this.sys.settings.data as { focus?: number } | undefined;
     this.focus = Math.max(1, Math.min(this.progress.unlocked, data?.focus ?? this.progress.unlocked));
@@ -79,14 +97,25 @@ export class MapScene extends BaseScene {
     this.frame = this.add.graphics().setScrollFactor(0).setDepth(6);
     this.hudBack = this.add.graphics().setScrollFactor(0).setDepth(10);
     const hud = (value: string, size: number, font: string) => this.add.text(0, 0, value, { fontFamily: font, fontSize: `${size}px`, color: '#2b3a2f' }).setScrollFactor(0).setDepth(11);
-    this.edition = hud('TINY TEMPO', 16, 'monospace').setLetterSpacing(2);
-    this.status = hud('', 15, 'monospace').setLetterSpacing(2);
-    this.menu = hud('MENU', 14, 'monospace').setLetterSpacing(2).setOrigin(0.5);
+    this.edition = hud('THE LITTLE ROAD', 16, 'monospace').setLetterSpacing(2);
+    this.status = hud('', 38, 'Georgia, serif');
+    this.menu = hud('←', 30, 'Arial, sans-serif').setOrigin(0.5);
     this.mute = hud(currentAudio(this)?.muted ? '×' : '♪', 30, 'Georgia, serif').setOrigin(0.5);
+    this.dock = this.add.graphics().setScrollFactor(0).setDepth(10);
+    this.dockLabel = hud('', 14, 'monospace').setLetterSpacing(2);
+    this.dockTitle = hud('', 30, 'Georgia, serif');
+    this.dockHint = hud('', 15, 'monospace').setLetterSpacing(1);
+    this.location = this.add.text(0, 0, 'YOU ARE HERE', { fontFamily: 'monospace', color: '#2c4629' }).setOrigin(1, 0.5).setLetterSpacing(2).setDepth(5);
+    this.curtain = new SceneCurtain(this);
+    this.events.once(Phaser.Scenes.Events.CREATE, () => this.curtain.reveal());
     this.input.on(Phaser.Input.Events.POINTER_DOWN, this.pointerDown, this);
     this.input.on(Phaser.Input.Events.POINTER_MOVE, this.pointerMove, this);
     this.input.on(Phaser.Input.Events.POINTER_UP, this.pointerUp, this);
     this.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.pointerUp, this);
+    this.input.on(Phaser.Input.Events.POINTER_WHEEL, this.wheel, this);
+    window.addEventListener('blur', this.cancelDrag);
+    window.addEventListener('touchcancel', this.cancelDrag);
+    window.addEventListener('pointercancel', this.cancelDrag);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.shutdown, this);
   }
@@ -102,9 +131,11 @@ export class MapScene extends BaseScene {
   protected override layout(): void {
     const { safe, full } = this.viewport;
     const s = Math.min(safe.width / 720, safe.height / 1150);
+    const oldScale = this.uiScale, oldHeader = this.hudHeight;
     this.uiScale = s;
     this.controlSize = Math.max(88 * s, 48 * this.viewport.unitScale);
-    this.hudHeight = safe.top + 104 * s;
+    this.hudHeight = safe.top + 154 * s;
+    this.footerTop = safe.bottom - 242 * s;
     this.worldHeight = (MAP.topPad + MAP.bottomPad + (this.shown - 1) * MAP.step) * s + this.hudHeight;
     // Level 1 sits at the bottom; the road climbs. x wanders left and right inside the safe frame.
     this.nodes = Array.from({ length: this.shown }, (_, i) => ({
@@ -122,8 +153,13 @@ export class MapScene extends BaseScene {
     this.drawNodes(g, s);
     this.drawFrame(s);
     this.drawHud(s);
+    this.drawDock(s);
     this.cameras.main.setBounds(0, 0, full.width, this.worldHeight);
     if (!this.centered) { this.centered = true; this.scrollTo(this.focus); }
+    else this.scrollY = resizedScroll(this.scrollY, oldScale, s, oldHeader, this.hudHeight, this.lastHeight, full.height);
+    this.lastHeight = full.height;
+    this.drag = null;
+    this.velocity = 0;
     this.clampScroll();
   }
 
@@ -169,7 +205,7 @@ export class MapScene extends BaseScene {
     for (let k = 0; k < this.areaTitles.length; k++) {
       const { area, name } = areaOf(k * size + 1);
       const first = this.nodes[k * size]!;
-      this.placePlaque(g, area, name, k, k === 0 ? this.worldHeight : first.y + MAP.step * s / 2, s);
+      this.placePlaque(g, area, name, k, first.y + MAP.step * s / 2, s);
     }
   }
 
@@ -407,21 +443,25 @@ export class MapScene extends BaseScene {
       const r = (current ? MAP.nodeRadius * 1.1 : cleared ? MAP.nodeRadius : MAP.nodeRadius * 0.84) * s;
       const text = this.numbers[i]!.setPosition(node.x, node.y).setFontSize((current ? 33 : cleared ? 30 : 26) * s);
       g.fillStyle(shade(area.ground, -0.5), 0.24).fillEllipse(node.x + 4 * s, node.y + (MAP.shadowDrop + 2) * s, r * 2.05, r * 1.15, 14);
-      const face = cleared ? area.ink : current ? area.paper : mix(area.ground, area.paper, 0.5);
+      const face = cleared ? area.ink : current ? 0xcf5134 : mix(area.ground, area.paper, 0.32);
       // A darker disc peeking below the face is the whole trick: it reads as thickness.
       g.fillStyle(shade(face, -0.3), cleared || current ? 1 : 0.85).fillCircle(node.x, node.y + 5 * s, r);
       g.fillStyle(face, cleared || current ? 1 : 0.92).fillCircle(node.x, node.y, r);
       g.lineStyle(2.5 * s, shade(area.ink, cleared ? 0.25 : 0), cleared ? 0.5 : current ? 0.85 : 0.32).strokeCircle(node.x, node.y, r);
-      g.fillStyle(0xffffff, cleared ? 0.14 : 0.4).fillEllipse(node.x - r * 0.22, node.y - r * 0.42, r * 1.05, r * 0.5, 12);
+      g.fillStyle(0xffffff, cleared || current ? 0.08 : 0.14).fillEllipse(node.x - r * 0.22, node.y - r * 0.42, r * 1.05, r * 0.5, 12);
       if (current) {
-        g.lineStyle(5 * s, area.ink, 1).strokeCircle(node.x, node.y, r);
-        text.setColor(hex(area.ink)).setAlpha(1);
+        g.lineStyle(2 * s, 0x963c29, 1).strokeCircle(node.x, node.y, r);
+        text.setColor('#fff9e8').setAlpha(1);
+        const left = node.x > this.viewport.safe.centerX;
+        this.location.setText('PLAY ' + String(level).padStart(2, '0')).setOrigin(left ? 1 : 0, 0.5)
+          .setPosition(node.x + (left ? -1 : 1) * (r + 28 * s), node.y)
+          .setFontSize(16 * s).setColor(hex(area.ink));
         this.drawStars(g, node, r, 3, 0, area, s);
       } else if (cleared) {
         text.setColor(hex(area.paper)).setAlpha(1);
         this.drawStars(g, node, r, starsFor(this.progress.best[level] ?? 0, levelSpec(level)), 3, area, s);
       } else {
-        text.setColor(hex(area.ink)).setAlpha(0.5);
+        text.setColor(hex(area.ink)).setAlpha(0.48);
         // A shackle and body say locked without needing a glyph the device font might lack.
         const ly = node.y + r + 17 * s;
         g.lineStyle(4 * s, area.ink, 0.45).beginPath();
@@ -471,29 +511,54 @@ export class MapScene extends BaseScene {
     g.fillStyle(paper, 1).fillRect(full.x, full.y, full.width, this.hudHeight);
     g.lineStyle(1.5 * s, ink, 0.22).lineBetween(full.x, this.hudHeight, full.right, this.hudHeight);
     const left = safe.centerX - 310 * s;
-    this.edition.setPosition(left, safe.top + 34 * s).setFontSize(15 * s);
+    this.edition.setPosition(left, safe.top + 34 * s).setFontSize(Math.max(17 * s, 9 * this.viewport.unitScale));
     const current = areaOf(this.progress.unlocked);
-    const total = Object.entries(this.progress.best).reduce((sum, [level, best]) => sum + starsFor(best, levelSpec(Number(level))), 0);
-    this.status.setText(`LEVEL ${this.progress.unlocked}  ·  ${current.name.toUpperCase()}  ·  ${total}★`).setPosition(left, safe.top + 66 * s).setFontSize(14 * s);
+    this.status.setText(current.name + '.').setPosition(left - 2 * s, safe.top + 66 * s).setFontSize(44 * s);
     // Round chips, sized to the accessible floor, so both controls read as buttons.
     const chip = (cx: number, cy: number, radius: number) => {
-      g.fillStyle(ink, 0.12).fillCircle(cx + 1 * s, cy + 3 * s, radius);
-      g.fillStyle(shade(paper, -0.04), 1).fillCircle(cx, cy, radius);
-      g.lineStyle(1.5 * s, ink, 0.26).strokeCircle(cx, cy, radius);
+      g.lineStyle(1.5 * s, ink, 0.2).strokeCircle(cx, cy, radius);
     };
     const radius = 27 * s;
-    const menuX = safe.centerX + 188 * s;
     const muteX = safe.centerX + 283 * s;
-    const cy = safe.top + 52 * s;
-    chip(menuX, cy, radius * 1.28);
+    const menuX = muteX - Math.max(104 * s, 56 * this.viewport.unitScale);
+    const cy = safe.top + 70 * s;
+    chip(menuX, cy, radius);
     chip(muteX, cy, radius);
-    this.menu.setPosition(menuX, cy).setFontSize(13 * s);
+    this.menu.setPosition(menuX, cy - 2 * s).setFontSize(30 * s);
     this.mute.setPosition(muteX, cy).setFontSize(28 * s);
+  }
+
+  private drawDock(s: number): void {
+    const { safe, full } = this.viewport;
+    const x = safe.centerX - 310 * s, y = this.footerTop;
+    const g = this.dock.clear();
+    for (let b = 0; b < 8; b++) {
+      g.fillStyle(0xf4f0e2, (b + 1) / 8).fillRect(full.x, y - (8 - b) * 5 * s, full.width, 5 * s + 1);
+    }
+    g.fillStyle(0xf4f0e2).fillRect(full.x, y, full.width, full.bottom - y);
+    const level = this.progress.unlocked;
+    const definition = VIGNETTES.find(v => v.id === levelSpec(level).vignette)!;
+    this.dockLabel.setText(`UP NEXT  /  LEVEL ${String(level).padStart(2, '0')}`).setPosition(x, y + 24 * s).setFontSize(Math.max(17 * s, 9 * this.viewport.unitScale)).setAlpha(0.65);
+    this.dockTitle.setText(definition.title).setPosition(x, y + 56 * s).setFontSize(32 * s);
+    this.dockHint.setText('A little further, a little better.').setPosition(x, y + 167 * s).setFontSize(Math.max(17 * s, 9 * this.viewport.unitScale)).setAlpha(0.6);
+    const cy = y + 74 * s, cx = safe.centerX + 254 * s;
+    const radius = Math.max(46 * s, this.controlSize / 2);
+    g.fillStyle(0x243e35, 0.14).fillCircle(cx, cy + 5 * s, radius);
+    g.fillStyle(0x243e35).fillCircle(cx, cy, radius);
+    g.lineStyle(3 * s, 0xf4f0e2).lineBetween(cx - 14 * s, cy, cx + 15 * s, cy);
+    g.lineBetween(cx + 4 * s, cy - 11 * s, cx + 15 * s, cy).lineBetween(cx + 15 * s, cy, cx + 4 * s, cy + 11 * s);
+    this.dockRect.setTo(x, y + 12 * s, 620 * s, Math.max(118 * s, this.controlSize));
+    // Ten understated marks correspond to the ten stops in the current area.
+    for (let i = 0; i < PROGRESSION.areaSize; i++) {
+      const at = (level - 1) % PROGRESSION.areaSize;
+      g.fillStyle(i === at ? 0xcf5134 : 0x243e35, i <= at ? 1 : 0.14)
+        .fillRoundedRect(x + i * 63 * s, y + 138 * s, 49 * s, 3 * s, 1.5 * s);
+    }
   }
 
   private scrollTo(level: number): void {
     const node = this.nodes[level - 1];
-    if (node) this.scrollY = node.y - (this.hudHeight + (this.viewport.full.height - this.hudHeight) * 0.55);
+    if (node) this.scrollY = node.y - (this.hudHeight + (this.footerTop - this.hudHeight) * 0.72);
     this.clampScroll();
   }
   private clampScroll(): void {
@@ -504,8 +569,9 @@ export class MapScene extends BaseScene {
 
   public override update(_time: number, delta: number): void {
     if (!this.drag && Math.abs(this.velocity) > 1) {
-      this.scrollY += this.velocity * delta / 1000;
-      this.velocity *= Math.exp(-MAP.friction * delta / 1000);
+      const step = scrollStep(this.velocity, delta, MAP.friction);
+      this.scrollY += step.distance;
+      this.velocity = step.velocity;
       this.clampScroll();
     }
     const s = this.uiScale;
@@ -513,31 +579,37 @@ export class MapScene extends BaseScene {
     this.pulse.clear();
     const current = this.nodes[this.progress.unlocked - 1];
     if (current && !this.reducedMotion) {
-      const { area } = areaOf(this.progress.unlocked);
       const r = MAP.nodeRadius * 1.1 * s;
-      const p = (now * 0.75) % 1;
-      this.pulse.lineStyle(3 * s, area.ink, (1 - p) * 0.55).strokeCircle(current.x, current.y, r + 6 * s + p * 40 * s);
-      this.pulse.lineStyle(2 * s, area.ink, (1 - ((p + 0.5) % 1)) * 0.3).strokeCircle(current.x, current.y, r + 6 * s + ((p + 0.5) % 1) * 40 * s);
+      const p = (now * 0.5) % 1;
+      this.pulse.lineStyle(2 * s, 0xcf5134, (1 - p) * 0.45).strokeCircle(current.x, current.y, r + 8 * s + p * 24 * s);
     }
     this.touch.clear();
     const age = now - this.touchAt;
     if (age < 0.3) this.touch.lineStyle(2.5 * s, 0x2b3a2f, (1 - age / 0.3) * 0.7).strokeCircle(this.touchPoint.x, this.touchPoint.y + this.scrollY, (20 + age * 160) * s);
+    const feedbackAge = now - this.feedbackAt;
+    const locked = this.nodes[this.lockedIndex];
+    if (locked && feedbackAge < 0.36) {
+      const text = this.numbers[this.lockedIndex]!;
+      text.setX(locked.x + (this.reducedMotion ? 0 : Math.sin(feedbackAge * 48) * Math.exp(-feedbackAge * 12) * 9 * s));
+      this.pulse.lineStyle(3 * s, 0xcf5134, (1 - feedbackAge / 0.36) * 0.7).strokeCircle(locked.x, locked.y, MAP.nodeRadius * 0.84 * s + 5 * s);
+    } else if (locked) { this.numbers[this.lockedIndex]!.setX(locked.x); this.lockedIndex = -1; }
+    if (feedbackAge > 2.2 && this.dockHint.text !== 'A little further, a little better.') this.dockHint.setText('A little further, a little better.');
   }
 
   private pointerDown(pointer: Phaser.Input.Pointer): void {
-    if (this.drag || (!pointer.wasTouch && pointer.button !== 0)) return;
-    this.drag = { lastY: pointer.y, lastAt: performance.now(), startX: pointer.x, startY: pointer.y, moved: false };
+    if (this.curtain.active || this.drag || (!pointer.wasTouch && pointer.button !== 0)) return;
+    this.drag = { id: pointer.id, scrollable: pointer.y > this.hudHeight && pointer.y < this.footerTop, lastY: pointer.y, lastAt: performance.now(), startX: pointer.x, startY: pointer.y, moved: false };
     this.velocity = 0;
     this.touchAt = performance.now() / 1000;
     this.touchPoint = { x: pointer.x, y: pointer.y };
   }
   private pointerMove(pointer: Phaser.Input.Pointer): void {
     const drag = this.drag;
-    if (!drag || !pointer.isDown) return;
+    if (!drag || pointer.id !== drag.id || !pointer.isDown) return;
     const dy = pointer.y - drag.lastY;
     const now = performance.now();
     if (Math.hypot(pointer.x - drag.startX, pointer.y - drag.startY) > MAP.tapSlop * this.viewport.unitScale) drag.moved = true;
-    if (drag.moved) {
+    if (drag.moved && drag.scrollable) {
       this.scrollY -= dy;
       const dt = Math.max(1, now - drag.lastAt) / 1000;
       this.velocity = -dy / dt * 0.6 + this.velocity * 0.4;
@@ -548,26 +620,47 @@ export class MapScene extends BaseScene {
   }
   private pointerUp(pointer: Phaser.Input.Pointer): void {
     const drag = this.drag;
-    if (!drag) return;
+    if (!drag || pointer.id !== drag.id) return;
     this.drag = null;
-    if (drag.moved) return;
+    if (drag.moved || pointer.x < 0 || pointer.y < 0 || pointer.x > this.scale.width || pointer.y > this.scale.height) return;
     this.velocity = 0;
     this.handleTap(pointer.x, pointer.y);
   }
   private handleTap(x: number, y: number): void {
+    if (this.curtain.active) return;
     if (Math.abs(x - this.mute.x) < this.controlSize / 2 && Math.abs(y - this.mute.y) < this.controlSize / 2) {
       const audio = sharedAudio(this);
       audio.toggleMute();
       this.mute.setText(audio.muted ? '×' : '♪');
       return;
     }
-    if (Math.abs(x - this.menu.x) < this.controlSize / 2 && Math.abs(y - this.menu.y) < this.controlSize / 2) { this.scene.start(SceneKey.Menu); return; }
-    if (y < this.hudHeight) return;
+    if (Math.abs(x - this.menu.x) < this.controlSize / 2 && Math.abs(y - this.menu.y) < this.controlSize / 2) { this.curtain.cover(() => this.scene.start(SceneKey.Menu)); return; }
+    if (this.dockRect.contains(x, y)) { this.openLevel(this.progress.unlocked); return; }
+    if (y < this.hudHeight || y >= this.footerTop) return;
     const worldY = y + this.scrollY;
     const reach = Math.max(MAP.nodeRadius * this.uiScale, this.controlSize / 2);
     const index = this.nodes.findIndex(node => Math.hypot(node.x - x, node.y - worldY) <= reach);
-    if (index < 0 || index + 1 > this.progress.unlocked) return;
-    this.scene.start(SceneKey.Play, { level: index + 1, autoStart: true });
+    if (index < 0) return;
+    if (index + 1 > this.progress.unlocked) {
+      if (this.lockedIndex >= 0) this.numbers[this.lockedIndex]!.setX(this.nodes[this.lockedIndex]!.x);
+      this.lockedIndex = index;
+      this.feedbackAt = performance.now() / 1000;
+      this.dockHint.setText(`First, find the rhythm in level ${this.progress.unlocked}.`);
+      return;
+    }
+    this.openLevel(index + 1);
+  }
+  private readonly cancelDrag = (): void => { this.drag = null; this.velocity = 0; };
+
+  private wheel(pointer: Phaser.Input.Pointer, _objects: Phaser.GameObjects.GameObject[], _dx: number, dy: number): void {
+    if (this.curtain.active || pointer.y < this.hudHeight || pointer.y >= this.footerTop) return;
+    this.cancelDrag();
+    this.scrollY += Math.max(-240, Math.min(240, dy)) * this.viewport.unitScale;
+    this.clampScroll();
+  }
+  private openLevel(level: number): void {
+    this.velocity = 0;
+    this.curtain.cover(() => this.scene.start(SceneKey.Play, { level, autoStart: true }));
   }
   private shutdown(): void {
     if (this.disposed) return;
@@ -578,5 +671,10 @@ export class MapScene extends BaseScene {
     this.input.off(Phaser.Input.Events.POINTER_MOVE, this.pointerMove, this);
     this.input.off(Phaser.Input.Events.POINTER_UP, this.pointerUp, this);
     this.input.off(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.pointerUp, this);
+    this.input.off(Phaser.Input.Events.POINTER_WHEEL, this.wheel, this);
+    window.removeEventListener('blur', this.cancelDrag);
+    window.removeEventListener('touchcancel', this.cancelDrag);
+    window.removeEventListener('pointercancel', this.cancelDrag);
+    this.cancelDrag();
   }
 }

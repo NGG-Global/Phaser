@@ -20,7 +20,7 @@ export interface LevelSpec {
 
 /** Map areas cycle forever; repeats gain a numeral (GRASS II). */
 export const AREAS: readonly Area[] = Object.freeze([
-  { name: 'Grass', sky: 0xe3ead0, ground: 0xa6bd75, road: 0xd0aa70, ink: 0x2c4629, paper: 0xf4f0e2 },
+  { name: 'Grass', sky: 0xe7ead5, ground: 0xb0bb91, road: 0xd3b58c, ink: 0x2c4629, paper: 0xf4f0e2 },
   { name: 'Pavement', sky: 0xe8e4de, ground: 0xbdb7ae, road: 0x7a746f, ink: 0x35322f, paper: 0xf5f2ee },
   { name: 'Sand', sky: 0xf5e9cc, ground: 0xe3c88f, road: 0xc48f5b, ink: 0x5a4224, paper: 0xfff7e6 },
   { name: 'Snow', sky: 0xe9eff5, ground: 0xdfe8f0, road: 0x9eb4c6, ink: 0x2d4759, paper: 0xffffff },
