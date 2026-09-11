@@ -1,0 +1,48 @@
+name: CI
+
+# The four gate scripts already existed; nothing ran them. This does, on every
+# push and pull request, in the same order a contributor runs them locally.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        # The seven WAV masters are ~154 MB of the repo and no gate step reads them,
+        # so fetch a shallow clone rather than the full history.
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Check no sourcemaps ship
+        # A stray `sourcemap: true` would silently re-add ~11 MB to the APK.
+        run: |
+          maps=$(find dist -name '*.map' | wc -l)
+          echo "sourcemap files in dist: $maps"
+          test "$maps" -eq 0
