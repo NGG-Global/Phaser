@@ -133,7 +133,7 @@ src/
     progression.ts     The one difficulty curve and its knobs
     rhythm.ts          Timing windows and scheduling constants
     scenes.ts          Scene keys
-    style.ts           The visual treatment: outline, ornament, exaggeration, type
+    style.ts           The workshop treatment: outline, exaggeration, faces, grain
     theme.ts           Legacy palette; only the clear colour and the preloader use it
   core/
     BaseScene.ts       Scene base class owning the build/layout lifecycle
@@ -291,18 +291,19 @@ or generated at boot — placeholder textures in `textures/generateCoreTextures.
 material tiles in `textures/materials.ts`, particle and glow discs in
 `ui/feedback.ts` — and looked up by key. There are no image files.
 
-The typefaces are the exception to "nothing but the music is downloaded". Four
-variable fonts under `public/fonts/`, all under the SIL Open Font License with
-each family's `OFL.txt` committed beside it, load through Phaser's `load.font()`
-in `PreloadScene.preload()` before the menu builds, because Phaser `Text`
-rasterises at creation and never reflows for a font that arrives later. Only the
-chosen treatment's display face and the body face should survive the style
-lab; the others are there so the three treatments run from one build.
+The typefaces are the exception to "nothing but the music is downloaded". Two
+variable fonts under `public/fonts/` — Fredoka for display, Nunito for body and
+labels, both under the SIL Open Font License with each family's `OFL.txt`
+committed beside it — load through Phaser's `load.font()` in
+`PreloadScene.preload()` before the menu builds, because Phaser `Text`
+rasterises at creation and never reflows for a font that arrives later. Text is
+made through `ui/type.ts`, never with a font family literal.
 
-Which treatment renders is `STYLE.current` in `config/style.ts`. Every drawing
-module reads it, and in a DEV build `?style=workshop|studio|tavern` overrides
-it, so the three can be compared from one dev server. Nothing else may branch
-on a treatment id except the few colours a treatment owns outright.
+The look is the workshop treatment in `config/style.ts`: one key light
+(`ui/light.ts`), generated materials, thick outlines, and physical motion from
+`ui/spring.ts`. Every drawing module reads its weights from `STYLE.current`
+rather than carrying its own; a new surface uses `ui/panel.ts`, `ui/type.ts`
+and `ui/icons.ts` rather than drawing a card or a glyph of its own.
 
 The repository does ship binary audio — the WAV masters in `bgm/` and the MP3s
 encoded from them — and that is the great majority of the checkout. Only the

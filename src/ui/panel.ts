@@ -10,7 +10,7 @@ import { castShadow, faces } from './light';
  * down — `box-shadow` and `border` transcribed into Graphics. A panel here is a solid
  * with thickness: a cast shadow from the shared light, a shade face that reads as the
  * side wall, a lit face, a catch of rim light along the top, and whatever the treatment
- * dresses it with — a cartoon outline, nothing, or a frame with rivets.
+ * dresses it with: the workshop's thick cartoon outline, and a painted frame line on a hero.
  */
 export interface PanelSpec {
   readonly fill: number;
@@ -19,7 +19,7 @@ export interface PanelSpec {
   /** 0 at rest, 1 fully pressed: the face sinks toward the side wall and the shadow tightens. */
   readonly press?: number;
   readonly radius?: number;
-  /** Draw the accent frame and rivets even at low ornament, for a hero control. */
+  /** Draw the painted accent frame inside the face, for the title and the one action. */
   readonly hero?: boolean;
 }
 
@@ -31,15 +31,10 @@ export function drawPanel(g: Phaser.GameObjects.Graphics, r: Phaser.Geom.Rectang
   const radius = Math.min(r.height / 2, (spec.radius ?? t.radius) * s);
   const f = faces(spec.fill);
   const sink = depth * press * 0.8;
-  const shadow = castShadow((spec.depth ?? 10) * (1 - press * 0.6), t.shadowLength);
+  const shadow = castShadow((spec.depth ?? 10) * (1 - press * 0.6));
 
-  // Cast shadow. A long low light gets three stacked passes so the edge reads soft.
-  const passes = t.shadowLength > 1.2 ? 3 : 1;
-  for (let i = 0; i < passes; i++) {
-    const spread = i * 3 * s;
-    g.fillStyle(0x1a1410, shadow.alpha / passes);
-    g.fillRoundedRect(r.x + shadow.dx * s - spread, r.y + shadow.dy * s + depth - spread, r.width + spread * 2, r.height + spread * 2, radius + spread);
-  }
+  g.fillStyle(0x1a1410, shadow.alpha);
+  g.fillRoundedRect(r.x + shadow.dx * s, r.y + shadow.dy * s + depth, r.width, r.height, radius);
   // Side wall, then its bottom edge line.
   g.fillStyle(f.shade, 1).fillRoundedRect(r.x, r.y + depth, r.width, r.height, radius);
   g.fillStyle(f.edge, 1).fillRoundedRect(r.x, r.y + depth + r.height - Math.max(2, 3 * s), r.width, Math.max(2, 3 * s), Math.max(1, 1.5 * s));
@@ -49,18 +44,10 @@ export function drawPanel(g: Phaser.GameObjects.Graphics, r: Phaser.Geom.Rectang
   // Rim light along the top of the face, where the shared light catches the edge.
   g.fillStyle(f.rim, 0.55 - press * 0.3).fillRoundedRect(r.x + radius * 0.6, r.y + sink + 2 * s, r.width - radius * 1.2, Math.max(2, 3.5 * s), 2 * s);
   if (t.outline > 0) g.lineStyle(t.outline * s * 0.55, shade(spec.fill, -0.6), 1).strokeRoundedRect(r.x, r.y + sink, r.width, r.height, radius);
-  // Ornament: an inset frame line and corner rivets.
-  if (t.ornament >= 0.5 || spec.hero) {
+  // A painted frame line inside the face of a hero.
+  if (spec.hero) {
     const inset = 7 * s;
-    g.lineStyle(2 * s, BRASS, 0.55 + t.ornament * 0.3).strokeRoundedRect(r.x + inset, r.y + sink + inset, r.width - inset * 2, r.height - inset * 2, Math.max(2, radius - inset));
-    if (t.ornament >= 0.9) {
-      const rf = faces(BRASS);
-      for (const [cx, cy] of [[r.x + inset, r.y + sink + inset], [r.right - inset, r.y + sink + inset], [r.x + inset, r.bottom + sink - inset], [r.right - inset, r.bottom + sink - inset]] as const) {
-        g.fillStyle(rf.edge, 1).fillCircle(cx, cy + 1 * s, 3.6 * s);
-        g.fillStyle(rf.face, 1).fillCircle(cx, cy, 3.6 * s);
-        g.fillStyle(rf.rim, 0.9).fillCircle(cx - 1 * s, cy - 1 * s, 1.4 * s);
-      }
-    }
+    g.lineStyle(2 * s, BRASS, 0.6).strokeRoundedRect(r.x + inset, r.y + sink + inset, r.width - inset * 2, r.height - inset * 2, Math.max(2, radius - inset));
   }
 }
 
@@ -70,14 +57,13 @@ export function drawDisc(g: Phaser.GameObjects.Graphics, x: number, y: number, r
   const press = spec.press ?? 0;
   const f = faces(spec.fill);
   const sink = depth * press * 0.8;
-  const shadow = castShadow((spec.depth ?? 8) * (1 - press * 0.6), t.shadowLength);
+  const shadow = castShadow((spec.depth ?? 8) * (1 - press * 0.6));
   g.fillStyle(0x1a1410, shadow.alpha).fillEllipse(x + shadow.dx * s, y + shadow.dy * s + depth, radius * 2.1, radius * 2);
   g.fillStyle(f.shade, 1).fillCircle(x, y + depth, radius);
   if (t.outline > 0) g.lineStyle(t.outline * s * 0.55, f.edge, 1).strokeCircle(x, y + depth, radius);
   g.fillStyle(f.face, 1).fillCircle(x, y + sink, radius);
   g.fillStyle(f.rim, 0.5 - press * 0.3).fillEllipse(x, y + sink - radius * 0.62, radius * 1.1, radius * 0.22);
   if (t.outline > 0) g.lineStyle(t.outline * s * 0.55, shade(spec.fill, -0.6), 1).strokeCircle(x, y + sink, radius);
-  if (t.ornament >= 0.5) g.lineStyle(2 * s, BRASS, 0.5 + t.ornament * 0.3).strokeCircle(x, y + sink, radius - 5 * s);
 }
 
 /**

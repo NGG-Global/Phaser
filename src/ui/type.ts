@@ -14,15 +14,9 @@ import { hex, shade } from './colour';
 
 type TextStyle = Phaser.Types.GameObjects.Text.TextStyle;
 
-function shadowFor(t: Treatment, colour: number, size: number): NonNullable<TextStyle['shadow']> {
-  switch (t.typeShadow) {
-    // A hard drop, the printed-sticker look. Dark and close.
-    case 'drop': return { offsetX: 0, offsetY: Math.max(1, size * 0.07), color: hex(shade(colour, -0.55)), blur: 0, fill: true, stroke: true };
-    // Letterpress: a hair of light below, as if the letter were pressed into the surface.
-    case 'inset': return { offsetX: 0, offsetY: Math.max(1, size * 0.045), color: 'rgba(255,255,255,0.5)', blur: 0, fill: true, stroke: false };
-    // A cast shadow, soft and well away: the letters stand off the board.
-    case 'deep': return { offsetX: size * 0.03, offsetY: Math.max(2, size * 0.12), color: 'rgba(20,14,8,0.42)', blur: size * 0.22, fill: true, stroke: true };
-  }
+/** A hard drop under the letter and its outline: the printed-sticker look. Dark and close. */
+function shadowFor(colour: number, size: number): NonNullable<TextStyle['shadow']> {
+  return { offsetX: 0, offsetY: Math.max(1, size * 0.07), color: hex(shade(colour, -0.55)), blur: 0, fill: true, stroke: true };
 }
 
 function strokeFor(t: Treatment, size: number): number {
@@ -33,7 +27,7 @@ function strokeFor(t: Treatment, size: number): number {
 export interface TypeSpec {
   readonly size: number;
   readonly colour: number;
-  /** Defaults to the treatment's outline colour; the tavern uses a darker frame ink. */
+  /** Defaults to a dark shade of the fill. */
   readonly outline?: number;
   readonly align?: 'left' | 'center' | 'right';
   readonly wrap?: number;
@@ -51,7 +45,7 @@ function style(t: Treatment, family: string, weight: number, spec: TypeSpec, dre
     align: spec.align ?? 'left',
   };
   if (strokeThickness > 0) { s.stroke = hex(spec.outline ?? shade(spec.colour, -0.6)); s.strokeThickness = strokeThickness; }
-  if (dress) s.shadow = shadowFor(t, spec.colour, spec.size);
+  if (dress) s.shadow = shadowFor(spec.colour, spec.size);
   if (spec.wrap !== undefined) s.wordWrap = { width: spec.wrap, useAdvancedWrap: true };
   return s;
 }
@@ -80,21 +74,6 @@ export function resize(text: Phaser.GameObjects.Text, size: number, colour: numb
   if (!dress) return;
   const stroke = strokeFor(t, size);
   text.setStroke(hex(shade(colour, -0.6)), stroke);
-  const sh = shadowFor(t, colour, size);
+  const sh = shadowFor(colour, size);
   text.setShadow(sh.offsetX, sh.offsetY, sh.color, sh.blur, sh.stroke, sh.fill);
-}
-
-/**
- * A metallic fill for the tavern's headline: a canvas gradient in the text's own
- * context, brass at the top through a highlight to a darker base. Reapply after any
- * size change, since the gradient is in canvas pixels.
- */
-export function brass(text: Phaser.GameObjects.Text): void {
-  const h = Math.max(1, text.height);
-  const gradient = text.context.createLinearGradient(0, 0, 0, h);
-  gradient.addColorStop(0, '#f5d98a');
-  gradient.addColorStop(0.42, '#fff3c4');
-  gradient.addColorStop(0.55, '#d9a94a');
-  gradient.addColorStop(1, '#8a5f1e');
-  text.setFill(gradient);
 }

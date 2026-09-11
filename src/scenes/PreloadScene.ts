@@ -11,8 +11,6 @@ import { generateFeedbackTextures } from '@/ui/feedback';
 /** Family name, relative URL, and the variable font's weight range for `font-weight` matching. */
 const FONTS: readonly (readonly [string, string, string])[] = [
   ['Fredoka', 'fonts/fredoka/Fredoka.ttf', '300 700'],
-  ['Quicksand', 'fonts/quicksand/Quicksand.ttf', '300 700'],
-  ['Baloo 2', 'fonts/baloo2/Baloo2.ttf', '400 800'],
   ['Nunito', 'fonts/nunito/Nunito.ttf', '200 1000'],
 ];
 

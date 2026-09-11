@@ -38,7 +38,6 @@ export class HammerNailVignette implements Vignette {
   private readonly hammer: Phaser.GameObjects.Container;
   private readonly dust: Phaser.GameObjects.Graphics;
   private readonly bursts: Feedback;
-  private readonly glow: Phaser.GameObjects.PointLight | null;
   private phase: Phase = 'idle';
   private plan: RoundPlan | null = null;
   private depth = 0;
@@ -63,7 +62,6 @@ export class HammerNailVignette implements Vignette {
   private readonly reducedMotion = reducedMotion();
 
   public constructor(private readonly scene: Phaser.Scene, private readonly cover = false) {
-    const t = STYLE.current;
     this.backdrop = new Backdrop(scene, WORKSHOP.paper, WORKSHOP.sun);
     this.stage = scene.add.container(0, 0).setDepth(-10);
     // The pool of light is one soft-edged image: a real falloff, one draw.
@@ -78,11 +76,6 @@ export class HammerNailVignette implements Vignette {
     this.dust = scene.add.graphics();
     this.stage.add([this.disc, this.bench, this.wood, this.shadow, this.nail, this.hammer, this.dust]);
     this.bursts = new Feedback(scene, -10, this.stage);
-    // The tavern's warm light on the striking face: WebGL only, and only that treatment.
-    this.glow = t.glow && scene.game.renderer.type === Phaser.WEBGL
-      ? scene.add.pointlight(310, -220, 0xffc46b, 260, 0, 0.06)
-      : null;
-    if (this.glow) this.stage.add(this.glow);
   }
 
   private drawHammer(): void {
@@ -248,14 +241,6 @@ export class HammerNailVignette implements Vignette {
     this.wood.y = this.bench.y = this.reducedMotion ? 0 : pressure * 1.6;
     this.drawNail(now);
     this.drawDust(age);
-    if (this.glow) {
-      // The light flares on contact and dies with the ring of the blow.
-      const flare = age >= 0 && age < 0.5 ? (1 - age / 0.5) ** 2 * this.strength : 0;
-      this.glow.setPosition(this.impactX, this.impactY);
-      // Kept low: a point light adds on top of the scene, and above ~0.4 it whites out the tool.
-      this.glow.intensity = 0.07 + flare * 0.3;
-      this.glow.radius = 220 + flare * 70;
-    }
     // The spotlight opens toward the player's side the instant their turn starts. It is
     // the handover now that no bar separates the demonstration from the response.
     const transfer = easeOut((now - this.respondAt) / 0.7);

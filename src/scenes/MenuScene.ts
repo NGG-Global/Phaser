@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { isMuted, sharedAudio, toggleMute } from '@/audio/sharedAudio';
 import { SceneKey } from '@/config/scenes';
-import { STYLE, type TreatmentId } from '@/config/style';
+import { STYLE } from '@/config/style';
 import { BaseScene } from '@/core/BaseScene';
 import { reducedMotion } from '@/core/motionPreference';
 import { levelSpec } from '@/game/levels';
@@ -15,7 +15,7 @@ import { faces } from '@/ui/light';
 import { BRASS, drawDisc, drawPanel, placeSurface, surface } from '@/ui/panel';
 import { SceneCurtain } from '@/ui/SceneCurtain';
 import { arrive, settle, spring } from '@/ui/spring';
-import { body, brass, display, label, resize } from '@/ui/type';
+import { body, display, label, resize } from '@/ui/type';
 import { HammerNailVignette } from '@/vignettes/HammerNailVignette';
 import { VIGNETTES } from '@/vignettes/registry';
 import type { Vignette } from '@/vignettes/Vignette';
@@ -30,12 +30,8 @@ const MENU = {
   pressSec: 0.42,
 } as const;
 
-/** The few colours a treatment owns outright. Everything else is derived through `faces()`. */
-const LOOK: Readonly<Record<TreatmentId, { sign: number; title: number; button: number; tag: number; puck: number; icon: number; ink: number; rope: number }>> = {
-  workshop: { sign: 0xd98a48, title: 0xfff4dc, button: 0xcf5134, tag: 0xf6ead0, puck: 0xf6ead0, icon: 0x243e35, ink: 0x243e35, rope: 0x6b4a2e },
-  studio: { sign: 0xf4ebdc, title: 0x2c4a55, button: 0xe0705a, tag: 0xf8f1e4, puck: 0xf8f1e4, icon: 0x2c4a55, ink: 0x2c4a55, rope: 0 },
-  tavern: { sign: 0x5c3d24, title: 0xf1d38a, button: 0x9a3b2b, tag: 0xe8d5a8, puck: 0x3c2a1a, icon: BRASS, ink: 0x2a1c12, rope: 0x2a1c12 },
-};
+/** The few colours the menu owns outright. Everything else is derived through `faces()`. */
+const LOOK = { sign: 0xd98a48, title: 0xfff4dc, button: 0xcf5134, tag: 0xf6ead0, puck: 0xf6ead0, icon: 0x243e35, ink: 0x243e35, rope: 0x6b4a2e } as const;
 
 /**
  * Title screen. Owns the first audio gesture: PLAY unlocks the shared AudioEngine and
@@ -80,12 +76,11 @@ export class MenuScene extends BaseScene {
   private busy = false;
   private disposed = false;
   private request = 0;
-  private readonly look = LOOK[STYLE.current.id];
+  private readonly look = LOOK;
 
   public constructor() { super(SceneKey.Menu); }
 
   protected override build(): void {
-    const t = STYLE.current;
     this.disposed = false;
     this.busy = false;
     this.pressedAt = -Infinity;
@@ -96,10 +91,9 @@ export class MenuScene extends BaseScene {
     this.sign = this.add.container(0, 0);
     this.ropes = this.add.graphics();
     this.board = this.add.graphics();
-    this.boardSurface = surface(this, MaterialKey.wood, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, this.look.sign, t.id === 'studio' ? 0.25 : 0.7);
+    this.boardSurface = surface(this, MaterialKey.wood, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, this.look.sign, 0.7);
     this.beads = this.add.graphics();
     this.headline = display(this, 'Tiny\nTempo', { size: 96, colour: this.look.title, align: 'center' }).setOrigin(0.5, 0.5);
-    if (t.id === 'tavern') brass(this.headline);
     this.caption = body(this, 'Little things. Perfect timing.', { size: 24, colour: this.look.title }).setOrigin(0.5).setAlpha(0.85);
     this.sign.add([this.ropes, this.board, this.boardSurface, this.beads, this.headline, this.caption]);
 
@@ -126,7 +120,6 @@ export class MenuScene extends BaseScene {
 
   protected override layout(): void {
     const { safe, full } = this.viewport;
-    const t = STYLE.current;
     this.illustration.layout(this.viewport);
     const s = this.uiScale = Math.min(safe.width / 720, safe.height / 1150);
 
@@ -139,11 +132,10 @@ export class MenuScene extends BaseScene {
     this.sign.setPosition(safe.centerX, this.ceilingY);
     this.drawRopes(s, ropeLength);
     this.board.clear();
-    drawPanel(this.board, this.boardRect, s, { fill: this.look.sign, depth: 14, hero: t.id === 'workshop' });
+    drawPanel(this.board, this.boardRect, s, { fill: this.look.sign, depth: 14, hero: true });
     placeSurface(this.boardSurface, this.boardRect, s);
     resize(this.headline, 96 * s, this.look.title);
     this.headline.setLineSpacing(-22 * s).setPosition(0, this.boardRect.y + h * 0.42);
-    if (t.id === 'tavern') brass(this.headline);
     this.caption.setFontSize(Math.max(24 * s, 12 * this.viewport.unitScale)).setPosition(0, this.boardRect.y + h * 0.78);
     this.beadRow = { x: -1.5 * 34 * s, y: this.boardRect.y + h * 0.9, gap: 34 * s, radius: 6 * s };
 
@@ -171,21 +163,11 @@ export class MenuScene extends BaseScene {
   private drawRopes(s: number, length: number): void {
     const g = this.ropes.clear();
     const t = STYLE.current;
-    if (t.id === 'studio') return; // A floating slab: it has nowhere to hang from.
     const inset = MENU.sign.ropeInset * s;
     for (const x of [-inset, inset]) {
-      if (t.ornament >= 0.9) {
-        // A chain: alternating links, drawn as beads so it costs a handful of circles.
-        const links = Math.max(3, Math.floor(length / (14 * s)));
-        for (let i = 0; i <= links; i++) {
-          const y = i * length / links;
-          g.fillStyle(i % 2 ? shade(BRASS, -0.35) : BRASS, 1).fillCircle(x, y, (i % 2 ? 3.2 : 4.2) * s);
-        }
-      } else {
-        g.lineStyle(t.outline * s * 0.55 + 9 * s, shade(this.look.rope, -0.5), 1).lineBetween(x, 0, x, length);
-        g.lineStyle(9 * s, this.look.rope, 1).lineBetween(x, 0, x, length);
-        g.lineStyle(2.5 * s, shade(this.look.rope, 0.35), 0.6).lineBetween(x - 2 * s, 0, x - 2 * s, length);
-      }
+      g.lineStyle(t.outline * s * 0.55 + 9 * s, shade(this.look.rope, -0.5), 1).lineBetween(x, 0, x, length);
+      g.lineStyle(9 * s, this.look.rope, 1).lineBetween(x, 0, x, length);
+      g.lineStyle(2.5 * s, shade(this.look.rope, 0.35), 0.6).lineBetween(x - 2 * s, 0, x - 2 * s, length);
       // The eye the rope passes through.
       g.fillStyle(faces(BRASS).edge, 1).fillCircle(x, length + 2 * s, 9 * s);
       g.fillStyle(BRASS, 1).fillCircle(x, length, 9 * s);
