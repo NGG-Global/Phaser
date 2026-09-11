@@ -252,8 +252,9 @@ export class HammerNailVignette implements Vignette {
       // The light flares on contact and dies with the ring of the blow.
       const flare = age >= 0 && age < 0.5 ? (1 - age / 0.5) ** 2 * this.strength : 0;
       this.glow.setPosition(this.impactX, this.impactY);
-      this.glow.intensity = 0.07 + flare * 0.9;
-      this.glow.radius = 220 + flare * 120;
+      // Kept low: a point light adds on top of the scene, and above ~0.4 it whites out the tool.
+      this.glow.intensity = 0.07 + flare * 0.3;
+      this.glow.radius = 220 + flare * 70;
     }
     // The spotlight opens toward the player's side the instant their turn starts. It is
     // the handover now that no bar separates the demonstration from the response.
