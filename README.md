@@ -143,7 +143,9 @@ edited by hand. It needs `ffmpeg` on PATH. The repository does ship binary audio
 MP3s encoded from them, which together are the great majority of the checkout.
 Only the premixed MP3 reaches the bundle. Sound effects are synthesized locally
 per vignette in `src/audio/`, so nothing is downloaded at runtime but the one
-music track.
+music track and the typefaces: four variable fonts under `public/fonts/`, each
+under the SIL Open Font License with its `OFL.txt` alongside, registered by
+Phaser's font loader before the menu builds.
 
 ## Orientation
 

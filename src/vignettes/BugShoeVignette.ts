@@ -1,4 +1,5 @@
 import type Phaser from 'phaser';
+import { reducedMotion } from '@/core/motionPreference';
 import type { Viewport } from '@/core/Viewport';
 import type { Phase } from '@/game/RoundController';
 import type { RoundPlan } from '@/rhythm/RhythmScheduler';
@@ -33,7 +34,7 @@ export class BugShoeVignette implements Vignette {
   private contactX = 0;
   private previousX = 0;
   private steps = 0;
-  private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  private readonly reducedMotion = reducedMotion();
   public constructor(scene: Phaser.Scene) {
     this.backdrop = scene.add.graphics().setDepth(-20);
     this.stage = scene.add.container(0, 0).setDepth(-10);

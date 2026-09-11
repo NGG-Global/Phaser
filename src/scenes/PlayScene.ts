@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { reducedMotion } from '@/core/motionPreference';
 import type { AudioEngine } from '@/audio/AudioEngine';
 import { sharedAudio, toggleMute } from '@/audio/sharedAudio';
 import { MUSIC } from '@/config/music';
@@ -13,11 +14,18 @@ import { TapInput, type Tap } from '@/input/TapInput';
 import type { Judgement } from '@/rhythm/judge';
 import { levelSpec, meanAccuracy, starsFor, type LevelSpec } from '@/game/levels';
 import { loadProgress, recordResult, saveProgress, type LevelOutcome } from '@/game/progress';
+import { STYLE } from '@/config/style';
+import { drawMap, drawRestart, drawSpeaker } from '@/ui/icons';
+import { faces } from '@/ui/light';
+import { drawDisc } from '@/ui/panel';
+import { Feedback } from '@/ui/feedback';
+import { overshoot, stagger } from '@/ui/spring';
+import { body, display, label, resize } from '@/ui/type';
 import { drawStar } from '@/ui/star';
 import { SceneCurtain } from '@/ui/SceneCurtain';
 import { VIGNETTES } from '@/vignettes/registry';
 import type { Vignette } from '@/vignettes/Vignette';
-import { easeOut } from '@/vignettes/motion';
+import { clamp01, easeOut } from '@/vignettes/motion';
 
 /** Composes the existing engine with registered visual vignettes. No judgement rules live here. */
 export class PlayScene extends BaseScene {
@@ -42,15 +50,20 @@ export class PlayScene extends BaseScene {
   private caption!: Phaser.GameObjects.Text;
   private invitation!: Phaser.GameObjects.Text;
   private accuracy!: Phaser.GameObjects.Text;
-  private restart!: Phaser.GameObjects.Text;
-  private menu!: Phaser.GameObjects.Text;
-  private mute!: Phaser.GameObjects.Text;
+  /** The three pucks — map, restart, mute — drawn as one baked graphic. */
+  private chrome!: Phaser.GameObjects.Graphics;
+  private mapAt = { x: 0, y: 0 };
+  private restartAt = { x: 0, y: 0 };
+  private muteAt = { x: 0, y: 0 };
+  private muted = false;
+  private fx!: Feedback;
+  private starsLanded = 0;
+  private starsSettled = false;
   private marks!: Phaser.GameObjects.Graphics;
-  private rule!: Phaser.GameObjects.Graphics;
   private taskMarks!: Phaser.GameObjects.Graphics;
   private curtain!: SceneCurtain;
   private summaryAt = -Infinity;
-  private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  private readonly reducedMotion = reducedMotion();
   private debug!: Phaser.GameObjects.Text;
   private controlSize = 96;
   private uiScale = 1;
@@ -83,17 +96,16 @@ export class PlayScene extends BaseScene {
     const requested = data?.level ?? (import.meta.env.DEV ? Number(new URLSearchParams(location.search).get('level')) : 0);
     this.spec = levelSpec(Number.isInteger(requested) && requested >= 1 ? requested : 1);
     this.vignette = this.definition.create(this);
+    const ink = this.definition.ink;
     this.stars = this.add.graphics();
-    this.edition = this.text(`LEVEL ${this.spec.level}`, 17, 'monospace').setLetterSpacing(2);
-    this.headline = this.text(this.definition.intro, 104, 'Georgia, serif').setLineSpacing(-17);
-    this.caption = this.text(this.definition.title, 23, 'Georgia, serif').setOrigin(0.5).setFontStyle('italic');
-    this.invitation = this.text('TAP ANYWHERE TO BEGIN', 17, 'monospace').setLetterSpacing(2).setOrigin(0.5);
-    this.accuracy = this.text('', 18, 'monospace').setOrigin(0.5);
-    this.restart = this.text('↻', 38, 'Arial, sans-serif').setOrigin(0.5);
-    this.menu = this.text('MAP', 16, 'monospace').setLetterSpacing(2).setOrigin(0.5);
-    this.mute = this.text('♪', 32, 'Georgia, serif').setOrigin(0.5);
+    this.fx = new Feedback(this, 5);
+    this.edition = label(this, `Level ${this.spec.level}`, { size: 15, colour: ink }).setOrigin(0.5, 0).setAlpha(0.75);
+    this.headline = display(this, this.definition.intro, { size: 88, colour: ink, align: 'center' }).setOrigin(0.5, 0);
+    this.caption = body(this, this.definition.title, { size: 24, colour: ink, align: 'center' }).setOrigin(0.5);
+    this.invitation = label(this, 'Tap anywhere to begin', { size: 16, colour: ink }).setOrigin(0.5).setAlpha(0.8);
+    this.accuracy = label(this, '', { size: 16, colour: ink }).setOrigin(0.5);
+    this.chrome = this.add.graphics();
     this.marks = this.add.graphics();
-    this.rule = this.add.graphics();
     this.taskMarks = this.add.graphics();
     this.curtain = new SceneCurtain(this);
     this.debug = this.text('', 16, 'monospace').setVisible(this.debugMode);
@@ -122,24 +134,39 @@ export class PlayScene extends BaseScene {
     this.uiScale = s;
     const left = safe.centerX - 310 * s;
     const top = safe.top;
-    this.edition.setPosition(left, top + 38 * s).setFontSize(15 * s);
-    this.headlineY = top + 135 * s;
+    const ink = this.definition.ink;
+    // The HUD is a centred stack under the pucks — the cue, then the progress beads —
+    // rather than a text column down the left edge.
+    this.edition.setPosition(safe.centerX, top + 40 * s).setFontSize(Math.max(15 * s, 8 * this.viewport.unitScale));
+    this.headlineY = top + 96 * s;
     this.headlineSize = (this.controller?.active ? 48 : 88) * s;
-    this.headline.setPosition(left - 5 * s, this.headlineY).setFontSize(this.headlineSize).setLineSpacing(-12 * s);
+    resize(this.headline, this.headlineSize, ink);
+    this.headline.setPosition(safe.centerX, this.headlineY).setLineSpacing(-12 * s);
     this.controlSize = Math.max(88 * s, 48 * this.viewport.unitScale);
-    const muteX = safe.centerX + 283 * s;
-    const controlGap = Math.max(104 * s, 56 * this.viewport.unitScale);
-    this.restart.setPosition(muteX - controlGap, top + 55 * s).setFontSize(36 * s);
-    this.menu.setPosition(muteX - controlGap * 2, top + 55 * s).setFontSize(Math.max(15 * s, 10 * this.viewport.unitScale));
-    this.mute.setPosition(muteX, top + 55 * s).setFontSize(32 * s);
-    this.caption.setPosition(safe.centerX, safe.bottom - 160 * s).setFontSize(23 * s);
-    this.invitation.setPosition(safe.centerX, safe.bottom - 72 * s).setFontSize(17 * s);
-    this.accuracy.setPosition(safe.centerX, safe.bottom - 115 * s).setFontSize(16 * s);
+    const gap = Math.max(88 * s, this.controlSize + 4 * s);
+    this.muteAt = { x: safe.right - 56 * s, y: top + 66 * s };
+    this.restartAt = { x: this.muteAt.x - gap, y: this.muteAt.y };
+    this.mapAt = { x: safe.left + 56 * s, y: this.muteAt.y };
+    this.drawChrome(s);
+    // Floors in CSS pixels, because these are read at arm's length on a phone: the caption
+    // never drops below 13 px and the labels never below 10 px.
+    this.caption.setFontSize(Math.max(26 * s, 13 * this.viewport.unitScale)).setPosition(safe.centerX, safe.bottom - 160 * s);
+    this.invitation.setFontSize(Math.max(18 * s, 10 * this.viewport.unitScale)).setPosition(safe.centerX, safe.bottom - 72 * s);
+    this.accuracy.setFontSize(Math.max(18 * s, 10 * this.viewport.unitScale)).setPosition(safe.centerX, safe.bottom - 115 * s);
     this.debug.setPosition(left, top + 360 * s).setFontSize(16 * s);
     this.drawMarks();
     this.drawStars();
     this.drawTaskMarks();
-    this.rule.clear().lineStyle(1, this.definition.ink, 0.3).lineBetween(left, top + 100 * s, safe.centerX + 310 * s, top + 100 * s);
+  }
+  private drawChrome(s: number): void {
+    const g = this.chrome.clear();
+    const r = 34 * s;
+    const puck = 0xf6ead0;
+    const ink = this.definition.ink;
+    for (const at of [this.mapAt, this.restartAt, this.muteAt]) drawDisc(g, at.x, at.y, r, s, { fill: puck, depth: 7 });
+    drawMap(g, this.mapAt.x, this.mapAt.y, r * 0.42, ink);
+    drawRestart(g, this.restartAt.x, this.restartAt.y, r * 0.44, ink);
+    drawSpeaker(g, this.muteAt.x, this.muteAt.y, r * 0.5, ink, this.muted);
   }
   private blocked(): boolean { return document.hidden || (isTouchPrimary() && this.scale.isLandscape); }
   private now(): number { return this.audio?.clock.now() ?? performance.now() / 1000; }
@@ -172,7 +199,8 @@ export class PlayScene extends BaseScene {
         this.audio = sharedAudio(this);
         this.audio.setSounds(this.definition.sounds(this.audio.context));
         this.audio.context.addEventListener('statechange', this.audioState);
-        this.mute.setText(this.audio.muted ? '×' : '♪');
+        this.muted = this.audio.muted;
+        this.drawChrome(this.uiScale);
         this.controller = new RoundController(this.audio, {
           phase: phase => this.showPhase(phase),
           cue: cue => {
@@ -227,16 +255,13 @@ export class PlayScene extends BaseScene {
   }
   private handleTap(tap: Tap): void {
     if (this.blocked() || this.curtain.active) return;
-    if (Math.abs(tap.x - this.mute.x) < this.controlSize / 2 && Math.abs(tap.y - this.mute.y) < this.controlSize / 2) {
-      if (this.audio) this.mute.setText(toggleMute(this.audio) ? '×' : '♪');
+    const near = (at: { x: number; y: number }) => Math.abs(tap.x - at.x) < this.controlSize / 2 && Math.abs(tap.y - at.y) < this.controlSize / 2;
+    if (near(this.muteAt)) {
+      if (this.audio) { this.muted = toggleMute(this.audio); this.drawChrome(this.uiScale); }
       return;
     }
-    if (Math.abs(tap.x - this.restart.x) < this.controlSize / 2 && Math.abs(tap.y - this.restart.y) < this.controlSize / 2) {
-      void this.startRound(); return;
-    }
-    if (Math.abs(tap.x - this.menu.x) < this.controlSize / 2 && Math.abs(tap.y - this.menu.y) < this.controlSize / 2) {
-      this.leaveForMap(); return;
-    }
+    if (near(this.restartAt)) { void this.startRound(); return; }
+    if (near(this.mapAt)) { this.leaveForMap(); return; }
     const phase = this.controller?.phase ?? 'idle';
     if (phase === 'idle' || phase === 'paused') { if (!this.starting) void this.startRound(); return; }
     if (phase === 'result') {
@@ -332,14 +357,13 @@ export class PlayScene extends BaseScene {
       ? easeOut((now - (this.finishUnlock - this.definition.endingSec) - 0.28) / 0.3) : 1;
     // setFontSize re-measures and re-rasterises the text canvas; only pay for it on change.
     const headlineSize = (playing ? 48 : 88) * this.uiScale;
-    if (headlineSize !== this.headlineSize) { this.headlineSize = headlineSize; this.headline.setFontSize(headlineSize); }
+    if (headlineSize !== this.headlineSize) { this.headlineSize = headlineSize; resize(this.headline, headlineSize, this.definition.ink); }
     this.headline.setAlpha(reveal * endReveal).setY(this.headlineY + (1 - reveal * endReveal) * 12 * this.uiScale);
     this.caption.setAlpha(endReveal);
     if (this.summaryShown) {
-      const reveal = this.reducedMotion ? 1 : easeOut((now - this.summaryAt) / 0.45);
-      this.stars.setAlpha(reveal).setY((1 - reveal) * 10 * this.uiScale);
-      this.accuracy.setAlpha(reveal);
-    } else { this.stars.setY(0).setAlpha(1); this.accuracy.setAlpha(1); }
+      this.accuracy.setAlpha(this.reducedMotion ? 1 : easeOut((now - this.summaryAt) / 0.45));
+      this.animateStars(now);
+    } else { this.accuracy.setAlpha(1); }
     if (this.controller?.phase === 'result' && !this.transition && now >= this.finishUnlock && !this.summaryShown) this.showSummary();
     if (this.debugMode) {
       const music = this.audio?.music;
@@ -425,6 +449,8 @@ export class PlayScene extends BaseScene {
   private showSummary(): void {
     this.summaryShown = true;
     this.summaryAt = this.now();
+    this.starsLanded = 0;
+    this.starsSettled = false;
     this.replay = null;
     const accuracy = meanAccuracy(this.results);
     this.recordOutcome();
@@ -442,23 +468,58 @@ export class PlayScene extends BaseScene {
     this.drawStars();
     this.drawTaskMarks();
   }
-  /** Quiet progress, not another score counter. Uses completed tasks, never frame time. */
+  /** Quiet progress, not another score counter: a row of beads, the done ones filled. Uses completed tasks, never frame time. */
   private drawTaskMarks(): void {
     const s = this.uiScale, { safe } = this.viewport;
-    const x = safe.centerX - 310 * s, y = safe.top + 75 * s;
+    const count = this.spec.tasks.length;
+    const gap = 20 * s, y = safe.top + 74 * s;
     const g = this.taskMarks.clear();
-    for (let i = 0; i < this.spec.tasks.length; i++) {
-      g.fillStyle(this.definition.ink, i < this.taskIndex || this.summaryShown ? 0.85 : i === this.taskIndex ? 0.5 : 0.15)
-        .fillRoundedRect(x + i * 23 * s, y, 15 * s, 3 * s, 1.5 * s);
+    const f = faces(this.definition.ink);
+    for (let i = 0; i < count; i++) {
+      const x = safe.centerX + (i - (count - 1) / 2) * gap;
+      const done = i < this.taskIndex || this.summaryShown;
+      const current = i === this.taskIndex && !this.summaryShown;
+      const r = (current ? 5.5 : 4.5) * s;
+      g.fillStyle(f.edge, done || current ? 1 : 0.25).fillCircle(x, y + 1.5 * s, r);
+      g.fillStyle(done ? f.face : current ? f.lit : 0xf6ead0, done || current ? 1 : 0.6).fillCircle(x, y, r);
+      if (done || current) g.fillStyle(f.rim, 0.8).fillCircle(x - r * 0.3, y - r * 0.35, r * 0.28);
     }
   }
-  private drawStars(): void {
+  private starAt(k: number): { x: number; y: number } {
+    const { safe } = this.viewport;
+    return { x: safe.centerX + (k - 1) * 64 * this.uiScale, y: safe.bottom - 232 * this.uiScale };
+  }
+  private drawStars(scales: readonly number[] = [1, 1, 1]): void {
     this.stars.clear();
     if (!this.summaryShown) return;
-    const { safe } = this.viewport;
     const s = this.uiScale;
     const earned = starsFor(meanAccuracy(this.results), this.spec);
-    for (let k = 0; k < 3; k++) drawStar(this.stars, safe.centerX + (k - 1) * 46 * s, safe.bottom - 215 * s, 15 * s, this.definition.ink, k < earned, k < earned ? 1 : 0.35);
+    for (let k = 0; k < 3; k++) {
+      const scale = scales[k] ?? 1;
+      if (scale <= 0) continue;
+      const at = this.starAt(k);
+      drawStar(this.stars, at.x, at.y, 22 * s * scale, this.definition.ink, k < earned, k < earned ? 1 : 0.35);
+    }
+  }
+  /** The stars land one after another, each overshooting its size, and an earned one throws confetti as it lands. */
+  private animateStars(now: number): void {
+    if (this.starsSettled) return;
+    const t = STYLE.current;
+    const earned = starsFor(meanAccuracy(this.results), this.spec);
+    const scales: number[] = [];
+    let landed = 0;
+    for (let k = 0; k < 3; k++) {
+      const p = this.reducedMotion ? 1 : clamp01((now - this.summaryAt - 0.25 - stagger(k, 3, 0.5)) / 0.42);
+      scales.push(overshoot(p, 0.35 * t.exaggeration));
+      if (p >= 1) landed++;
+      if (p >= 1 && k >= this.starsLanded) {
+        this.starsLanded = k + 1;
+        const at = this.starAt(k);
+        if (k < earned && !this.reducedMotion) this.fx.burst('confetti', at.x, at.y - 10 * this.uiScale, [0xcf5134, 0xdfc37f, 0xfff9e8, this.definition.ink], 14);
+      }
+    }
+    this.drawStars(scales);
+    if (landed === 3) this.starsSettled = true;
   }
   private leaveForMap(): void {
     if (this.curtain.active) return;
@@ -510,6 +571,7 @@ export class PlayScene extends BaseScene {
     this.replayPanel = null;
     this.controller?.dispose();
     this.vignette.destroy();
+    this.fx.destroy();
     document.removeEventListener('visibilitychange', this.visibility);
     window.removeEventListener('pagehide', this.pageHide);
     this.scale.off(Phaser.Scale.Events.RESIZE, this.checkOrientation, this);

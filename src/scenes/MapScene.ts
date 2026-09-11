@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { reducedMotion } from '@/core/motionPreference';
 import { sharedAudio, isMuted, toggleMute } from '@/audio/sharedAudio';
 import { PROGRESSION } from '@/config/progression';
 import { SceneKey } from '@/config/scenes';
@@ -82,7 +83,7 @@ export class MapScene extends BaseScene {
   private focus = 1;
   private centered = false;
   private disposed = false;
-  private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  private readonly reducedMotion = reducedMotion();
 
   public constructor() { super(SceneKey.Map); }
 

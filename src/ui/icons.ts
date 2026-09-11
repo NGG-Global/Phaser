@@ -1,0 +1,62 @@
+import Phaser from 'phaser';
+
+/**
+ * Controls drawn as geometry. `♪ × ← ↻` were set as text, and `gear.ts` already records
+ * why a glyph is a risk: enough Android system fonts lack it to show a tofu box on a
+ * handset. Geometry also takes the treatment's outline and lighting like everything else.
+ */
+
+export function drawSpeaker(g: Phaser.GameObjects.Graphics, x: number, y: number, r: number, colour: number, muted: boolean, alpha = 1): void {
+  g.fillStyle(colour, alpha);
+  // Cabinet and horn.
+  g.fillRect(x - r * 0.75, y - r * 0.3, r * 0.45, r * 0.6);
+  g.fillTriangle(x - r * 0.35, y - r * 0.3, x + r * 0.15, y - r * 0.75, x + r * 0.15, y + r * 0.75);
+  g.fillRect(x - r * 0.35, y - r * 0.3, r * 0.5, r * 0.6);
+  g.lineStyle(Math.max(2, r * 0.16), colour, alpha);
+  if (muted) {
+    g.lineBetween(x + r * 0.35, y - r * 0.35, x + r * 0.85, y + r * 0.35);
+    g.lineBetween(x + r * 0.85, y - r * 0.35, x + r * 0.35, y + r * 0.35);
+  } else {
+    g.beginPath(); g.arc(x + r * 0.1, y, r * 0.5, -0.9, 0.9); g.strokePath();
+    g.beginPath(); g.arc(x + r * 0.1, y, r * 0.8, -0.9, 0.9); g.strokePath();
+  }
+}
+
+export function drawBack(g: Phaser.GameObjects.Graphics, x: number, y: number, r: number, colour: number, alpha = 1): void {
+  g.lineStyle(Math.max(2.5, r * 0.22), colour, alpha);
+  g.lineBetween(x - r * 0.7, y, x + r * 0.7, y);
+  g.lineBetween(x - r * 0.7, y, x - r * 0.1, y - r * 0.6);
+  g.lineBetween(x - r * 0.7, y, x - r * 0.1, y + r * 0.6);
+}
+
+export function drawRestart(g: Phaser.GameObjects.Graphics, x: number, y: number, r: number, colour: number, alpha = 1): void {
+  const w = Math.max(2.5, r * 0.22);
+  g.lineStyle(w, colour, alpha);
+  g.beginPath(); g.arc(x, y, r * 0.65, -Math.PI * 0.35, Math.PI * 1.35); g.strokePath();
+  // Arrowhead at the open end.
+  const ax = x + Math.cos(-Math.PI * 0.35) * r * 0.65, ay = y + Math.sin(-Math.PI * 0.35) * r * 0.65;
+  g.fillStyle(colour, alpha);
+  g.fillTriangle(ax - r * 0.3, ay - r * 0.05, ax + r * 0.18, ay - r * 0.42, ax + r * 0.22, ay + r * 0.2);
+}
+
+export function drawPlay(g: Phaser.GameObjects.Graphics, x: number, y: number, r: number, colour: number, alpha = 1): void {
+  g.fillStyle(colour, alpha);
+  g.fillTriangle(x - r * 0.5, y - r * 0.7, x - r * 0.5, y + r * 0.7, x + r * 0.75, y);
+}
+
+export function drawMap(g: Phaser.GameObjects.Graphics, x: number, y: number, r: number, colour: number, alpha = 1): void {
+  // A folded map: three panels, the middle one dropped.
+  g.fillStyle(colour, alpha);
+  const w = r * 0.5, h = r * 1.2;
+  g.fillPoints(new Phaser.Geom.Polygon([
+    { x: x - w * 1.5, y: y - h / 2 }, { x: x - w * 0.5, y: y - h / 2 + r * 0.25 }, { x: x - w * 0.5, y: y + h / 2 + r * 0.25 }, { x: x - w * 1.5, y: y + h / 2 },
+  ]).points, true);
+  g.fillStyle(colour, alpha * 0.7);
+  g.fillPoints(new Phaser.Geom.Polygon([
+    { x: x - w * 0.5, y: y - h / 2 + r * 0.25 }, { x: x + w * 0.5, y: y - h / 2 }, { x: x + w * 0.5, y: y + h / 2 }, { x: x - w * 0.5, y: y + h / 2 + r * 0.25 },
+  ]).points, true);
+  g.fillStyle(colour, alpha);
+  g.fillPoints(new Phaser.Geom.Polygon([
+    { x: x + w * 0.5, y: y - h / 2 }, { x: x + w * 1.5, y: y - h / 2 + r * 0.25 }, { x: x + w * 1.5, y: y + h / 2 + r * 0.25 }, { x: x + w * 0.5, y: y + h / 2 },
+  ]).points, true);
+}

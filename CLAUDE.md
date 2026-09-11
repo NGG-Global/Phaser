@@ -133,10 +133,12 @@ src/
     progression.ts     The one difficulty curve and its knobs
     rhythm.ts          Timing windows and scheduling constants
     scenes.ts          Scene keys
-    theme.ts           Palette and font stack
+    style.ts           The visual treatment: outline, ornament, exaggeration, type
+    theme.ts           Legacy palette; only the clear colour and the preloader use it
   core/
     BaseScene.ts       Scene base class owning the build/layout lifecycle
     Viewport.ts        Live layout frames (full / safe / content / designBox)
+    motionPreference.ts  The one live read of prefers-reduced-motion
     safeArea.ts        Reads env(safe-area-inset-*) via a probe element
     shell.ts           Controls the DOM overlays in index.html
   game/
@@ -164,10 +166,18 @@ src/
     SettingsScene.ts   Latency calibration, mute, reset progress
   textures/
     generateCoreTextures.ts   Procedural placeholder art
+    materials.ts       Seeded canvas tiles: paper, wood, metal, cloth, parchment
   ui/
+    backdrop.ts        The shared stage behind a vignette: ground, light pool, paper
     colour.ts          hex / mix / shade, so depth tones derive from one palette
+    feedback.ts        Particle presets on generated textures; the soft glow disc
+    gear.ts, icons.ts  Drawn control glyphs; no symbol fonts
+    light.ts           The one key light: cast shadows and lit/shade/rim faces
+    panel.ts           Slabs and pucks with thickness, dressed per treatment
     path.ts            Catmull-Rom smoothing and dash spacing
+    spring.ts          Physical motion as pure f(t): spring, overshoot, squash, settle
     star.ts            The star glyph
+    type.ts            Display, body and label text from the treatment's bundled faces
   vignettes/
     registry.ts        The rotation. Order is the level assignment.
     Vignette.ts        The contract a vignette implements
@@ -277,8 +287,22 @@ Verified by testing, and easy to reintroduce:
 ## Assets
 
 All art is procedural: drawn as Phaser Graphics inside each vignette and scene,
-or generated at boot in `textures/generateCoreTextures.ts` and looked up by key
-from `TextureKey`. There are no image files.
+or generated at boot — placeholder textures in `textures/generateCoreTextures.ts`,
+material tiles in `textures/materials.ts`, particle and glow discs in
+`ui/feedback.ts` — and looked up by key. There are no image files.
+
+The typefaces are the exception to "nothing but the music is downloaded". Four
+variable fonts under `public/fonts/`, all under the SIL Open Font License with
+each family's `OFL.txt` committed beside it, load through Phaser's `load.font()`
+in `PreloadScene.preload()` before the menu builds, because Phaser `Text`
+rasterises at creation and never reflows for a font that arrives later. Only the
+chosen treatment's display face and the body face should survive the style
+lab; the others are there so the three treatments run from one build.
+
+Which treatment renders is `STYLE.current` in `config/style.ts`. Every drawing
+module reads it, and in a DEV build `?style=workshop|studio|tavern` overrides
+it, so the three can be compared from one dev server. Nothing else may branch
+on a treatment id except the few colours a treatment owns outright.
 
 The repository does ship binary audio — the WAV masters in `bgm/` and the MP3s
 encoded from them — and that is the great majority of the checkout. Only the

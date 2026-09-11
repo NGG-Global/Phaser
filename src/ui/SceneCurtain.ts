@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { reducedMotion } from '@/core/motionPreference';
 
 /** A paper sweep between screens. Presentation only: never schedules a musical event. */
 export class SceneCurtain {
@@ -6,7 +7,7 @@ export class SceneCurtain {
   private readonly motion = { progress: 0 };
   private busy = false;
   private disposed = false;
-  private readonly reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  private readonly reduced = reducedMotion();
 
   public constructor(private readonly scene: Phaser.Scene, private readonly colour = 0xf4f0e2) {
     this.graphic = scene.add.graphics().setScrollFactor(0).setDepth(1000);

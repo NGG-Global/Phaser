@@ -5,6 +5,16 @@ import { SceneKey } from '@/config/scenes';
 import { COLORS, CSS_COLORS, FONT_FAMILY } from '@/config/theme';
 import { hideBootOverlay } from '@/core/shell';
 import { generateCoreTextures } from '@/textures/generateCoreTextures';
+import { generateMaterials } from '@/textures/materials';
+import { generateFeedbackTextures } from '@/ui/feedback';
+
+/** Family name, relative URL, and the variable font's weight range for `font-weight` matching. */
+const FONTS: readonly (readonly [string, string, string])[] = [
+  ['Fredoka', 'fonts/fredoka/Fredoka.ttf', '300 700'],
+  ['Quicksand', 'fonts/quicksand/Quicksand.ttf', '300 700'],
+  ['Baloo 2', 'fonts/baloo2/Baloo2.ttf', '400 800'],
+  ['Nunito', 'fonts/nunito/Nunito.ttf', '200 1000'],
+];
 
 const BAR_WIDTH = DESIGN_WIDTH * 0.62;
 const BAR_HEIGHT = 8;
@@ -29,10 +39,16 @@ export class PreloadScene extends Phaser.Scene {
     // Textures are generated here rather than in `create` so they are in the
     // cache before any scene that draws them starts.
     generateCoreTextures(this);
+    generateMaterials(this);
+    generateFeedbackTextures(this);
 
-    // Real assets go here, e.g.:
-    //   this.load.setPath('assets');
-    //   this.load.atlas('game', 'game.png', 'game.json');
+    // The bundled typefaces, all SIL Open Font Licence, with each family's OFL.txt beside
+    // it. Registered as FontFaces before Menu builds, because Phaser Text rasterises at
+    // creation and will not reflow when a font arrives later. Relative paths: the APK
+    // serves from a file origin where an absolute `/fonts/...` would 404.
+    for (const [family, url, weight] of FONTS) {
+      this.load.font({ key: family, url, format: 'truetype', descriptors: { weight, style: 'normal' } });
+    }
   }
 
   public create(): void {
