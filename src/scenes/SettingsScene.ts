@@ -8,6 +8,7 @@ import { clearProgress, loadProgress } from '@/game/progress';
 import { calibrationFrom, CALIBRATION_TAPS, loadSettings } from '@/game/settings';
 import { TapInput, type Tap } from '@/input/TapInput';
 import { hex, shade } from '@/ui/colour';
+import { SceneCurtain } from '@/ui/SceneCurtain';
 
 const PANEL = {
   ink: 0x243e35, paper: 0xf4f0e2,
@@ -43,6 +44,7 @@ export class SettingsScene extends BaseScene {
   private footnote!: Phaser.GameObjects.Text;
   private buttons: Record<'calibrate' | 'sound' | 'reset' | 'done', Button> = null!;
   private taps!: TapInput;
+  private curtain!: SceneCurtain;
   private uiScale = 1;
   private phase: Phase = 'idle';
   private calibrationMs = 0;
@@ -88,6 +90,8 @@ export class SettingsScene extends BaseScene {
       done: this.button('DONE'),
     };
     this.taps = new TapInput(this, tap => this.handleTap(tap));
+    this.curtain = new SceneCurtain(this);
+    this.events.once(Phaser.Scenes.Events.CREATE, () => this.curtain.reveal());
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.shutdown, this);
     this.refreshCopy();
@@ -211,6 +215,7 @@ export class SettingsScene extends BaseScene {
   }
 
   private handleTap(tap: Tap): void {
+    if (this.curtain.active) return;
     if (this.phase === 'counting' && !Phaser.Geom.Rectangle.Contains(this.buttons.calibrate.rect, tap.x, tap.y)) {
       this.recordTap(tap);
       return;
@@ -223,7 +228,7 @@ export class SettingsScene extends BaseScene {
       if (name === 'calibrate') void this.calibrateTapped();
       else if (name === 'sound') { const audio = sharedAudio(this); toggleMute(audio); this.refreshCopy(); }
       else if (name === 'reset') this.resetTapped();
-      else this.scene.start(this.from);
+      else this.curtain.cover(() => this.scene.start(this.from));
       return;
     }
     this.resetArmed = false;

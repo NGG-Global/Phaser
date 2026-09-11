@@ -14,6 +14,7 @@ import type { Judgement } from '@/rhythm/judge';
 import { levelSpec, meanAccuracy, starsFor, type LevelSpec } from '@/game/levels';
 import { loadProgress, recordResult, saveProgress, type LevelOutcome } from '@/game/progress';
 import { drawStar } from '@/ui/star';
+import { SceneCurtain } from '@/ui/SceneCurtain';
 import { VIGNETTES } from '@/vignettes/registry';
 import type { Vignette } from '@/vignettes/Vignette';
 import { easeOut } from '@/vignettes/motion';
@@ -46,6 +47,10 @@ export class PlayScene extends BaseScene {
   private mute!: Phaser.GameObjects.Text;
   private marks!: Phaser.GameObjects.Graphics;
   private rule!: Phaser.GameObjects.Graphics;
+  private taskMarks!: Phaser.GameObjects.Graphics;
+  private curtain!: SceneCurtain;
+  private summaryAt = -Infinity;
+  private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   private debug!: Phaser.GameObjects.Text;
   private controlSize = 96;
   private uiScale = 1;
@@ -89,6 +94,8 @@ export class PlayScene extends BaseScene {
     this.mute = this.text('♪', 32, 'Georgia, serif').setOrigin(0.5);
     this.marks = this.add.graphics();
     this.rule = this.add.graphics();
+    this.taskMarks = this.add.graphics();
+    this.curtain = new SceneCurtain(this);
     this.debug = this.text('', 16, 'monospace').setVisible(this.debugMode);
     if (this.debugMode) this.installReplayPanel();
     this.taps = new TapInput(this, tap => this.handleTap(tap));
@@ -98,8 +105,12 @@ export class PlayScene extends BaseScene {
     this.scale.on(Phaser.Scale.Events.RESIZE, this.checkOrientation, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.shutdown, this);
-    // Arriving from the map: audio is already unlocked and loaded, so begin at once.
-    if (data?.autoStart) this.events.once(Phaser.Scenes.Events.CREATE, () => { void this.startRound(); });
+    // Arriving from the map: audio is already unlocked and loaded.
+    // Reveal the illustration before starting the four-beat preparation. Navigation
+    // motion must never obscure a musical cue or move an already-running rhythm grid.
+    this.events.once(Phaser.Scenes.Events.CREATE, () => this.curtain.reveal(() => {
+      if (data?.autoStart) void this.startRound();
+    }));
   }
   private text(value: string, size: number, fontFamily: string): Phaser.GameObjects.Text {
     return this.add.text(0, 0, value, { fontFamily, fontSize: `${size}px`, color: `#${this.definition.ink.toString(16).padStart(6, '0')}` });
@@ -111,20 +122,23 @@ export class PlayScene extends BaseScene {
     this.uiScale = s;
     const left = safe.centerX - 310 * s;
     const top = safe.top;
-    this.edition.setPosition(left, top + 47 * s).setFontSize(16 * s);
+    this.edition.setPosition(left, top + 38 * s).setFontSize(15 * s);
     this.headlineY = top + 135 * s;
     this.headlineSize = (this.controller?.active ? 48 : 88) * s;
     this.headline.setPosition(left - 5 * s, this.headlineY).setFontSize(this.headlineSize).setLineSpacing(-12 * s);
     this.controlSize = Math.max(88 * s, 48 * this.viewport.unitScale);
-    this.restart.setPosition(safe.centerX + 175 * s, top + 55 * s).setFontSize(36 * s);
-    this.menu.setPosition(safe.centerX + 70 * s, top + 55 * s).setFontSize(15 * s);
-    this.mute.setPosition(safe.centerX + 283 * s, top + 55 * s).setFontSize(32 * s);
+    const muteX = safe.centerX + 283 * s;
+    const controlGap = Math.max(104 * s, 56 * this.viewport.unitScale);
+    this.restart.setPosition(muteX - controlGap, top + 55 * s).setFontSize(36 * s);
+    this.menu.setPosition(muteX - controlGap * 2, top + 55 * s).setFontSize(Math.max(15 * s, 10 * this.viewport.unitScale));
+    this.mute.setPosition(muteX, top + 55 * s).setFontSize(32 * s);
     this.caption.setPosition(safe.centerX, safe.bottom - 160 * s).setFontSize(23 * s);
     this.invitation.setPosition(safe.centerX, safe.bottom - 72 * s).setFontSize(17 * s);
     this.accuracy.setPosition(safe.centerX, safe.bottom - 115 * s).setFontSize(16 * s);
     this.debug.setPosition(left, top + 360 * s).setFontSize(16 * s);
     this.drawMarks();
     this.drawStars();
+    this.drawTaskMarks();
     this.rule.clear().lineStyle(1, this.definition.ink, 0.3).lineBetween(left, top + 100 * s, safe.centerX + 310 * s, top + 100 * s);
   }
   private blocked(): boolean { return document.hidden || (isTouchPrimary() && this.scale.isLandscape); }
@@ -200,7 +214,7 @@ export class PlayScene extends BaseScene {
     this.demoCount = 0;
     this.finishUnlock = Infinity;
     this.accuracy.setText('');
-    this.edition.setText(`LEVEL ${this.spec.level}   ·   TASK ${this.taskIndex + 1}/${this.spec.tasks.length}`);
+    this.edition.setText(`LEVEL ${String(this.spec.level).padStart(2, '0')}`);
     this.outcomes = this.task.pattern.hits.map(() => 'pending');
     this.controller!.start(this.task.pattern, this.task.bpm, this.audio!.context.currentTime, performance.now(), startAt);
     this.vignette.reset(this.controller!.plan!);
@@ -209,9 +223,10 @@ export class PlayScene extends BaseScene {
       this.replay = { roundId: plan.id, targets: this.replayTargets(), next: 0 };
     }
     this.drawMarks();
+    this.drawTaskMarks();
   }
   private handleTap(tap: Tap): void {
-    if (this.blocked()) return;
+    if (this.blocked() || this.curtain.active) return;
     if (Math.abs(tap.x - this.mute.x) < this.controlSize / 2 && Math.abs(tap.y - this.mute.y) < this.controlSize / 2) {
       if (this.audio) this.mute.setText(toggleMute(this.audio) ? '×' : '♪');
       return;
@@ -320,6 +335,11 @@ export class PlayScene extends BaseScene {
     if (headlineSize !== this.headlineSize) { this.headlineSize = headlineSize; this.headline.setFontSize(headlineSize); }
     this.headline.setAlpha(reveal * endReveal).setY(this.headlineY + (1 - reveal * endReveal) * 12 * this.uiScale);
     this.caption.setAlpha(endReveal);
+    if (this.summaryShown) {
+      const reveal = this.reducedMotion ? 1 : easeOut((now - this.summaryAt) / 0.45);
+      this.stars.setAlpha(reveal).setY((1 - reveal) * 10 * this.uiScale);
+      this.accuracy.setAlpha(reveal);
+    } else { this.stars.setY(0).setAlpha(1); this.accuracy.setAlpha(1); }
     if (this.controller?.phase === 'result' && !this.transition && now >= this.finishUnlock && !this.summaryShown) this.showSummary();
     if (this.debugMode) {
       const music = this.audio?.music;
@@ -400,6 +420,7 @@ export class PlayScene extends BaseScene {
   }
   private showSummary(): void {
     this.summaryShown = true;
+    this.summaryAt = this.now();
     this.replay = null;
     const accuracy = meanAccuracy(this.results);
     this.recordOutcome();
@@ -415,6 +436,17 @@ export class PlayScene extends BaseScene {
     this.accuracy.setText(`${Math.round(accuracy)}% IN TIME`);
     this.invitation.setText(outcome.cleared ? 'TAP TO CONTINUE' : 'TAP TO TRY AGAIN');
     this.drawStars();
+    this.drawTaskMarks();
+  }
+  /** Quiet progress, not another score counter. Uses completed tasks, never frame time. */
+  private drawTaskMarks(): void {
+    const s = this.uiScale, { safe } = this.viewport;
+    const x = safe.centerX - 310 * s, y = safe.top + 75 * s;
+    const g = this.taskMarks.clear();
+    for (let i = 0; i < this.spec.tasks.length; i++) {
+      g.fillStyle(this.definition.ink, i < this.taskIndex || this.summaryShown ? 0.85 : i === this.taskIndex ? 0.5 : 0.15)
+        .fillRoundedRect(x + i * 23 * s, y, 15 * s, 3 * s, 1.5 * s);
+    }
   }
   private drawStars(): void {
     this.stars.clear();
@@ -425,8 +457,14 @@ export class PlayScene extends BaseScene {
     for (let k = 0; k < 3; k++) drawStar(this.stars, safe.centerX + (k - 1) * 46 * s, safe.bottom - 215 * s, 15 * s, this.definition.ink, k < earned, k < earned ? 1 : 0.35);
   }
   private leaveForMap(): void {
+    if (this.curtain.active) return;
+    // Stop outgoing action voices immediately; the shared music remains the bedding.
+    this.controller?.dispose();
+    this.transition = null;
+    this.replay = null;
+    this.audio?.cancel();
     this.audio?.music.setRate(1, this.audio.context.currentTime);
-    this.scene.start(SceneKey.Map, { focus: this.levelCleared ? this.spec.level + 1 : this.spec.level });
+    this.curtain.cover(() => this.scene.start(SceneKey.Map, { focus: this.levelCleared ? this.spec.level + 1 : this.spec.level }));
   }
   private showPause(): void {
     this.vignette.pause();
