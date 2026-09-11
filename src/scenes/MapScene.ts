@@ -19,6 +19,12 @@ const MAP = {
   shadowDrop: 9,
   /** Bands used for the haze ramp up each area and for the blend across a boundary. */
   hazeBands: 12, blendBands: 9, blendHeight: 120,
+  /**
+   * The map renders a window, not the whole road. It used to build one Phaser Text per
+   * level from level 1, so a deep — or corrupt — frontier allocated thousands of them
+   * on every entry and re-laid them out on every resize.
+   */
+  window: 48, history: 20,
 } as const;
 
 /**
@@ -31,6 +37,9 @@ const MAP = {
 export class MapScene extends BaseScene {
   private progress!: Progress;
   private shown = 0;
+  /** Lowest level rendered. Node i is level `first + i`. */
+  private first = 1;
+  private firstBand = 0;
   private world!: Phaser.GameObjects.Graphics;
   private pulse!: Phaser.GameObjects.Graphics;
   private touch!: Phaser.GameObjects.Graphics;
@@ -67,14 +76,18 @@ export class MapScene extends BaseScene {
     this.progress = loadProgress();
     const data = this.sys.settings.data as { focus?: number } | undefined;
     this.focus = Math.max(1, Math.min(this.progress.unlocked, data?.focus ?? this.progress.unlocked));
-    this.shown = this.progress.unlocked + PROGRESSION.mapLookahead;
+    const top = this.progress.unlocked + PROGRESSION.mapLookahead;
+    this.first = Math.max(1, Math.min(this.focus - MAP.history, top - MAP.window + 1));
+    this.shown = Math.min(top, this.first + MAP.window - 1) - this.first + 1;
     this.world = this.add.graphics();
     this.pulse = this.add.graphics().setDepth(4);
     this.touch = this.add.graphics().setDepth(5);
-    this.numbers = Array.from({ length: this.shown }, (_, i) => this.add.text(0, 0, String(i + 1), { fontFamily: 'Georgia, serif', fontSize: '32px' }).setOrigin(0.5).setDepth(3));
-    const areas = Math.ceil(this.shown / PROGRESSION.areaSize);
-    this.areaTitles = Array.from({ length: areas }, (_, k) => this.add.text(0, 0, areaOf(k * PROGRESSION.areaSize + 1).name.toUpperCase(), { fontFamily: 'Georgia, serif', fontSize: '40px' }).setOrigin(0, 0.5).setDepth(2));
-    this.areaRanges = Array.from({ length: areas }, (_, k) => this.add.text(0, 0, `LEVELS ${k * PROGRESSION.areaSize + 1}–${(k + 1) * PROGRESSION.areaSize}`, { fontFamily: 'monospace', fontSize: '15px' }).setLetterSpacing(2).setOrigin(0, 0.5).setDepth(2));
+    this.numbers = Array.from({ length: this.shown }, (_, i) => this.add.text(0, 0, String(this.first + i), { fontFamily: 'Georgia, serif', fontSize: '32px' }).setOrigin(0.5).setDepth(3));
+    // Bands are addressed absolutely, because the window rarely starts on a band edge.
+    this.firstBand = Math.floor((this.first - 1) / PROGRESSION.areaSize);
+    const areas = Math.floor((this.first + this.shown - 2) / PROGRESSION.areaSize) - this.firstBand + 1;
+    this.areaTitles = Array.from({ length: areas }, () => this.add.text(0, 0, '', { fontFamily: 'Georgia, serif', fontSize: '40px' }).setOrigin(0, 0.5).setDepth(2));
+    this.areaRanges = Array.from({ length: areas }, () => this.add.text(0, 0, '', { fontFamily: 'monospace', fontSize: '15px' }).setLetterSpacing(2).setOrigin(0, 0.5).setDepth(2));
     // Frames the scrolling strip; fixed to the camera so it reads as the window, not the world.
     this.frame = this.add.graphics().setScrollFactor(0).setDepth(6);
     this.hudBack = this.add.graphics().setScrollFactor(0).setDepth(10);
@@ -108,11 +121,11 @@ export class MapScene extends BaseScene {
     this.worldHeight = (MAP.topPad + MAP.bottomPad + (this.shown - 1) * MAP.step) * s + this.hudHeight;
     // Level 1 sits at the bottom; the road climbs. x wanders left and right inside the safe frame.
     this.nodes = Array.from({ length: this.shown }, (_, i) => ({
-      x: safe.centerX + Math.sin((i + 1) * 0.9) * safe.width * MAP.wobble,
+      x: safe.centerX + Math.sin((this.first + i) * 0.9) * safe.width * MAP.wobble,
       y: this.worldHeight - (MAP.bottomPad + i * MAP.step) * s,
     }));
     // The road runs one span past the last node so it leaves the frame rather than stopping.
-    const beyond: Point = { x: safe.centerX + Math.sin((this.shown + 1) * 0.9) * safe.width * MAP.wobble, y: (this.nodes[this.shown - 1]?.y ?? 0) - MAP.step * s };
+    const beyond: Point = { x: safe.centerX + Math.sin((this.first + this.shown) * 0.9) * safe.width * MAP.wobble, y: (this.nodes[this.shown - 1]?.y ?? 0) - MAP.step * s };
     this.road = smoothPath([...this.nodes, beyond], MAP.smoothing);
     const g = this.world.clear();
     this.drawTerrain(g, s);
@@ -127,17 +140,39 @@ export class MapScene extends BaseScene {
     this.clampScroll();
   }
 
+  /**
+   * One rendered band: the part of absolute area `firstBand + k` that falls inside the
+   * window, as node indices, plus the area's own full level range for its sign.
+   */
+  private band(k: number): { area: Area; name: string; from: number; to: number; atBottom: boolean; atTop: boolean; range: readonly [number, number] } {
+    const size = PROGRESSION.areaSize;
+    const absolute = this.firstBand + k;
+    const last = this.first + this.shown - 1;
+    const startLevel = Math.max(this.first, absolute * size + 1);
+    const endLevel = Math.min(last, (absolute + 1) * size);
+    const { area, name } = areaOf(absolute * size + 1);
+    return {
+      area, name,
+      from: startLevel - this.first,
+      to: endLevel - this.first,
+      atBottom: startLevel <= this.first,
+      atTop: endLevel >= last,
+      range: [absolute * size + 1, (absolute + 1) * size] as const,
+    };
+  }
+
   /** Ground, haze up each area, a soft blend at every boundary, and per-area texture. */
   private drawTerrain(g: Phaser.GameObjects.Graphics, s: number): void {
     const { full } = this.viewport;
     const size = PROGRESSION.areaSize;
     for (let k = 0; k < this.areaTitles.length; k++) {
-      const { area } = areaOf(k * size + 1);
-      const first = this.nodes[k * size]!;
-      const last = this.nodes[Math.min(this.shown, (k + 1) * size) - 1]!;
-      const isLast = k * size + size >= this.shown;
+      const band = this.band(k);
+      const area = band.area;
+      const first = this.nodes[band.from]!;
+      const last = this.nodes[band.to]!;
+      const isLast = band.atTop;
       const top = isLast ? 0 : last.y - MAP.step * s / 2;
-      const bottom = k === 0 ? this.worldHeight : first.y + MAP.step * s / 2;
+      const bottom = band.atBottom ? this.worldHeight : first.y + MAP.step * s / 2;
       const height = bottom - top;
       g.fillStyle(area.ground).fillRect(full.x, top, full.width, height);
       // Atmospheric recession: the far end of a band hazes toward its own sky colour.
@@ -147,9 +182,9 @@ export class MapScene extends BaseScene {
         g.fillStyle(mix(area.ground, area.sky, 0.32 * (1 - t)), 1);
         g.fillRect(full.x, bandTop, full.width, height * 0.55 / MAP.hazeBands + 1);
       }
-      this.drawTexture(g, area, k, top, bottom, s);
+      this.drawTexture(g, area, this.firstBand + k, top, bottom, s);
       if (!isLast) {
-        const next = areaOf((k + 1) * size + 1).area;
+        const next = areaOf((this.firstBand + k + 1) * size + 1).area;
         const blend = MAP.blendHeight * s;
         const hazed = mix(area.ground, area.sky, 0.32);
         for (let b = 0; b < MAP.blendBands; b++) {
@@ -165,11 +200,10 @@ export class MapScene extends BaseScene {
 
   /** Plaques are drawn after the scenery, or a prop lands on top of the name. */
   private drawPlaques(g: Phaser.GameObjects.Graphics, s: number): void {
-    const size = PROGRESSION.areaSize;
     for (let k = 0; k < this.areaTitles.length; k++) {
-      const { area, name } = areaOf(k * size + 1);
-      const first = this.nodes[k * size]!;
-      this.placePlaque(g, area, name, k, k === 0 ? this.worldHeight : first.y + MAP.step * s / 2, s);
+      const band = this.band(k);
+      const first = this.nodes[band.from]!;
+      this.placePlaque(g, band.area, band.name, k, band.atBottom ? this.worldHeight : first.y + MAP.step * s / 2, s, band.range);
     }
   }
 
@@ -224,7 +258,7 @@ export class MapScene extends BaseScene {
   }
 
   /** A plate for the area name, on whichever side of the road has room for it. */
-  private placePlaque(g: Phaser.GameObjects.Graphics, area: Area, name: string, index: number, bottom: number, s: number): void {
+  private placePlaque(g: Phaser.GameObjects.Graphics, area: Area, name: string, index: number, bottom: number, s: number, levels: readonly [number, number]): void {
     const { safe } = this.viewport;
     const y = bottom - 66 * s;
     const roadX = this.roadXAt(y);
@@ -232,7 +266,7 @@ export class MapScene extends BaseScene {
     const h = 74 * s;
     // Size the plate to its own text: area names are authored, and a long one overflowed.
     const title = this.areaTitles[index]!.setText(name.toUpperCase()).setFontSize(30 * s);
-    const range = this.areaRanges[index]!.setFontSize(13 * s);
+    const range = this.areaRanges[index]!.setText(`LEVELS ${levels[0]}–${levels[1]}`).setFontSize(13 * s);
     const pad = 52 * s;
     const w = Math.min(safe.width - 36 * s, Math.max(206 * s, Math.max(title.width, range.width) + pad));
     // Repeat areas gain a numeral (GRASS VIII), so shrink rather than overflow the plate.
@@ -271,8 +305,8 @@ export class MapScene extends BaseScene {
     for (let i = 0; i < this.shown; i++) {
       const from = Math.max(0, i * MAP.smoothing - 1);
       const to = i * MAP.smoothing + MAP.smoothing + 1;
-      const here = areaOf(i + 1).area.road;
-      const next = areaOf(i + 2).area.road;
+      const here = areaOf(this.first + i).area.road;
+      const next = areaOf(this.first + i + 1).area.road;
       if (here === next) { surface(this.road.slice(from, to), here); continue; }
       const mid = i * MAP.smoothing + Math.floor(MAP.smoothing / 2);
       surface(this.road.slice(from, mid + 1), here);
@@ -290,8 +324,9 @@ export class MapScene extends BaseScene {
       const node = this.nodes[i]!;
       const y = node.y - MAP.step * s * 0.5;
       const roadX = this.roadXAt(y);
-      const { area } = areaOf(i + 1);
-      const kind = Math.floor((i / PROGRESSION.areaSize)) % 5;
+      const level = this.first + i;
+      const { area } = areaOf(level);
+      const kind = Math.floor((level - 1) / PROGRESSION.areaSize) % 5;
       const gapLeft = roadX - safe.left;
       const gapRight = safe.right - roadX;
       const sides: number[] = [];
@@ -399,7 +434,7 @@ export class MapScene extends BaseScene {
   /** Raised discs: cast shadow, a side wall, a face, a rim light. */
   private drawNodes(g: Phaser.GameObjects.Graphics, s: number): void {
     for (let i = 0; i < this.shown; i++) {
-      const level = i + 1;
+      const level = this.first + i;
       const { area } = areaOf(level);
       const node = this.nodes[i]!;
       const cleared = level < this.progress.unlocked;
@@ -492,7 +527,7 @@ export class MapScene extends BaseScene {
   }
 
   private scrollTo(level: number): void {
-    const node = this.nodes[level - 1];
+    const node = this.nodes[level - this.first];
     if (node) this.scrollY = node.y - (this.hudHeight + (this.viewport.full.height - this.hudHeight) * 0.55);
     this.clampScroll();
   }
@@ -511,7 +546,7 @@ export class MapScene extends BaseScene {
     const s = this.uiScale;
     const now = performance.now() / 1000;
     this.pulse.clear();
-    const current = this.nodes[this.progress.unlocked - 1];
+    const current = this.nodes[this.progress.unlocked - this.first];
     if (current && !this.reducedMotion) {
       const { area } = areaOf(this.progress.unlocked);
       const r = MAP.nodeRadius * 1.1 * s;
@@ -566,8 +601,10 @@ export class MapScene extends BaseScene {
     const worldY = y + this.scrollY;
     const reach = Math.max(MAP.nodeRadius * this.uiScale, this.controlSize / 2);
     const index = this.nodes.findIndex(node => Math.hypot(node.x - x, node.y - worldY) <= reach);
-    if (index < 0 || index + 1 > this.progress.unlocked) return;
-    this.scene.start(SceneKey.Play, { level: index + 1, autoStart: true });
+    if (index < 0) return;
+    const level = this.first + index;
+    if (level > this.progress.unlocked) return;
+    this.scene.start(SceneKey.Play, { level, autoStart: true });
   }
   private shutdown(): void {
     if (this.disposed) return;

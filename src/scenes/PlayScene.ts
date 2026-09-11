@@ -12,7 +12,7 @@ import type { RoundResult } from '@/game/scoring';
 import { TapInput, type Tap } from '@/input/TapInput';
 import type { Judgement } from '@/rhythm/judge';
 import { levelSpec, meanAccuracy, starsFor, type LevelSpec } from '@/game/levels';
-import { loadProgress, recordResult, saveProgress } from '@/game/progress';
+import { loadProgress, recordResult, saveProgress, type LevelOutcome } from '@/game/progress';
 import { drawStar } from '@/ui/star';
 import { VIGNETTES } from '@/vignettes/registry';
 import type { Vignette } from '@/vignettes/Vignette';
@@ -31,6 +31,9 @@ export class PlayScene extends BaseScene {
   private results: number[] = [];
   private summaryShown = false;
   private levelCleared = false;
+  /** Computed and persisted the instant the last task resolves; the summary only displays it. */
+  private outcome: LevelOutcome | null = null;
+  private saveFailed = false;
   private get definition() { return VIGNETTES.find(v => v.id === this.spec.vignette) ?? VIGNETTES[0]!; }
   private stars!: Phaser.GameObjects.Graphics;
   private headline!: Phaser.GameObjects.Text;
@@ -137,6 +140,8 @@ export class PlayScene extends BaseScene {
     this.results = [];
     this.summaryShown = false;
     this.levelCleared = false;
+    this.outcome = null;
+    this.saveFailed = false;
     this.stars.clear();
     this.controller?.dispose();
     this.audio?.cancel();
@@ -374,7 +379,13 @@ export class PlayScene extends BaseScene {
     this.finishUnlock = contact + this.definition.endingSec;
     const last = this.taskIndex >= this.spec.tasks.length - 1;
     this.transition = last ? null : { ...ending, swapped: false };
-    if (last) this.audio!.music.setRate(1, ending.next); // back to the source tempo on the next downbeat
+    if (last) {
+      this.audio!.music.setRate(1, ending.next); // back to the source tempo on the next downbeat
+      // Record here, not when the summary draws. The summary waits out the coda, and a
+      // notification in that window used to route through interrupt() and discard a
+      // cleared level entirely.
+      this.recordOutcome();
+    }
     const copy = strong ? this.definition.success : this.definition.rough;
     this.changeHeadline(copy[0]);
     this.caption.setText(copy[1]);
@@ -382,16 +393,26 @@ export class PlayScene extends BaseScene {
     this.invitation.setText('');
     this.drawMarks();
   }
+  /** Idempotent: the level is scored and saved once, however often this is reached. */
+  private recordOutcome(): void {
+    if (this.outcome) return;
+    const outcome = recordResult(loadProgress(), this.spec.level, meanAccuracy(this.results));
+    this.outcome = outcome;
+    this.levelCleared = outcome.cleared;
+    this.saveFailed = outcome.cleared && !saveProgress(outcome.progress);
+  }
   private showSummary(): void {
     this.summaryShown = true;
     this.replay = null;
     const accuracy = meanAccuracy(this.results);
-    const outcome = recordResult(loadProgress(), this.spec.level, accuracy);
-    this.levelCleared = outcome.cleared;
-    if (outcome.cleared) saveProgress(outcome.progress);
+    this.recordOutcome();
+    const outcome = this.outcome!;
     const stars = starsFor(accuracy, this.spec);
     this.changeHeadline(outcome.cleared ? `Level ${this.spec.level}\ncleared.` : 'Not quite\nyet.');
-    this.caption.setText(outcome.cleared
+    this.caption.setText(this.saveFailed
+      // Silently losing a clear is worse than saying so once.
+      ? 'Cleared — but this device would not save it.'
+      : outcome.cleared
       ? (stars === 3 ? 'Every beat where it belongs.' : stars === 2 ? 'Steady hands.' : 'That will do nicely.')
       : `${this.spec.clearAccuracy}% in time clears this one.`);
     this.accuracy.setText(`${Math.round(accuracy)}% IN TIME`);

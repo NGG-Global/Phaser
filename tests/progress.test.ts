@@ -12,9 +12,31 @@ describe('progress', () => {
   it('starts at level 1 with nothing stored, corrupt storage, or no storage', () => {
     expect(loadProgress(memoryStorage())).toEqual({ unlocked: 1, best: {} });
     expect(loadProgress(memoryStorage({ 'small-acts.progress.v1': '{not json' }))).toEqual({ unlocked: 1, best: {} });
-    expect(loadProgress(memoryStorage({ 'small-acts.progress.v1': '{"unlocked":"x","best":{"a":1,"2":"no","3":150}}' }))).toEqual({ unlocked: 1, best: { 3: 100 } });
     expect(loadProgress(null)).toEqual({ unlocked: 1, best: {} });
     expect(saveProgress({ unlocked: 2, best: {} }, null)).toBe(false);
+  });
+  it('rebuilds the frontier from cleared levels rather than demoting to level 1', () => {
+    // A corrupt `unlocked` used to send the player back to level 1 while their clears
+    // sat in `best` — the same information the frontier is derived from.
+    expect(loadProgress(memoryStorage({ 'small-acts.progress.v1': '{"unlocked":"x","best":{"a":1,"2":"no","3":150}}' })))
+      .toEqual({ unlocked: 4, best: { 3: 100 } });
+    // Nothing cleared and nothing usable stored still starts at the beginning.
+    expect(loadProgress(memoryStorage({ 'small-acts.progress.v1': '{"unlocked":-5,"best":{}}' }))).toEqual({ unlocked: 1, best: {} });
+  });
+  it('bounds a corrupt or tampered frontier so the map cannot be asked to allocate it', () => {
+    // MapScene builds one Text per level from this number; 1e15 threw RangeError in
+    // build(), and with no reset in the UI the player could not recover.
+    const huge = loadProgress(memoryStorage({ 'small-acts.progress.v1': '{"unlocked":1e15,"best":{}}' }));
+    expect(huge.unlocked).toBeLessThanOrEqual(100_000);
+    expect(Number.isInteger(huge.unlocked)).toBe(true);
+    expect(loadProgress(memoryStorage({ 'small-acts.progress.v1': '{"unlocked":250,"best":{}}' })).unlocked).toBe(250);
+  });
+  it('writes a version alongside the payload without returning it', () => {
+    const storage = memoryStorage();
+    saveProgress({ unlocked: 3, best: { 1: 80, 2: 90 } }, storage);
+    expect(JSON.parse(storage.getItem('small-acts.progress.v1')!).version).toBe(1);
+    // The version is storage detail; callers keep seeing the same shape.
+    expect(loadProgress(storage)).toEqual({ unlocked: 3, best: { 1: 80, 2: 90 } });
   });
   it('unlocks the next level only when the frontier is cleared and keeps the best accuracy', () => {
     let progress = loadProgress(memoryStorage());

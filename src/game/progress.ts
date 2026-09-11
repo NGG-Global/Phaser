@@ -14,7 +14,24 @@ export interface LevelOutcome {
 }
 
 const KEY = 'small-acts.progress.v1';
+/** Written but not required on read, so a future migration has something to branch on. */
+const VERSION = 1;
+/**
+ * Far beyond any real run — difficulty saturates near level 18,600 — but it bounds
+ * what a corrupt or tampered value can ask the map to allocate.
+ */
+const MAX_LEVEL = 100_000;
 const EMPTY: Progress = Object.freeze({ unlocked: 1, best: Object.freeze({}) });
+
+/**
+ * The frontier, from the levels actually cleared. Used when the stored `unlocked` is
+ * missing or nonsense: `best` holds the same information, so demoting a player to
+ * level 1 while their clears are sitting right there would throw away real progress.
+ */
+function frontierFrom(best: Record<number, number>): number {
+  const levels = Object.keys(best).map(Number).filter(n => Number.isInteger(n) && n >= 1);
+  return levels.length ? Math.min(MAX_LEVEL, Math.max(...levels) + 1) : 1;
+}
 
 /** Reads may fail in private windows or blocked storage; the game then simply starts at level 1. */
 export function loadProgress(storage: Storage | null = safeStorage()): Progress {
@@ -31,12 +48,14 @@ export function loadProgress(storage: Storage | null = safeStorage()): Progress 
         if (Number.isInteger(n) && n >= 1 && typeof accuracy === 'number' && Number.isFinite(accuracy)) clean[n] = Math.max(0, Math.min(100, accuracy));
       }
     }
-    return { unlocked: Number.isInteger(unlocked) && (unlocked as number) >= 1 ? unlocked as number : 1, best: Object.freeze(clean) };
+    const stored = Number.isInteger(unlocked) && (unlocked as number) >= 1 ? Math.min(MAX_LEVEL, unlocked as number) : frontierFrom(clean);
+    return { unlocked: stored, best: Object.freeze(clean) };
   } catch { return EMPTY; }
 }
 
+/** False means nothing was written — blocked storage, a private window, or a full quota. */
 export function saveProgress(progress: Progress, storage: Storage | null = safeStorage()): boolean {
-  try { storage?.setItem(KEY, JSON.stringify(progress)); return storage !== null; } catch { return false; }
+  try { storage?.setItem(KEY, JSON.stringify({ version: VERSION, ...progress })); return storage !== null; } catch { return false; }
 }
 
 /** Applies one finished level. Clearing the highest unlocked level unlocks the next; replays only raise the best. */
