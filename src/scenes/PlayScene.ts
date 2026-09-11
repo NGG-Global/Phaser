@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import type { AudioEngine } from '@/audio/AudioEngine';
-import { sharedAudio } from '@/audio/sharedAudio';
+import { sharedAudio, toggleMute } from '@/audio/sharedAudio';
 import { MUSIC } from '@/config/music';
 import { TaskSequence } from '@/game/TaskSequence';
 import { SceneKey } from '@/config/scenes';
@@ -213,8 +213,7 @@ export class PlayScene extends BaseScene {
   private handleTap(tap: Tap): void {
     if (this.blocked()) return;
     if (Math.abs(tap.x - this.mute.x) < this.controlSize / 2 && Math.abs(tap.y - this.mute.y) < this.controlSize / 2) {
-      this.audio?.toggleMute();
-      this.mute.setText(this.audio?.muted ? '×' : '♪');
+      if (this.audio) this.mute.setText(toggleMute(this.audio) ? '×' : '♪');
       return;
     }
     if (Math.abs(tap.x - this.restart.x) < this.controlSize / 2 && Math.abs(tap.y - this.restart.y) < this.controlSize / 2) {

@@ -10,6 +10,7 @@ export const SceneKey = {
   Menu: 'menu',
   Map: 'map',
   Play: 'play',
+  Settings: 'settings',
 } as const;
 
 export type SceneKey = (typeof SceneKey)[keyof typeof SceneKey];

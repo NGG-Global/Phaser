@@ -9,7 +9,6 @@ export const RHYTHM = {
   handoffBeats: 4,
   pumpMs: 20,
   stallMs: 250,
-  calibrationMs: 0,
   clockStampMaxAgeMs: 250,
   goodPoints: 70,
   extraPenalty: 25,

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { currentAudio, sharedAudio } from '@/audio/sharedAudio';
+import { isMuted, sharedAudio, toggleMute } from '@/audio/sharedAudio';
 import { SceneKey } from '@/config/scenes';
 import { BaseScene } from '@/core/BaseScene';
 import { areaOf, levelSpec, starsFor } from '@/game/levels';
@@ -33,10 +33,12 @@ export class MenuScene extends BaseScene {
   private progressValue!: Phaser.GameObjects.Text;
   private playLabel!: Phaser.GameObjects.Text;
   private mute!: Phaser.GameObjects.Text;
+  private setup!: Phaser.GameObjects.Text;
   private taps!: TapInput;
   private buttonRect = new Phaser.Geom.Rectangle();
   private controlSize = 96;
   private muteAt = { x: 0, y: 0 };
+  private setupAt = { x: 0, y: 0 };
   private beatRow = { x: 0, y: 0, gap: 0, radius: 0 };
   private pressedAt = -Infinity;
   private pressDirty = false;
@@ -71,7 +73,8 @@ export class MenuScene extends BaseScene {
       fresh ? 'Level 1 · Grass' : `Level ${progress.unlocked} · ${areaOf(progress.unlocked).name}${stars > 0 ? `  ·  ${stars}★` : ''}`,
       22, 'Georgia, serif');
     this.playLabel = this.text('PLAY', 22, 'monospace').setLetterSpacing(6).setOrigin(0.5);
-    this.mute = this.text(currentAudio(this)?.muted ? '×' : '♪', 30, 'Georgia, serif').setOrigin(0.5);
+    this.mute = this.text(isMuted(this) ? '×' : '♪', 30, 'Georgia, serif').setOrigin(0.5);
+    this.setup = this.text('SETUP', 14, 'monospace').setLetterSpacing(2).setOrigin(0.5);
     this.taps = new TapInput(this, tap => this.handleTap(tap));
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.shutdown, this);
@@ -107,11 +110,18 @@ export class MenuScene extends BaseScene {
     this.beatRow = { x: left + 5 * s, y: safe.top + 400 * s, gap: 26 * s, radius: 5.5 * s };
     this.controlSize = Math.max(88 * s, 48 * this.viewport.unitScale);
     this.muteAt = { x: safe.centerX + 283 * s, y: safe.top + 52 * s };
+    this.setupAt = { x: safe.centerX + 188 * s, y: this.muteAt.y };
     const chipR = 27 * s;
-    g.fillStyle(this.ink, 0.1).fillCircle(this.muteAt.x + 1 * s, this.muteAt.y + 3 * s, chipR);
-    g.fillStyle(shade(this.paper, -0.03), 1).fillCircle(this.muteAt.x, this.muteAt.y, chipR);
-    g.lineStyle(1.5 * s, this.ink, 0.24).strokeCircle(this.muteAt.x, this.muteAt.y, chipR);
+    // Two chips in the same language the map's HUD uses, so a control reads as a control.
+    const chip = (cx: number, cy: number, radius: number) => {
+      g.fillStyle(this.ink, 0.1).fillCircle(cx + 1 * s, cy + 3 * s, radius);
+      g.fillStyle(shade(this.paper, -0.03), 1).fillCircle(cx, cy, radius);
+      g.lineStyle(1.5 * s, this.ink, 0.24).strokeCircle(cx, cy, radius);
+    };
+    chip(this.setupAt.x, this.setupAt.y, chipR * 1.28);
+    chip(this.muteAt.x, this.muteAt.y, chipR);
     this.mute.setPosition(this.muteAt.x, this.muteAt.y).setFontSize(28 * s);
+    this.setup.setPosition(this.setupAt.x, this.setupAt.y).setFontSize(13 * s);
     // The button sits a fixed distance above the bottom edge: thumb reach is absolute, not proportional.
     const height = Math.max(MENU.buttonHeight * s, this.controlSize);
     this.buttonRect.setTo(safe.centerX - MENU.buttonWidth * s / 2, this.buttonTop(s), MENU.buttonWidth * s, height);
@@ -185,9 +195,11 @@ export class MenuScene extends BaseScene {
 
   private handleTap(tap: Tap): void {
     if (Math.abs(tap.x - this.muteAt.x) < this.controlSize / 2 && Math.abs(tap.y - this.muteAt.y) < this.controlSize / 2) {
-      const audio = sharedAudio(this);
-      audio.toggleMute();
-      this.mute.setText(audio.muted ? '×' : '♪');
+      this.mute.setText(toggleMute(sharedAudio(this)) ? '×' : '♪');
+      return;
+    }
+    if (Math.abs(tap.x - this.setupAt.x) < this.controlSize / 2 && Math.abs(tap.y - this.setupAt.y) < this.controlSize / 2) {
+      this.scene.start(SceneKey.Settings, { from: SceneKey.Menu });
       return;
     }
     if (Phaser.Geom.Rectangle.Contains(this.buttonRect, tap.x, tap.y)) {

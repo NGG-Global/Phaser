@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { sharedAudio, currentAudio } from '@/audio/sharedAudio';
+import { sharedAudio, isMuted, toggleMute } from '@/audio/sharedAudio';
 import { PROGRESSION } from '@/config/progression';
 import { SceneKey } from '@/config/scenes';
 import { BaseScene } from '@/core/BaseScene';
@@ -49,6 +49,7 @@ export class MapScene extends BaseScene {
   private status!: Phaser.GameObjects.Text;
   private menu!: Phaser.GameObjects.Text;
   private mute!: Phaser.GameObjects.Text;
+  private setup!: Phaser.GameObjects.Text;
   private numbers: Phaser.GameObjects.Text[] = [];
   private areaTitles: Phaser.GameObjects.Text[] = [];
   private areaRanges: Phaser.GameObjects.Text[] = [];
@@ -95,7 +96,8 @@ export class MapScene extends BaseScene {
     this.edition = hud('TINY TEMPO', 16, 'monospace').setLetterSpacing(2);
     this.status = hud('', 15, 'monospace').setLetterSpacing(2);
     this.menu = hud('MENU', 14, 'monospace').setLetterSpacing(2).setOrigin(0.5);
-    this.mute = hud(currentAudio(this)?.muted ? '×' : '♪', 30, 'Georgia, serif').setOrigin(0.5);
+    this.mute = hud(isMuted(this) ? '×' : '♪', 30, 'Georgia, serif').setOrigin(0.5);
+    this.setup = hud('SETUP', 14, 'monospace').setLetterSpacing(2).setOrigin(0.5);
     this.input.on(Phaser.Input.Events.POINTER_DOWN, this.pointerDown, this);
     this.input.on(Phaser.Input.Events.POINTER_MOVE, this.pointerMove, this);
     this.input.on(Phaser.Input.Events.POINTER_UP, this.pointerUp, this);
@@ -517,11 +519,14 @@ export class MapScene extends BaseScene {
       g.lineStyle(1.5 * s, ink, 0.26).strokeCircle(cx, cy, radius);
     };
     const radius = 27 * s;
+    const setupX = safe.centerX + 93 * s;
     const menuX = safe.centerX + 188 * s;
     const muteX = safe.centerX + 283 * s;
     const cy = safe.top + 52 * s;
+    chip(setupX, cy, radius * 1.28);
     chip(menuX, cy, radius * 1.28);
     chip(muteX, cy, radius);
+    this.setup.setPosition(setupX, cy).setFontSize(13 * s);
     this.menu.setPosition(menuX, cy).setFontSize(13 * s);
     this.mute.setPosition(muteX, cy).setFontSize(28 * s);
   }
@@ -591,9 +596,11 @@ export class MapScene extends BaseScene {
   }
   private handleTap(x: number, y: number): void {
     if (Math.abs(x - this.mute.x) < this.controlSize / 2 && Math.abs(y - this.mute.y) < this.controlSize / 2) {
-      const audio = sharedAudio(this);
-      audio.toggleMute();
-      this.mute.setText(audio.muted ? '×' : '♪');
+      this.mute.setText(toggleMute(sharedAudio(this)) ? '×' : '♪');
+      return;
+    }
+    if (Math.abs(x - this.setup.x) < this.controlSize / 2 && Math.abs(y - this.setup.y) < this.controlSize / 2) {
+      this.scene.start(SceneKey.Settings, { from: SceneKey.Map });
       return;
     }
     if (Math.abs(x - this.menu.x) < this.controlSize / 2 && Math.abs(y - this.menu.y) < this.controlSize / 2) { this.scene.start(SceneKey.Menu); return; }

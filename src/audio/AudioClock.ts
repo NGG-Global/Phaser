@@ -11,6 +11,12 @@ export function mapTimestamp(eventMs: number, performanceMs: number, audioSec: n
 }
 
 export class AudioClock {
+  /**
+   * Milliseconds the device's output lags the schedule, subtracted from every judged tap.
+   * Owned by whoever constructs the clock rather than read from a store here: the clock
+   * is the single funnel for judged timestamps and has no business knowing about storage.
+   */
+  public calibrationMs = 0;
   private performanceMs = 0;
   private audioSec = 0;
   private lastStamp = 0;
@@ -40,6 +46,9 @@ export class AudioClock {
   }
   public input(timestamp: number): number {
     const time = normalizeTimestamp(timestamp, performance.now(), performance.timeOrigin);
-    return mapTimestamp(time, this.performanceMs, this.audioSec) - RHYTHM.calibrationMs / 1000;
+    // Input only. If output is delayed by L the player hears late and taps late, so
+    // removing L from their timestamp is the correction; visuals are not delayed by the
+    // device, and shifting those would introduce an error rather than remove one.
+    return mapTimestamp(time, this.performanceMs, this.audioSec) - this.calibrationMs / 1000;
   }
 }

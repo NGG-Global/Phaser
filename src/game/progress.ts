@@ -70,6 +70,14 @@ export function recordResult(progress: Progress, level: number, accuracy: number
   return { cleared, stars, bestBefore, progress: { unlocked, best: Object.freeze(best) } };
 }
 
+/**
+ * The escape hatch for a save the player cannot otherwise recover from, and the only
+ * place progress is ever destroyed. False means nothing was written.
+ */
+export function clearProgress(storage: Storage | null = safeStorage()): boolean {
+  try { storage?.removeItem(KEY); return storage !== null; } catch { return false; }
+}
+
 function safeStorage(): Storage | null {
   try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
 }
