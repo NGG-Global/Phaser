@@ -248,6 +248,9 @@ export class HammerNailVignette implements Vignette {
     const offered = this.phase === 'respond' || this.phase === 'result';
     this.disc.setPosition(270 + (offered ? transfer * 40 : 0), -285 + (offered ? transfer * 28 : 0));
     this.disc.setScale(offered ? 1 + transfer * 0.09 : 1).setAlpha(offered ? 0.5 + transfer * 0.22 : 0.5);
+    // The stage behind the bench comes up with it. Level 1 is where the handover has to be
+    // clearest, so it carries the same cue as the other four rather than a weaker one.
+    this.backdrop.open(offered ? transfer : 0);
   }
   private drawNail(now: number): void {
     const t = STYLE.current;

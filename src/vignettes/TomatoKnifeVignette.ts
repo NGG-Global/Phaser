@@ -83,6 +83,8 @@ export class TomatoKnifeVignette implements Vignette {
   private readonly rings: Phaser.GameObjects.Graphics;
   private plan: RoundPlan | null = null;
   private phase: Phase = 'idle';
+  /** When the player's turn began; the stage light opens toward them from here. */
+  private respondAt = -100;
   private lastDemo = -Infinity;
   private strikes = 0;
   private strikeAt = -100;
@@ -205,6 +207,7 @@ export class TomatoKnifeVignette implements Vignette {
     this.strikes = this.slices = 0;
     this.strikeAt = -100;
     this.strikeX = this.cutStart();
+    this.respondAt = -100;
     this.sliceAt = [];
     this.sliceFrom = [];
     this.sliceWobble = [];
@@ -223,7 +226,7 @@ export class TomatoKnifeVignette implements Vignette {
     // The demonstration rocks the knife over the fruit without cutting it, so the player
     // starts on the tomato they watched and nothing has to arrive in the instant before
     // their turn.
-    if (phase === 'respond') { this.strikeAt = -100; this.setCut(0, now); }
+    if (phase === 'respond') { this.strikeAt = -100; this.setCut(0, now); this.respondAt = now; }
   }
 
   private setCut(fraction: number, now: number): void {
@@ -294,8 +297,18 @@ export class TomatoKnifeVignette implements Vignette {
     return this.plan?.cues.find(cue => cue.kind === 'action' && cue.time > now)?.time ?? null;
   }
 
+  /**
+   * The stage light opens toward the player the instant their turn starts, and holds open
+   * through the ending. It is the handover said without words, now that no bar separates
+   * the demonstration from the response.
+   */
+  private openStage(now: number): void {
+    const offered = this.phase === 'respond' || this.phase === 'result';
+    this.backdrop.open(offered ? easeOut((now - this.respondAt) / 0.7) : 0);
+  }
   public update(now: number): void {
     if (this.phase === 'paused') now = this.lastNow; else this.lastNow = now;
+    this.openStage(now);
     // Rendering may observe a beat before the controller's next pump. Contact is
     // sampled from the same absolute cue, so a throttled frame cannot shift it.
     if (this.phase === 'prepare' || this.phase === 'demonstrate') {

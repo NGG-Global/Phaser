@@ -59,7 +59,11 @@ export function anticipate(until: number, duration: number, amount: number): num
 
 /** A damped oscillation after an impact — the shake, wobble and judder already in use. */
 export function settle(age: number, frequency: number, decay: number): number {
-  if (age < 0) return 0;
+  // A caller's "time of the last impact" usually starts at -Infinity, which makes the age
+  // +Infinity. The envelope is zero there, but `sin(Infinity)` is NaN, and NaN times zero
+  // is still NaN — enough to silently void every coordinate it is added to. Rest is the
+  // right answer for an impact that has not happened.
+  if (!Number.isFinite(age) || age < 0) return 0;
   return Math.sin(age * frequency) * Math.exp(-age * decay);
 }
 

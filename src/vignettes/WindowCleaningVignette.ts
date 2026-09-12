@@ -38,6 +38,8 @@ export class WindowCleaningVignette implements Vignette {
   private readonly bursts: Feedback;
   private plan: RoundPlan | null = null;
   private phase: Phase = 'idle';
+  /** When the player's turn began; the stage light opens toward them from here. */
+  private respondAt = -100;
   private cleanAt: number[] = [];
   private strokeAt = -100;
   private lane = 0;
@@ -154,13 +156,14 @@ export class WindowCleaningVignette implements Vignette {
     this.plan = plan; this.phase = 'prepare'; this.cleanAt = plan.targets.map(() => Infinity);
     this.strokeAt = -100; this.strokes = 0; this.lane = 0; this.lastDemo = -Infinity;
     this.finishAt = null; this.finished = false; this.successful = false;
+    this.respondAt = -100;
   }
-  public onPhase(phase: Phase, _now: number): void {
+  public onPhase(phase: Phase, now: number): void {
     this.phase = phase;
     // The demonstration wipes without clearing the grime, so the pane the player is given
     // is the one they watched and nothing has to be re-dirtied in the instant before
     // their turn.
-    if (phase === 'respond') { this.cleanAt.fill(Infinity); this.strokes = 0; this.strokeAt = -100; }
+    if (phase === 'respond') { this.cleanAt.fill(Infinity); this.strokes = 0; this.strokeAt = -100; this.respondAt = now; }
   }
   public onDemonstrationBeat(time: number): void {
     if (time <= this.lastDemo) return;
@@ -199,8 +202,18 @@ export class WindowCleaningVignette implements Vignette {
     if (age > 0.5) this.tool.y += Math.sin(now * 1.6) * (this.reducedMotion ? 0 : 2);
     if (age > 0.5 && (this.phase === 'idle' || this.phase === 'prepare')) this.tool.setPosition(-190, 165).setRotation(-0.15);
   }
+  /**
+   * The stage light opens toward the player the instant their turn starts, and holds open
+   * through the ending. It is the handover said without words, now that no bar separates
+   * the demonstration from the response.
+   */
+  private openStage(now: number): void {
+    const offered = this.phase === 'respond' || this.phase === 'result';
+    this.backdrop.open(offered ? easeOut((now - this.respondAt) / 0.7) : 0);
+  }
   public update(now: number): void {
     if (this.phase === 'paused') now = this.lastNow; else this.lastNow = now;
+    this.openStage(now);
     this.stage.setPosition(this.baseX, this.baseY);
     if (this.phase === 'prepare' || this.phase === 'demonstrate') {
       for (const cue of this.plan?.cues ?? []) if (cue.kind === 'action' && cue.time <= now) this.onDemonstrationBeat(cue.time);

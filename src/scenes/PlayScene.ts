@@ -12,20 +12,38 @@ import { RoundController, type Phase } from '@/game/RoundController';
 import type { RoundResult } from '@/game/scoring';
 import { TapInput, type Tap } from '@/input/TapInput';
 import type { Judgement } from '@/rhythm/judge';
+import { beatsPlayed, countIn, markFor, trackGeometry, type Mark } from '@/game/beatTrack';
 import { levelSpec, meanAccuracy, starsFor, type LevelSpec } from '@/game/levels';
 import { loadProgress, recordResult, saveProgress, type LevelOutcome } from '@/game/progress';
 import { STYLE } from '@/config/style';
+import { PALETTE } from '@/config/theme';
 import { drawMap, drawRestart, drawSpeaker } from '@/ui/icons';
 import { faces } from '@/ui/light';
-import { drawDisc } from '@/ui/panel';
+import { hex, mix, shade } from '@/ui/colour';
+import { drawDisc, drawPanel, Rect } from '@/ui/panel';
 import { Feedback } from '@/ui/feedback';
-import { overshoot, stagger } from '@/ui/spring';
+import { arrive, overshoot, settle, squash, stagger } from '@/ui/spring';
 import { body, display, label, resize } from '@/ui/type';
 import { drawStar } from '@/ui/star';
 import { SceneCurtain } from '@/ui/SceneCurtain';
 import { VIGNETTES } from '@/vignettes/registry';
 import type { Vignette } from '@/vignettes/Vignette';
 import { clamp01, easeOut } from '@/vignettes/motion';
+
+/**
+ * The beat track's metrics, in design units at scale 1. The beads are deliberately larger
+ * than the map's area pips: this row is the only thing on screen that says whose turn it
+ * is, so it has to read at arm's length rather than merely be present.
+ */
+const TRACK = {
+  beadGap: 58,
+  beadRadius: 19,
+  plateHeight: 72,
+  plateDepth: 7,
+  plateRadius: 28,
+  pipGap: 30,
+  pipRadius: 6,
+} as const;
 
 /** Composes the existing engine with registered visual vignettes. No judgement rules live here. */
 export class PlayScene extends BaseScene {
@@ -71,7 +89,17 @@ export class PlayScene extends BaseScene {
   private headlineY = 0;
   private headlineSize = 0;
   private headlineAt = -Infinity;
-  private outcomes: ('perfect' | 'good' | 'miss' | 'pending')[] = [];
+  private outcomes: Mark[] = [];
+  /** The row of beads under the action: the pattern, the turn and the verdict in one object. */
+  private trackY = 0;
+  private trackWidth = 0;
+  private verdictY = 0;
+  private struckIndex = -1;
+  private struckAt = -Infinity;
+  private extraAt = -Infinity;
+  private verdict!: Phaser.GameObjects.Text;
+  private verdictAt = -Infinity;
+  private headlineColour = 0x243e35;
   private sequence: TaskSequence | null = null;
   /** Beat-aligned table slide between tasks; the next task and the music's new tempo both start at `next`. */
   private transition: { slide: number; swap: number; next: number; swapped: boolean } | null = null;
@@ -107,6 +135,7 @@ export class PlayScene extends BaseScene {
     this.accuracy = label(this, '', { size: 16, colour: ink }).setOrigin(0.5);
     this.chrome = this.add.graphics();
     this.marks = this.add.graphics();
+    this.verdict = display(this, '', { size: 38, colour: ink, align: 'center' }).setOrigin(0.5).setAlpha(0).setDepth(6);
     this.taskMarks = this.add.graphics();
     this.curtain = new SceneCurtain(this);
     this.debug = this.text('', 16, 'monospace').setVisible(this.debugMode);
@@ -155,7 +184,17 @@ export class PlayScene extends BaseScene {
     this.invitation.setFontSize(Math.max(18 * s, 10 * this.viewport.unitScale)).setPosition(safe.centerX, safe.bottom - 72 * s);
     this.accuracy.setFontSize(Math.max(18 * s, 10 * this.viewport.unitScale)).setPosition(safe.centerX, safe.bottom - 115 * s);
     this.debug.setPosition(left, top + 360 * s).setFontSize(16 * s);
-    this.drawMarks();
+    // The beat track sits in the band the stars take at the summary; the two never show
+    // at once, so they share it rather than competing for the frame.
+    // High enough that the plate and its shadow clear the caption line: the two do coexist,
+    // because the line left over from one task is still fading while the next is answered.
+    this.trackY = safe.bottom - 248 * s;
+    this.trackWidth = Math.min(620 * s, safe.width - 80 * s);
+    // The plate is sized to its own phrase in `drawBeatTrack`; only the band it occupies
+    // is fixed here, because the word above it must not move when the phrase gets longer.
+    this.verdictY = this.trackY - TRACK.plateHeight * s / 2 - 34 * s;
+    this.verdict.setPosition(safe.centerX, this.verdictY);
+    resize(this.verdict, 38 * s, this.verdictColour());
     this.drawStars();
     this.drawTaskMarks();
   }
@@ -208,7 +247,6 @@ export class PlayScene extends BaseScene {
             if (cue.kind === 'action') {
               this.vignette.onDemonstrationBeat(cue.time);
               this.demoCount++;
-              this.drawMarks();
             }
           },
           tap: () => this.vignette.onPlayerHit(this.now()),
@@ -245,13 +283,15 @@ export class PlayScene extends BaseScene {
     this.accuracy.setText('');
     this.edition.setText(`LEVEL ${String(this.spec.level).padStart(2, '0')}`);
     this.outcomes = this.task.pattern.hits.map(() => 'pending');
+    this.struckIndex = -1;
+    this.struckAt = this.extraAt = this.verdictAt = -Infinity;
+    this.verdict.setAlpha(0);
     this.controller!.start(this.task.pattern, this.task.bpm, this.audio!.context.currentTime, performance.now(), startAt, this.task.leadBeats);
     this.vignette.reset(this.controller!.plan!);
     if (this.replayOffset !== null) {
       const plan = this.controller!.plan!;
       this.replay = { roundId: plan.id, targets: this.replayTargets(), next: 0 };
     }
-    this.drawMarks();
     this.drawTaskMarks();
   }
   private handleTap(tap: Tap): void {
@@ -358,61 +398,181 @@ export class PlayScene extends BaseScene {
       ? easeOut((now - (this.finishUnlock - this.definition.endingSec) - 0.28) / 0.3) : 1;
     // setFontSize re-measures and re-rasterises the text canvas; only pay for it on change.
     const headlineSize = (playing ? 48 : 88) * this.uiScale;
-    if (headlineSize !== this.headlineSize) { this.headlineSize = headlineSize; resize(this.headline, headlineSize, this.definition.ink); }
+    if (headlineSize !== this.headlineSize) { this.headlineSize = headlineSize; resize(this.headline, headlineSize, this.headlineColour); }
     this.headline.setAlpha(reveal * endReveal).setY(this.headlineY + (1 - reveal * endReveal) * 12 * this.uiScale);
     this.caption.setAlpha(endReveal);
     if (this.summaryShown) {
       this.accuracy.setAlpha(this.reducedMotion ? 1 : easeOut((now - this.summaryAt) / 0.45));
       this.animateStars(now);
     } else { this.accuracy.setAlpha(1); }
+    this.drawBeatTrack(now);
+    // The verdict word rises and fades; one instance, so a quick double replaces rather
+    // than stacks.
+    const said = now - this.verdictAt;
+    if (said >= 0 && said < 0.55) {
+      const { rise, alpha } = this.reducedMotion ? { rise: 0, alpha: 1 } : arrive(said, 0.45);
+      this.verdict.setAlpha(alpha * (1 - Math.max(0, (said - 0.35) / 0.2)))
+        .setY(this.verdictY - (1 - rise) * 18 * this.uiScale);
+    } else if (this.verdict.alpha !== 0) this.verdict.setAlpha(0);
     if (this.controller?.phase === 'result' && !this.transition && now >= this.finishUnlock && !this.summaryShown) this.showSummary();
     if (this.debugMode) {
       const music = this.audio?.music;
       this.debug.setText(`${this.definition.id} L${this.spec.level} t${this.taskIndex + 1}/${this.spec.tasks.length} ${this.task.bpm}bpm tier${this.task.tier} clear${this.spec.clearAccuracy} rate${music?.playbackRate ?? 1} attempt ${this.attempts} · ${this.controller?.phase ?? 'idle'}\nvoices ${this.audio?.activeSources ?? 0} · handlers ${this.input.listenerCount(Phaser.Input.Events.POINTER_DOWN)} · objects ${this.children.length}\n${this.controller?.result?.accuracy.toFixed(0) ?? '—'}% · ${this.audio?.clock.mode ?? 'locked'} · ${this.game.loop.actualFps.toFixed(0)} fps\n${this.lastJudgement}\nmusic ${music?.activeSources ?? 0} · run ${music?.playbackGeneration ?? 0} · loops ${music?.completedLoops ?? 0}\nstart ${music?.startTime?.toFixed(3) ?? '—'} · length ${music?.duration.toFixed(6) ?? '—'}\ngain ${(music?.gain ?? MUSIC.masterGain).toFixed(3)} · lead ${music?.leadInSeconds.toFixed(3) ?? '—'}`);
     }
   }
-  private changeHeadline(text: string): void {
-    if (this.headline.text === text) return;
+  private changeHeadline(text: string, colour = this.definition.ink): void {
+    if (this.headline.text === text && this.headlineColour === colour) return;
     this.headlineAt = this.now();
+    this.headlineColour = colour;
     this.headline.setText(text).setAlpha(0).setY(this.headlineY + 12 * this.uiScale);
+    resize(this.headline, this.headlineSize, colour);
   }
   private showPhase(phase: Phase): void {
     this.vignette.onPhase(phase, this.now());
     // A lead-in longer than the level's opening bar is the breather, and it is the only
     // place in a level where nothing is being asked of the player.
     const resting = this.task.leadBeats > RHYTHM.leadInBeats;
-    if (phase === 'prepare') { this.changeHeadline(resting ? 'Breathe.' : 'Watch.'); this.caption.setText(''); this.invitation.setText(''); }
-    if (phase === 'demonstrate') { this.changeHeadline('Watch.'); this.caption.setText(''); }
+    if (phase === 'prepare') { this.changeHeadline(resting ? 'Breathe' : 'Watch'); this.caption.setText(''); this.invitation.setText(''); }
+    if (phase === 'demonstrate') { this.changeHeadline('Watch'); this.caption.setText(''); }
     // The demonstration runs straight into the response, so this flip is the only thing
-    // that tells the player their turn has started. It cannot be deferred a frame.
-    if (phase === 'respond') { this.changeHeadline('Repeat.'); this.caption.setText(''); this.invitation.setText(''); this.demoCount = 0; this.drawMarks(); }
+    // that tells the player their turn has started. It cannot be deferred a frame. The
+    // word, its colour and the beat track's beads all turn over together.
+    if (phase === 'respond') {
+      this.changeHeadline('Your turn', PALETTE.coral);
+      this.caption.setText('');
+      this.invitation.setText('');
+      this.demoCount = 0;
+      this.struckIndex = -1;
+      this.struckAt = this.extraAt = -Infinity;
+    }
   }
   private showJudgement(result: Judgement): void {
     this.lastJudgement = `${result.kind} ${result.grade} ${result.deltaMs?.toFixed(0) ?? '—'} ms`;
     this.vignette.onAccuracy(result, this.now());
     // The action sound is scheduled before the tap is graded, so a reaction to the
     // grade needs its own voice. Sound sets that declare neither accent stay silent.
-    if (result.kind === 'extra') this.audio?.playAccent(this.now(), 'scrape');
-    else if (result.kind === 'omission') this.audio?.playAccent(this.now(), 'judder');
-    if (result.index !== null) this.outcomes[result.index] = result.grade === 'Perfect' ? 'perfect' : result.grade === 'Good' ? 'good' : 'miss';
-    this.drawMarks();
+    const now = this.now();
+    if (result.kind === 'extra') this.audio?.playAccent(now, 'scrape');
+    else if (result.kind === 'omission') this.audio?.playAccent(now, 'judder');
+    if (result.index !== null) this.outcomes[result.index] = markFor(result);
+    // An extra tap belongs to no beat, so it shakes the whole row rather than marking one.
+    if (result.kind === 'extra') this.extraAt = now;
+    else if (result.kind === 'hit' && result.index !== null) { this.struckIndex = result.index; this.struckAt = now; }
+    this.sayVerdict(result, now);
   }
-  private drawMarks(): void {
-    this.marks.clear();
-    if (!this.debugMode) return;
+
+  /**
+   * One word at the action, replaced rather than stacked: a quick double would otherwise
+   * pile two on top of each other, which the design notes warn against.
+   */
+  private sayVerdict(result: Judgement, now: number): void {
+    const word = result.kind === 'extra' ? 'Miss' : result.grade;
+    const colour = this.verdictColour(result);
+    this.verdictAt = now;
+    // setColor as well as resize: resize re-dresses the stroke and the drop for the new
+    // size, but the fill is the text's own and would otherwise stay on the vignette's ink.
+    this.verdict.setText(word).setColor(hex(colour));
+    resize(this.verdict, 38 * this.uiScale, colour);
+    if (result.grade === 'Perfect' && result.kind === 'hit' && !this.reducedMotion) {
+      const { centres } = this.beads();
+      const x = this.viewport.safe.centerX + (centres[result.index ?? 0] ?? 0);
+      this.fx.burst('sparks', x, this.trackY, [PALETTE.coral, 0xfff4dc], 8);
+    }
+  }
+  private verdictColour(result?: Judgement): number {
+    if (!result) return this.definition.ink;
+    // A darker grey than the track's, because the word is read against whatever the
+    // vignette has behind it — on the pale stages the palette's muted all but disappears.
+    return result.grade === 'Perfect' ? PALETTE.coral : result.grade === 'Good' ? this.definition.ink : shade(PALETTE.muted, -0.3);
+  }
+  /** The bead centres the track is drawn at, so a burst lands on the bead it belongs to. */
+  private beads(): { readonly centres: readonly number[]; readonly radius: number } {
+    return trackGeometry(this.outcomes.length, this.trackWidth, TRACK.beadGap * this.uiScale, TRACK.beadRadius * this.uiScale);
+  }
+  /**
+   * The beat track. During the example the beads fill as the pattern sounds; on the
+   * player's turn the plate turns coral, they empty, and each is struck as it is answered.
+   * It replaces a row of dots that only a DEV build with `?debug` ever drew, which is why
+   * a shipping player could not tell a Perfect from a Miss — or tell whose turn it was.
+   */
+  private drawBeatTrack(now: number): void {
+    const g = this.marks.clear();
     const phase = this.controller?.phase;
-    if (!phase || phase === 'idle' || phase === 'paused' || phase === 'result') return;
+    // The finished row stays up through the ending and goes only when the summary claims
+    // the band: the moment the last beat lands is exactly when a player wants to read it.
+    if (!phase || phase === 'idle' || phase === 'paused' || this.summaryShown) return;
     const { safe } = this.viewport;
     const s = this.uiScale;
-    const length = this.outcomes.length;
-    this.outcomes.forEach((outcome, i) => {
-      const x = safe.centerX + (i - (length - 1) / 2) * 27 * s;
-      const y = safe.bottom - 210 * s;
-      const filled = phase === 'demonstrate' ? i < this.demoCount : outcome === 'perfect' || outcome === 'good';
-      this.marks.lineStyle(1.5 * s, this.definition.ink, 0.5).strokeCircle(x, y, 4 * s);
-      if (filled) this.marks.fillStyle(this.definition.ink).fillCircle(x, y, 4 * s);
-      if (outcome === 'miss') this.marks.lineBetween(x - 4 * s, y, x + 4 * s, y);
-    });
+    const still = this.reducedMotion;
+    const plan = this.controller?.plan ?? null;
+    const ink = this.definition.ink;
+    const watching = phase === 'prepare' || phase === 'demonstrate';
+    const answering = phase === 'respond';
+    const { centres, radius } = this.beads();
+    // An extra tap rattles the whole row: it answered no beat, so it marks none.
+    const rattle = still ? 0 : settle(now - this.extraAt, 90, 18) * 3 * s;
+    const played = beatsPlayed(plan, now);
+    const y = this.trackY;
+
+    // The plate. Paper while the game is playing, warmed to coral the moment the turn
+    // passes over: the second signal behind the headline, and the one in the player's
+    // eyeline, since that is where the beads they are about to strike already are. It is
+    // cut to its own phrase rather than to the frame, so a long phrase reads as a long one.
+    const span = (centres.at(-1) ?? 0) + radius + 34 * s;
+    const width = Math.min(Math.max(span * 2, 220 * s), safe.width - 48 * s);
+    const height = TRACK.plateHeight * s;
+    const plate = new Rect(safe.centerX - width / 2 + rattle, y - height / 2, width, height);
+    const face = answering ? mix(PALETTE.paper, PALETTE.coral, 0.22) : shade(PALETTE.paper, -0.06);
+    drawPanel(g, plate, s, { fill: face, depth: TRACK.plateDepth, radius: TRACK.plateRadius });
+    if (answering) {
+      // A painted line inside the face, the same device the menu's one action carries.
+      const inset = 7 * s;
+      g.lineStyle(2 * s, PALETTE.coral, 0.7)
+        .strokeRoundedRect(plate.x + inset, plate.y + inset, plate.width - inset * 2, plate.height - inset * 2, (TRACK.plateRadius - 7) * s);
+    }
+
+    for (let i = 0; i < centres.length; i++) {
+      const x = safe.centerX + centres[i]! + rattle;
+      const mark = this.outcomes[i] ?? 'pending';
+      // A bead swells when the player's tap lands on it.
+      const swell = !still && i === this.struckIndex ? squash(now - this.struckAt, 0.22, 0.45) : 0;
+      const r = radius * (1 + swell);
+      // A miss keeps the empty socket — nothing was put there — and is struck through.
+      const lit = watching ? i < played : mark === 'perfect' || mark === 'good';
+      const colour = mark === 'perfect' ? PALETTE.coral : ink;
+      if (lit) {
+        // Good sits inside a full ring, so a Perfect and a Good read apart at a glance.
+        const f = faces(colour);
+        const fill = mark === 'good' ? r * 0.62 : r;
+        g.fillStyle(f.edge, 1).fillCircle(x, y + 2.5 * s, fill);
+        g.fillStyle(f.face, 1).fillCircle(x, y, fill);
+        g.fillStyle(f.rim, 0.85).fillCircle(x - fill * 0.3, y - fill * 0.35, fill * 0.3);
+        if (mark === 'good') g.lineStyle(2.5 * s, shade(ink, -0.1), 0.7).strokeCircle(x, y, r);
+      } else {
+        // Waiting: a socket sunk into the plate, ringed in coral while it is the player's.
+        // Sunk rather than filled: a socket the beat has not arrived in yet.
+        g.fillStyle(shade(face, -0.22), 1).fillCircle(x, y, r);
+        g.fillStyle(shade(face, 0.04), 1).fillCircle(x, y + r * 0.1, r * 0.88);
+        const ring = mark === 'miss' ? PALETTE.muted : answering ? PALETTE.coral : shade(ink, 0.1);
+        g.lineStyle(3.5 * s, ring, mark === 'miss' ? 0.95 : answering ? 1 : 0.4).strokeCircle(x, y, r);
+        // Struck out in the ink rather than in the grey of the ring, or the bar vanishes
+        // into the very bead it is there to cancel.
+        if (mark === 'miss') g.lineStyle(4 * s, shade(PALETTE.ink, -0.1), 1).lineBetween(x - r * 1.2, y, x + r * 1.2, y);
+      }
+    }
+
+    // The count-in: the last four ticks before the example, so the opening bar is not
+    // dead air. A breather shows nothing until its final four beats.
+    const pips = countIn(plan, now);
+    if (pips !== null) {
+      const gap = TRACK.pipGap * s;
+      const pipY = plate.y - 22 * s;
+      for (let i = 0; i < 4; i++) {
+        const x = safe.centerX + (i - 1.5) * gap;
+        if (i < pips) g.fillStyle(ink, 0.9).fillCircle(x, pipY, TRACK.pipRadius * s);
+        else g.lineStyle(2.5 * s, ink, 0.35).strokeCircle(x, pipY, TRACK.pipRadius * s);
+      }
+    }
   }
   private showResult(result: RoundResult): void {
     const strong = result.accuracy >= this.definition.successAccuracy;
@@ -437,7 +597,6 @@ export class PlayScene extends BaseScene {
     this.caption.setText(copy[1]);
     this.accuracy.setText(this.debugMode ? `${Math.round(result.accuracy)}% IN TIME` : '');
     this.invitation.setText('');
-    this.drawMarks();
   }
   /** Idempotent: the level is scored and saved once, however often this is reached. */
   private recordOutcome(): void {

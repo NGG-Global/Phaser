@@ -36,6 +36,8 @@ export class BugShoeVignette implements Vignette {
   private readonly bursts: Feedback;
   private plan: RoundPlan | null = null;
   private phase: Phase = 'idle';
+  /** When the player's turn began; the stage light opens toward them from here. */
+  private respondAt = -100;
   private lastDemo = -Infinity;
   private strikeAt = -100;
   private finishAt: number | null = null;
@@ -124,12 +126,13 @@ export class BugShoeVignette implements Vignette {
     this.plan = plan; this.phase = 'prepare'; this.lastDemo = -Infinity;
     this.strikeAt = -100; this.finishAt = null; this.finished = false; this.hit = false;
     this.contactX = this.previousX = this.steps = 0;
+    this.respondAt = -100;
   }
-  public onPhase(phase: Phase, _now: number): void {
+  public onPhase(phase: Phase, now: number): void {
     this.phase = phase;
     // The bug is never consumed, so this only returns the shoe to the first stop of its
     // cycle for the player's turn.
-    if (phase === 'respond') { this.steps = 0; this.previousX = this.contactX = 0; }
+    if (phase === 'respond') { this.steps = 0; this.previousX = this.contactX = 0; this.respondAt = now; }
   }
   private strike(time: number): void {
     this.previousX = this.contactX;
@@ -151,8 +154,18 @@ export class BugShoeVignette implements Vignette {
   public onAccuracy(result: Judgement, _now: number): void { if (result.kind === 'hit') this.hit = true; }
   public finish(successful: boolean, time: number): void { this.successful = successful; this.finishAt = time; }
   public pause(): void { this.phase = 'paused'; this.finishAt = null; }
+  /**
+   * The stage light opens toward the player the instant their turn starts, and holds open
+   * through the ending. It is the handover said without words, now that no bar separates
+   * the demonstration from the response.
+   */
+  private openStage(now: number): void {
+    const offered = this.phase === 'respond' || this.phase === 'result';
+    this.backdrop.open(offered ? easeOut((now - this.respondAt) / 0.7) : 0);
+  }
   public update(now: number): void {
     if (this.phase === 'paused') now = this.lastNow; else this.lastNow = now;
+    this.openStage(now);
     if (this.phase === 'prepare' || this.phase === 'demonstrate') for (const cue of this.plan?.cues ?? []) {
       if (cue.kind === 'action' && cue.time <= now) this.onDemonstrationBeat(cue.time);
     }

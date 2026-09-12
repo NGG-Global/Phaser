@@ -42,6 +42,10 @@ describe('physical motion curves', () => {
     expect(settle(-1, 100, 20)).toBe(0);
     expect(Math.abs(settle(0.02, 100, 20))).toBeGreaterThan(Math.abs(settle(0.4, 100, 20)));
     expect(Math.abs(settle(2, 100, 20))).toBeLessThan(1e-10);
+    // An impact that has not happened yet is at rest, not NaN: callers hold the time of the
+    // last one as -Infinity, and a NaN here voids whatever coordinate it is added to.
+    expect(settle(Number.POSITIVE_INFINITY, 100, 20)).toBe(0);
+    expect(settle(Number.NaN, 100, 20)).toBe(0);
   });
   it('staggers arrivals monotonically across the spread and not at all for one item', () => {
     expect(stagger(0, 1, 0.3)).toBe(0);
