@@ -59,7 +59,8 @@ export class HammerNailVignette implements Vignette {
   private lastDemoStrike = -Infinity;
   /** When the player's turn began. The spotlight opens toward them from here. */
   private respondAt = -100;
-  private readonly reducedMotion = reducedMotion();
+  /** Read per use, so a preference change applies mid-scene. */
+  private get reducedMotion(): boolean { return reducedMotion(); }
 
   public constructor(private readonly scene: Phaser.Scene, private readonly cover = false) {
     this.backdrop = new Backdrop(scene, WORKSHOP.paper, WORKSHOP.sun);

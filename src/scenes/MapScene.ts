@@ -83,7 +83,8 @@ export class MapScene extends BaseScene {
   private focus = 1;
   private centered = false;
   private disposed = false;
-  private readonly reducedMotion = reducedMotion();
+  /** Read per use, so a preference change applies mid-scene. */
+  private get reducedMotion(): boolean { return reducedMotion(); }
 
   public constructor() { super(SceneKey.Map); }
 

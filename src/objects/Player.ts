@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
 
 import { LAYOUT } from '@/config/design';
-import { TextureKey } from '@/textures/generateCoreTextures';
 
 /** How much the player grows while held, as a multiple of its resting scale. */
 const PRESS_SCALE = 1.09;
@@ -23,7 +22,8 @@ export class Player extends Phaser.GameObjects.Image {
   private pressTween?: Phaser.Tweens.Tween | undefined;
 
   public constructor(scene: Phaser.Scene, x: number, y: number) {
-    super(scene, x, y, TextureKey.Player);
+    // Unused starter code: the texture this named is no longer generated at boot.
+    super(scene, x, y, 'player');
 
     this.setOrigin(0.5, 0.5);
 

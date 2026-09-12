@@ -63,7 +63,8 @@ export class PlayScene extends BaseScene {
   private taskMarks!: Phaser.GameObjects.Graphics;
   private curtain!: SceneCurtain;
   private summaryAt = -Infinity;
-  private readonly reducedMotion = reducedMotion();
+  /** Read per use, so a preference change applies mid-scene. */
+  private get reducedMotion(): boolean { return reducedMotion(); }
   private debug!: Phaser.GameObjects.Text;
   private controlSize = 96;
   private uiScale = 1;

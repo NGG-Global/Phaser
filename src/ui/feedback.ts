@@ -55,7 +55,7 @@ export function generateFeedbackTextures(scene: Phaser.Scene): void {
 }
 
 type Emitter = Phaser.GameObjects.Particles.ParticleEmitter;
-type Preset = 'dust' | 'chips' | 'sparks' | 'confetti';
+type Preset = 'dust' | 'chips' | 'sparks' | 'confetti' | 'water';
 
 export class Feedback {
   private readonly emitters = new Map<Preset, Emitter>();
@@ -82,6 +82,11 @@ export class Feedback {
       case 'confetti':
         Object.assign(config, { speed: { min: 200, max: 460 }, angle: { min: 230, max: 310 }, gravityY: 700, rotate: { start: 0, end: 540 },
           lifespan: { min: 900, max: 1500 }, scale: { start: 1, end: 0.7 }, alpha: { start: 1, end: 0.6 } });
+        break;
+      case 'water':
+        // Droplets: thrown low and short, falling fast, gone before they read as confetti.
+        Object.assign(config, { speed: { min: 40, max: 150 }, angle: { min: 20, max: 160 }, gravityY: 1100,
+          lifespan: { min: 220, max: 420 }, scale: { start: 0.35, end: 0.12 }, alpha: { start: 0.9, end: 0 } });
         break;
     }
     const texture = preset === 'chips' || preset === 'confetti' ? FxKey.chip : FxKey.dot;

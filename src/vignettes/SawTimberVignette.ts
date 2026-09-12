@@ -82,7 +82,8 @@ export class SawTimberVignette implements Vignette {
   private baseX = 0;
   private baseY = 0;
   private scale = 1;
-  private readonly reducedMotion = reducedMotion();
+  /** Read per use, so a preference change applies mid-scene. */
+  private get reducedMotion(): boolean { return reducedMotion(); }
 
   public constructor(scene: Phaser.Scene) {
     this.backdrop = scene.add.graphics().setDepth(-20);

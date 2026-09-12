@@ -134,7 +134,7 @@ src/
     rhythm.ts          Timing windows and scheduling constants
     scenes.ts          Scene keys
     style.ts           The workshop treatment: outline, exaggeration, faces, grain
-    theme.ts           Legacy palette; only the clear colour and the preloader use it
+    theme.ts           PALETTE: the four colours the shell, curtain and clear colour share
   core/
     BaseScene.ts       Scene base class owning the build/layout lifecycle
     Viewport.ts        Live layout frames (full / safe / content / designBox)
@@ -159,13 +159,12 @@ src/
     judge.ts           Pure timing judgement; owns Perfect/Good/Miss
   scenes/
     BootScene.ts       Input tuning, orientation guard
-    PreloadScene.ts    Asset loading and progress bar
+    PreloadScene.ts    Texture generation and font registration
     MenuScene.ts       Title; owns the first audio gesture
     MapScene.ts        The endless road, rendered as a bounded window
     PlayScene.ts       One level: hosts a vignette, never judges
     SettingsScene.ts   Latency calibration, mute, reset progress
   textures/
-    generateCoreTextures.ts   Procedural placeholder art
     materials.ts       Seeded canvas tiles: paper, wood, metal, cloth, parchment
   ui/
     backdrop.ts        The shared stage behind a vignette: ground, light pool, paper
@@ -287,9 +286,8 @@ Verified by testing, and easy to reintroduce:
 ## Assets
 
 All art is procedural: drawn as Phaser Graphics inside each vignette and scene,
-or generated at boot — placeholder textures in `textures/generateCoreTextures.ts`,
-material tiles in `textures/materials.ts`, particle and glow discs in
-`ui/feedback.ts` — and looked up by key. There are no image files.
+or generated at boot — material tiles in `textures/materials.ts`, particle and
+glow discs in `ui/feedback.ts` — and looked up by key. There are no image files.
 
 The typefaces are the exception to "nothing but the music is downloaded". Two
 variable fonts under `public/fonts/` — Fredoka for display, Nunito for body and

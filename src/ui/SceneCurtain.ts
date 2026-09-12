@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { PALETTE } from '@/config/theme';
 import { reducedMotion } from '@/core/motionPreference';
 
 /** A paper sweep between screens. Presentation only: never schedules a musical event. */
@@ -7,9 +8,10 @@ export class SceneCurtain {
   private readonly motion = { progress: 0 };
   private busy = false;
   private disposed = false;
-  private readonly reduced = reducedMotion();
+  /** Read when a sweep starts, so a preference change applies to the next transition. */
+  private get reduced(): boolean { return reducedMotion(); }
 
-  public constructor(private readonly scene: Phaser.Scene, private readonly colour = 0xf4f0e2) {
+  public constructor(private readonly scene: Phaser.Scene, private readonly colour: number = PALETTE.paper) {
     this.graphic = scene.add.graphics().setScrollFactor(0).setDepth(1000);
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, this.dispose, this);
     scene.events.on(Phaser.Scenes.Events.UPDATE, this.draw, this);
@@ -49,7 +51,7 @@ export class SceneCurtain {
     const edge = (p <= 1 ? (1 - p) * (w + h * 0.12) : -(p - 1) * (w + h * 0.12)) - h * 0.12;
     const right = p <= 1 ? w + h * 0.12 : w - (p - 1) * (w + h * 0.12);
     const g = this.graphic.clear();
-    g.fillStyle(0xcf5134).beginPath().moveTo(edge - 12, 0).lineTo(right, 0)
+    g.fillStyle(PALETTE.coral).beginPath().moveTo(edge - 12, 0).lineTo(right, 0)
       .lineTo(right + h * 0.12, h).lineTo(edge + h * 0.12 - 12, h).closePath().fillPath();
     g.fillStyle(this.colour).beginPath().moveTo(edge, 0).lineTo(right, 0)
       .lineTo(right + h * 0.12, h).lineTo(edge + h * 0.12, h).closePath().fillPath();

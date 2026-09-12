@@ -20,7 +20,7 @@ export const MaterialKey = Object.freeze({
 });
 export type MaterialKey = (typeof MaterialKey)[keyof typeof MaterialKey];
 
-/** 256 so a tile is sharp on a 3x display when scaled down, per generateCoreTextures. */
+/** 256 so a tile is sharp on a 3x display when scaled down: scaling down is nearly free, scaling up is visibly soft. */
 const SIZE = 256;
 
 function lcg(seed: number): () => number {

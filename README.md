@@ -113,7 +113,7 @@ src/
   input/        Unified timestamped taps
   rhythm/       Patterns, scheduling and pure timing judgement
   scenes/       Boot, Preload, Menu, Map, Play, Settings
-  textures/     Procedural placeholder art
+  textures/     Generated material tiles
   ui/           Colour, path and star drawing helpers
   vignettes/    One module per act, plus their pure motion curves
 ```

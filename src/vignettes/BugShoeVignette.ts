@@ -34,7 +34,8 @@ export class BugShoeVignette implements Vignette {
   private contactX = 0;
   private previousX = 0;
   private steps = 0;
-  private readonly reducedMotion = reducedMotion();
+  /** Read per use, so a preference change applies mid-scene. */
+  private get reducedMotion(): boolean { return reducedMotion(); }
   public constructor(scene: Phaser.Scene) {
     this.backdrop = scene.add.graphics().setDepth(-20);
     this.stage = scene.add.container(0, 0).setDepth(-10);
