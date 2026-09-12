@@ -8,7 +8,7 @@ Pacing verification (10 September 2026): typecheck, lint, the full test suite an
 
 ## Visual direction and controls
 
-A warm printed-workshop palette: paper `#eee8d8`, forged green `#243e35`, vermilion `#cf5134`, muted copper timber `#c99460`. Georgia titles frame the opening and ending; a small Watch / Repeat label leaves the illustration dominant during play. There are no UI panels in normal play. Wood grain and paper texture are deterministic local generation; all tool/nail geometry is Phaser Graphics.
+A warm printed-workshop palette: paper `#eee8d8`, forged green `#243e35`, vermilion `#cf5134`, muted copper timber `#c99460`. The bundled display face sets the opening and ending titles; a small Watch / Repeat label leaves the illustration dominant during play. There are no UI panels in normal play. The bench's grain is a generated material tile and the paper is the shared backdrop's; all tool and nail geometry is Phaser Graphics, shaded from the one key light in `ui/light.ts`.
 
 Tap anywhere to start. Two preparation ticks precede the demonstration. The hammer winds up before each pre-scheduled contact. The demonstration strikes the nail without sinking it, so the nail is already standing proud when the player's turn arrives; the spotlight opens toward them on the response downbeat. On the player's turn, accepted taps hit immediately; grades separately decide whether the nail moves deeper. Extras still animate a strike. Countdown text, outcome dots and percentage results are absent in normal play; numerical feedback remains available in development debug mode.
 

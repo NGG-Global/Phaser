@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The game's palette, for the native surfaces the WebView does not paint.
+  Mirrors src/config/theme.ts PALETTE, index.html's CSS variables and the
+  theme-color meta tag; change them together.
+
+  Without these, AppTheme inherits Capacitor's own colorPrimary / colorAccent,
+  which are stock Material indigo and pink.
+-->
+<resources>
+    <color name="paper">#EEE8D8</color>
+    <color name="ink">#243E35</color>
+    <color name="coral">#CF5134</color>
+
+    <color name="colorPrimary">#CF5134</color>
+    <color name="colorPrimaryDark">#A63E27</color>
+    <color name="colorAccent">#CF5134</color>
+</resources>

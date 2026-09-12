@@ -114,7 +114,7 @@ src/
   rhythm/       Patterns, scheduling and pure timing judgement
   scenes/       Boot, Preload, Menu, Map, Play, Settings
   textures/     Generated material tiles
-  ui/           Colour, path and star drawing helpers
+  ui/           The drawing system: light, panels, type, icons, motion, materials
   vignettes/    One module per act, plus their pure motion curves
 ```
 

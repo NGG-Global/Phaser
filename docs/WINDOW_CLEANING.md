@@ -2,7 +2,7 @@
 
 ## Visual behavior
 
-The cool scene uses lavender wall `#e5dfe8`, plum framing `#756278`, blue glass `#a8ced4` and an apricot glove. The window is a large rounded architectural form with an abstract landscape, sun reflection, diagonal highlights and a deep sill. A vertical squeegee blade makes lateral strokes in 230 ms, fitting even the existing 300 ms double. Motion, grime removal and droplets are sampled from absolute audio time. Every accepted tap starts motion immediately; successful judgement separately marks a cleaning band. An early accepted tap in the last moments of the demonstration still moves the tool.
+The cool scene uses lavender wall `#e5dfe8`, plum framing `#756278`, blue glass `#a8ced4` and an apricot glove. The frame is painted wood with grain drawn across it, shaded from the shared key light; the pane is the one surface in the game with no material on it. The window is a large rounded architectural form with an abstract landscape, sun reflection, diagonal highlights and a deep sill. A vertical squeegee blade makes lateral strokes in 230 ms, fitting even the existing 300 ms double. Motion, grime removal and droplets are sampled from absolute audio time. Every accepted tap starts motion immediately; successful judgement separately marks a cleaning band. An early accepted tap in the last moments of the demonstration still moves the tool.
 
 Demonstration beats travel the same bands without clearing them, so the pane the player is given is the one they watched. Successful final presentation clears remaining grime without re-dirtying already cleaned bands, strengthens the reflection and turns the reflected sun into a four-point glint. Poor performances retain grime and a short pale drip. Neither changes the numerical task result.
 
@@ -22,7 +22,7 @@ The rhythm engine, patterns and TAP input path were not edited for this feature.
 
 ## Flow and testing
 
-Three Hammer tasks → musical paper wipe → three Window tasks → musical paper wipe → repeat. Task transitions retain the existing slide; inter-vignette replacement is covered by an opaque cream panel, not a fade or loading screen. Both sound sets are generated locally. Music, when supplied later, remains a shared continuous bedding layer rather than an outgoing vignette sound.
+Three Hammer tasks → musical paper wipe → three Window tasks → musical paper wipe → repeat. Task transitions retain the existing slide; inter-vignette replacement is covered by an opaque card sliding across, not a fade or loading screen. Both sound sets are generated locally. Music, when supplied later, remains a shared continuous bedding layer rather than an outgoing vignette sound.
 
 DEV `/?debug&vignette=window` starts directly in Window. Accurate/Rough replay uses DOM mouse events through normal Phaser input and continues across round boundaries. Debug shows current vignette/task, SFX voices, listener count, top-level object count, timing error and observed frame rate. Production has no direct-start override or replay controls.
 

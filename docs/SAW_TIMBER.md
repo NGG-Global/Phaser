@@ -31,7 +31,7 @@ happens. The blade stands 30° inside the plane of the cut, plunging into the ke
 than lying along the face; the kerf stays vertical because the tilt is within the cut
 plane. The blade is never drawn below the depth it has actually sawn — the in-kerf slice
 is bounded by `bladeVisibleDepth`, and the blade above the board is clipped at the top
-face, so a slide can shorten what shows but never reveal uncut wood. Georgia titles
+face, so a slide can shorten what shows but never reveal uncut wood. Display titles
 frame the opening and ending; the illustration stays dominant during play and there are
 no UI panels. Board, sawhorses, grain and the saw itself are Phaser Graphics with
 deterministic local geometry: no external assets, no dynamic masks, no per-stroke
