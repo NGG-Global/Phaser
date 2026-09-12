@@ -1,7 +1,11 @@
 import type { VignetteSounds } from './AudioEngine';
 
+const DURATION: Record<keyof VignetteSounds, number> = {
+  action: 0.24, scrape: 0.22, judder: 0.28, success: 0.55, rough: 0.24,
+};
+
 export function synthesizeWipe(sampleRate: number, kind: keyof VignetteSounds): Float32Array {
-  const duration = kind === 'success' ? 0.55 : 0.24;
+  const duration = DURATION[kind];
   const data = new Float32Array(Math.ceil(sampleRate * duration));
   let seed = 731;
   let filtered = 0;
@@ -12,6 +16,17 @@ export function synthesizeWipe(sampleRate: number, kind: keyof VignetteSounds): 
     const envelope = Math.min(1, t / 0.006) * Math.exp(-t * 17);
     const squeak = Math.sin(2 * Math.PI * (kind === 'rough' ? 510 * t - 170 * t * t : 740 * t + 680 * t * t));
     const glint = kind === 'success' ? (Math.sin(t * Math.PI * 2 * 1320) + Math.sin(t * Math.PI * 2 * 1980)) * Math.exp(-t * 9) * Math.min(1, t / 0.004) * 0.12 : 0;
+    if (kind === 'scrape') {
+      // Rubber skidding dry on glass: the squeal nobody wants to hear.
+      const squeal = Math.sin(2 * Math.PI * (1180 * t - 300 * t * t)) * (0.6 + 0.4 * Math.sin(2 * Math.PI * 34 * t));
+      data[i] = Math.max(-1, Math.min(1, Math.min(1, t / 0.004) * (squeal * 0.3 + filtered * 0.3) * Math.exp(-t * 13)));
+      continue;
+    }
+    if (kind === 'judder') {
+      // The blade dragged across without lifting: a smear, low and flat.
+      data[i] = Math.max(-1, Math.min(1, Math.min(1, t / 0.006) * (filtered * 0.7 + Math.sin(2 * Math.PI * 150 * t) * 0.16) * Math.exp(-t * 10)));
+      continue;
+    }
     data[i] = Math.max(-1, Math.min(1, filtered * envelope * 1.1 + squeak * envelope * 0.1 + glint));
   }
   return data;
@@ -23,5 +38,8 @@ export function createWindowSounds(context: AudioContext): VignetteSounds {
     buffer.getChannelData(0).set(data);
     return buffer;
   };
-  return { action: make('action'), success: make('success'), rough: make('rough') };
+  return {
+    action: make('action'), success: make('success'), rough: make('rough'),
+    scrape: make('scrape'), judder: make('judder'),
+  };
 }
