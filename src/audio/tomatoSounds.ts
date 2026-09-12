@@ -27,9 +27,12 @@ export function synthesizeChop(sampleRate: number, kind: keyof VignetteSounds): 
       // Bare board, nothing to cut: a hollower knock and no wet component at all.
       voice = Math.sin(2 * Math.PI * 240 * t) * Math.exp(-t * 30) * 0.6 + click * 0.6;
     } else if (kind === 'judder') {
-      // A blade held still but not steady: a faint high ring with a tremor on it.
+      // A blade held still but not steady: it settles back on the board with a dull knock
+      // and rings with a tremor over it. Levelled with the other four vignettes' accents —
+      // measured, this was a fifth of their peak, so a missed beat all but passed here.
       const tremor = 0.6 + 0.4 * Math.sin(2 * Math.PI * 21 * t);
-      voice = Math.sin(2 * Math.PI * 2300 * t) * Math.exp(-t * 12) * 0.16 * tremor + wet * 0.05 * Math.exp(-t * 9);
+      const knock = Math.sin(2 * Math.PI * 120 * t) * Math.exp(-t * 26) * 0.42;
+      voice = knock + Math.sin(2 * Math.PI * 2300 * t) * Math.exp(-t * 12) * 0.2 * tremor + wet * 0.05 * Math.exp(-t * 9);
     } else if (kind === 'success') {
       // The last slice, then a single seed landing a moment later.
       const late = t - 0.34;
