@@ -19,9 +19,21 @@ function shadowFor(colour: number, size: number): NonNullable<TextStyle['shadow'
   return { offsetX: 0, offsetY: Math.max(1, size * 0.07), color: hex(shade(colour, -0.55)), blur: 0, fill: true, stroke: true };
 }
 
+/** Below this the outline is tapered; a headline at or above it carries its full weight. */
+const FULL_WEIGHT_SIZE = 44;
+
 function strokeFor(t: Treatment, size: number): number {
   // The outline weight tracks the treatment's silhouette weight so type and object agree.
-  return t.outline === 0 ? 0 : Math.max(1.5, size * 0.02 * t.outline);
+  // It tapers below headline size, though: a stroke that stays proportional all the way
+  // down fills in Fredoka's counters, and a 28px value reads as a smudge rather than a
+  // word. The outline is there to give a large letter a cartoon silhouette, and a small
+  // one has no silhouette to give.
+  if (t.outline === 0) return 0;
+  // Squared, because the stroke is laid on the outside of a stem that is itself only
+  // linear in the size: proportional weight costs a 28px letter well over half its stem
+  // again, and Fredoka's counters close up. A headline keeps every bit of its outline.
+  const taper = Math.min(1, size / FULL_WEIGHT_SIZE) ** 2;
+  return Math.max(1.5, size * 0.02 * t.outline * taper);
 }
 
 export interface TypeSpec {
