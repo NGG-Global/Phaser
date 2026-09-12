@@ -1,9 +1,15 @@
 import type Phaser from 'phaser';
+import { STYLE } from '@/config/style';
 import { reducedMotion } from '@/core/motionPreference';
 import type { Viewport } from '@/core/Viewport';
 import type { Phase } from '@/game/RoundController';
 import type { RoundPlan } from '@/rhythm/RhythmScheduler';
 import type { Judgement } from '@/rhythm/judge';
+import { MaterialKey } from '@/textures/materials';
+import { Backdrop } from '@/ui/backdrop';
+import { shade } from '@/ui/colour';
+import { Feedback } from '@/ui/feedback';
+import { castShadow, faces } from '@/ui/light';
 import type { Vignette } from './Vignette';
 import {
   advanceBite, acceptDemoBeat, bladeVisibleDepth, clamp01, drawBack, dustFall,
@@ -28,6 +34,14 @@ const GROUND_Y = 250;
 const TIMBER_X = 0;
 const TIMBER_Y = -140;
 const THICK = SAW_MOTION.boardThickness;
+
+/** A sapwood grain tile, laid over a plank's painted faces at the treatment's strength. */
+function grainTile(scene: Phaser.Scene, x: number, y: number, width: number, height: number): Phaser.GameObjects.TileSprite {
+  const tile = scene.add.tileSprite(x, y, width, height, MaterialKey.wood).setOrigin(0)
+    .setTint(TIMBER.sapwood).setAlpha(0.45 * STYLE.current.grain);
+  tile.setTileScale(0.42, 0.42);
+  return tile;
+}
 // Half the blade reaches past the kerf at the bite; the rest carries the handle.
 const BLADE_BACK = 430;
 const BLADE_TIP = -170;
@@ -47,7 +61,7 @@ function quad(
 
 /** Owns an illustration and its motion. Judgement arrives already decided; it is never computed here. */
 export class SawTimberVignette implements Vignette {
-  private readonly backdrop: Phaser.GameObjects.Graphics;
+  private readonly backdrop: Backdrop;
   private readonly stage: Phaser.GameObjects.Container;
   private readonly horses: Phaser.GameObjects.Graphics;
   private readonly timber: Phaser.GameObjects.Container;
@@ -59,6 +73,9 @@ export class SawTimberVignette implements Vignette {
   private readonly sawRoot: Phaser.GameObjects.Container;
   private readonly sawG: Phaser.GameObjects.Graphics;
   private readonly dust: Phaser.GameObjects.Graphics;
+  private readonly boardSurface: Phaser.GameObjects.TileSprite;
+  private readonly offcutSurface: Phaser.GameObjects.TileSprite;
+  private readonly bursts: Feedback;
   private plan: RoundPlan | null = null;
   private phase: Phase = 'idle';
   private lastDemo = -Infinity;
@@ -86,23 +103,28 @@ export class SawTimberVignette implements Vignette {
   private get reducedMotion(): boolean { return reducedMotion(); }
 
   public constructor(scene: Phaser.Scene) {
-    this.backdrop = scene.add.graphics().setDepth(-20);
+    // The pool of light sits over the cut, which is what the eye is meant to follow.
+    this.backdrop = new Backdrop(scene, TIMBER.paper, TIMBER.lit, { glowAt: { x: 0.45, y: 0.4 } });
     this.stage = scene.add.container(0, 0).setDepth(-10);
     this.horses = scene.add.graphics();
     this.timber = scene.add.container(TIMBER_X, TIMBER_Y).setRotation(TILT);
     this.board = scene.add.graphics();
+    // The grain tile rides inside the tilted container, so it runs along the board.
+    this.boardSurface = grainTile(scene, BOARD_LEFT, 0, CUT_X - KERF_HALF - BOARD_LEFT, THICK);
     this.kerfG = scene.add.graphics();
     this.marks = scene.add.graphics();
     this.offcutArt = scene.add.graphics();
+    this.offcutSurface = grainTile(scene, 0, -THICK, BOARD_RIGHT - CUT_X - KERF_HALF, THICK);
     // The hinge is the bottom of the kerf, so a rough cut can swing from it.
     this.offcut = scene.add.container(CUT_X + KERF_HALF, THICK);
-    this.offcut.add(this.offcutArt);
-    this.timber.add([this.board, this.offcut, this.kerfG, this.marks]);
+    this.offcut.add([this.offcutArt, this.offcutSurface]);
+    this.timber.add([this.board, this.boardSurface, this.offcut, this.kerfG, this.marks]);
     this.sawRoot = scene.add.container(TIMBER_X, TIMBER_Y).setRotation(TILT);
     this.sawG = scene.add.graphics();
     this.sawRoot.add(this.sawG);
     this.dust = scene.add.graphics();
     this.stage.add([this.horses, this.timber, this.sawRoot, this.dust]);
+    this.bursts = new Feedback(scene, -10, this.stage);
   }
 
   /**
@@ -117,9 +139,13 @@ export class SawTimberVignette implements Vignette {
   }
 
   private plank(g: Phaser.GameObjects.Graphics, left: number, right: number, top: number): void {
-    g.fillStyle(TIMBER.sapwood).fillRect(left, top, right - left, THICK);
-    g.fillStyle(TIMBER.lit).fillRect(left, top, right - left, 7);
-    g.fillStyle(TIMBER.ink, 0.14).fillRect(left, top + THICK - 6, right - left, 6);
+    const wood = faces(TIMBER.sapwood);
+    const line = STYLE.current.outline * 1.4;
+    if (line > 0) g.lineStyle(line, shade(TIMBER.sapwood, -0.6), 1).strokeRect(left, top, right - left, THICK);
+    g.fillStyle(wood.face).fillRect(left, top, right - left, THICK);
+    g.fillStyle(wood.lit).fillRect(left, top, right - left, 9);
+    g.fillStyle(wood.rim, 0.6).fillRect(left, top, right - left, 3);
+    g.fillStyle(wood.shade).fillRect(left, top + THICK - 8, right - left, 8);
     // Deterministic growth lines, baked once. No texture download and no per-frame sampling.
     g.lineStyle(1.5, TIMBER.grain, 0.34);
     for (let row = 0; row < 5; row++) {
@@ -133,33 +159,43 @@ export class SawTimberVignette implements Vignette {
     }
   }
 
-  public layout({ full, safe }: Viewport): void {
+  public layout(viewport: Viewport): void {
+    const { safe } = viewport;
     // The blade rises to the right, so the cut sits left of centre to leave the handle
     // room inside the frame. The board is meant to run off both edges; the handle is not.
     this.scale = Math.min(safe.width / 980, safe.height / 1380);
     this.baseX = safe.centerX - 110 * this.scale;
     this.baseY = safe.top + safe.height * 0.6;
     this.stage.setPosition(this.baseX, this.baseY).setScale(this.scale);
-    const bg = this.backdrop.clear();
-    bg.fillStyle(TIMBER.paper).fillRect(full.x, full.y, full.width, full.height);
-    // A cool wash for the floor, anchored to the sawhorses' own ground line so the two
-    // cannot drift apart when the stage is scaled.
-    const floor = this.baseY + GROUND_Y * this.scale;
-    bg.fillStyle(TIMBER.grip, 0.05).fillRect(full.x, floor, full.width, full.bottom - floor);
+    this.backdrop.layout(viewport);
     this.plank(this.board.clear(), BOARD_LEFT, CUT_X - KERF_HALF, 0);
     this.plank(this.offcutArt.clear(), 0, BOARD_RIGHT - CUT_X - KERF_HALF, -THICK);
     const h = this.horses.clear();
+    // The floor now lives in stage space rather than on the backdrop, so it stays
+    // anchored to the sawhorses' own ground line however the stage is scaled.
+    h.fillStyle(TIMBER.grip, 0.06).fillRect(-3000, GROUND_Y, 6000, 3000);
+    const slate = faces(TIMBER.ink);
+    const line = STYLE.current.outline * 1.4;
     for (const lx of HORSE_X) {
       const c = Math.cos(TILT);
       const s = Math.sin(TILT);
       const x = TIMBER_X + lx * c - THICK * s;
       const y = TIMBER_Y + lx * s + THICK * c;
-      h.fillStyle(TIMBER.ink, 0.1).fillEllipse(x, GROUND_Y + 8, 250, 22);
-      h.fillStyle(TIMBER.ink).fillRoundedRect(x - 78, y - 9, 156, 18, 5);
-      h.lineStyle(13, TIMBER.ink);
+      const drop = castShadow(9);
+      h.fillStyle(TIMBER.ink, drop.alpha).fillEllipse(x + drop.dx, GROUND_Y + 8, 250, 22);
+      // Legs first, then the bar over them, so the joint reads as a lap rather than a cross.
+      if (line > 0) {
+        h.lineStyle(13 + line, slate.edge);
+        h.lineBetween(x - 58, y + 4, x - 86, GROUND_Y);
+        h.lineBetween(x + 58, y + 4, x + 86, GROUND_Y);
+      }
+      h.lineStyle(13, slate.face);
       h.lineBetween(x - 58, y + 4, x - 86, GROUND_Y);
       h.lineBetween(x + 58, y + 4, x + 86, GROUND_Y);
-      h.lineStyle(9, TIMBER.ink, 0.85).lineBetween(x - 72, y + 96, x + 72, y + 96);
+      h.lineStyle(9, slate.shade, 0.85).lineBetween(x - 72, y + 96, x + 72, y + 96);
+      if (line > 0) h.lineStyle(line, slate.edge, 1).strokeRoundedRect(x - 78, y - 9, 156, 18, 5);
+      h.fillStyle(slate.face).fillRoundedRect(x - 78, y - 9, 156, 18, 5);
+      h.fillStyle(slate.lit).fillRoundedRect(x - 78, y - 9, 156, 7, 5);
     }
   }
 
@@ -208,11 +244,22 @@ export class SawTimberVignette implements Vignette {
 
   public onPlayerHit(now: number): void { this.stroke(now); }
 
+  /**
+   * Chips thrown off the teeth. The falling plume stays hand drawn beside this: it is
+   * scaled by the task's own tempo, which a particle's fixed lifetime cannot follow.
+   */
+  private chips(): void {
+    if (this.reducedMotion) return;
+    const c = Math.cos(TILT), s = Math.sin(TILT);
+    this.bursts.burst('chips', TIMBER_X + CUT_X * c, TIMBER_Y + CUT_X * s - 6, [TIMBER.sawdust, TIMBER.lit], 6);
+  }
+
   public onAccuracy(result: Judgement, now: number): void {
     const bites = advanceBite(this.bites, result.kind);
     if (bites !== this.bites) {
       this.bites = bites;
       this.setKerf(kerfDepth(bites, this.plan?.targets.length ?? 3), now);
+      this.chips();
       return;
     }
     // An extra tap skids across the face and leaves a scuff; an omission leaves the
@@ -270,11 +317,11 @@ export class SawTimberVignette implements Vignette {
     const age = now - this.strokeAt;
     const { dustSec } = sawTiming(beat);
     const bite = age >= 0 && age < dustSec ? 1 - age / dustSec : 0;
-    const press = age >= 0 && age < 0.16 ? Math.sin(age / 0.16 * Math.PI) : 0;
+    const press = age >= 0 && age < 0.16 ? Math.sin(age / 0.16 * Math.PI) * STYLE.current.exaggeration : 0;
     // The offset is relative to the board's own anchor, which the flex adds to rather
     // than replaces.
     this.timber.setPosition(TIMBER_X, TIMBER_Y + (this.reducedMotion ? 0 : press * 1.8));
-    const shake = this.reducedMotion || age < 0 || age > 0.19 ? 0 : Math.sin(age * 112) * Math.exp(-age * 21) * 2.2;
+    const shake = this.reducedMotion || age < 0 || age > 0.19 ? 0 : Math.sin(age * 112) * Math.exp(-age * 21) * 2.2 * STYLE.current.exaggeration;
     this.stage.setPosition(this.baseX + shake * this.scale, this.baseY + shake * this.scale * 0.4);
     this.poseSaw(now);
     this.drawKerf();
@@ -305,9 +352,16 @@ export class SawTimberVignette implements Vignette {
     const [hx, hy] = this.blade(heel, 0);
     const [hbx, hby] = this.blade(heel, 58);
     const [tbx, tby] = this.blade(tip, 34);
-    g.fillStyle(TIMBER.ink, 0.09);
-    quad(g, tx + 7, ty + 12, hx + 7, hy + 12, hbx + 7, hby + 12, tbx + 7, tby + 12);
-    g.fillStyle(TIMBER.steel);
+    const steel = faces(TIMBER.steel);
+    const line = STYLE.current.outline * 1.4;
+    const drop = castShadow(8);
+    g.fillStyle(TIMBER.ink, drop.alpha);
+    quad(g, tx + drop.dx, ty + drop.dy, hx + drop.dx, hy + drop.dy, hbx + drop.dx, hby + drop.dy, tbx + drop.dx, tby + drop.dy);
+    if (line > 0) {
+      g.lineStyle(line, shade(TIMBER.steel, -0.6), 1).beginPath()
+        .moveTo(tx, ty).lineTo(hx, hy).lineTo(hbx, hby).lineTo(tbx, tby).closePath().strokePath();
+    }
+    g.fillStyle(steel.face);
     quad(g, tx, ty, hx, hy, hbx, hby, tbx, tby);
     // A lit line down the blade's back keeps a flat polygon reading as sheet steel.
     const [l1x, l1y] = this.blade(tip, 40);
@@ -323,7 +377,11 @@ export class SawTimberVignette implements Vignette {
     }
     // Handle: a slate grip with two brass nuts, the only warm note besides the dust.
     const [gx, gy] = this.blade(heel + 42, 30);
-    g.fillStyle(TIMBER.grip).fillRoundedRect(gx - 46, gy - 52, 96, 104, 26);
+    const grip = faces(TIMBER.grip);
+    if (line > 0) g.lineStyle(line, grip.edge, 1).strokeRoundedRect(gx - 46, gy - 52, 96, 104, 26);
+    g.fillStyle(grip.shade).fillRoundedRect(gx - 46, gy - 52, 96, 104, 26);
+    g.fillStyle(grip.face).fillRoundedRect(gx - 46, gy - 52, 96, 92, 26);
+    g.fillStyle(grip.lit, 0.8).fillRoundedRect(gx - 36, gy - 48, 72, 10, 5);
     g.fillStyle(TIMBER.paper, 0.14).fillRoundedRect(gx - 34, gy - 40, 70, 22, 11);
     g.fillStyle(TIMBER.paper).fillRoundedRect(gx - 22, gy - 26, 42, 52, 15);
     g.fillStyle(TIMBER.sawdust);
@@ -415,5 +473,5 @@ export class SawTimberVignette implements Vignette {
   }
 
   public translate(offset: number): void { this.stage.x += this.reducedMotion ? 0 : offset; }
-  public destroy(): void { this.stage.destroy(true); this.backdrop.destroy(); }
+  public destroy(): void { this.bursts.destroy(); this.stage.destroy(true); this.backdrop.destroy(); }
 }
