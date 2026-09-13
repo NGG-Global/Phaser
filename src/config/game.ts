@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from '@/config/design';
-import { COLORS } from '@/config/theme';
+import { PALETTE } from '@/config/theme';
 import { getGameRootId } from '@/core/shell';
 import { BootScene } from '@/scenes/BootScene';
 import { MapScene } from '@/scenes/MapScene';
@@ -27,7 +27,7 @@ export function createGameConfig(): Phaser.Types.Core.GameConfig {
     type: Phaser.AUTO,
 
     parent: getGameRootId(),
-    backgroundColor: COLORS.background,
+    backgroundColor: PALETTE.paper,
     // The rhythm engine owns the only AudioContext and its scheduling/cancellation.
     audio: { noAudio: true },
 

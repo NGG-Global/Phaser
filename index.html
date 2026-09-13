@@ -33,7 +33,9 @@
 
     <style>
       :root {
-        /* Shell palette. Mirrored in src/config/theme.ts — change both together. */
+/* Shell palette. Mirrored in src/config/theme.ts (PALETTE), the theme-color
+           meta tag above, capacitor.config.ts and android values/colors.xml. These
+           paint before the bundle loads, so they cannot import anything. */
         --shell-bg: #eee8d8;
         --shell-fg: #243e35;
         --shell-muted: #788074;
@@ -130,10 +132,16 @@
         color: var(--shell-muted);
       }
 
+      /*
+        The loading ring carries the same weight of edge as the game's own drawing,
+        so the first thing on screen already belongs to it. System type stays here:
+        the bundled faces are not fetched until Phaser loads them, and swapping the
+        overlay's font mid-boot would flash.
+      */
       .spinner {
         width: 2.25rem;
         height: 2.25rem;
-        border: 3px solid rgba(36, 62, 53, 0.15);
+        border: 4px solid rgba(36, 62, 53, 0.18);
         border-top-color: var(--shell-accent);
         border-radius: 50%;
         animation: spin 0.9s linear infinite;
@@ -155,8 +163,8 @@
       .rotate-icon {
         width: 2.5rem;
         height: 4rem;
-        border: 3px solid var(--shell-accent);
-        border-radius: 0.5rem;
+        border: 4px solid var(--shell-accent);
+        border-radius: 0.6rem;
         animation: nudge 2.2s ease-in-out infinite;
       }
 

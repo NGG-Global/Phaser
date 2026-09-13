@@ -24,6 +24,16 @@ menu's PLAY tap. `AudioClock.calibrationMs` is the one place output latency is
 corrected, and it applies to judged input only — never to cue scheduling or
 visuals, which the device does not delay.
 
+A task is a demonstration phrase and then the player's response, back to back on
+the bar line: nothing waits between them, and nothing waits between one task and
+the next. The only pauses in a level are its opening `RHYTHM.leadInBeats` bar and,
+for a level of `PROGRESSION.breatherFromTasks` tasks or more, one
+`PROGRESSION.breatherBars` breather at its midpoint. Both are the same mechanism —
+`LevelTask.leadBeats`, counted in by `createRoundPlan`. Because no bar separates
+the demonstration from the response, **a vignette's demonstration must not consume
+its subject**: it plays the action in full and leaves the cumulative state alone,
+since there is no longer anywhere to restore it.
+
 Two standing rules that predate the current state and still hold: debug replay
 controls exist only with DEV and `?debug`, and **do not add a vignette without a
 request** — a new entry in the registry reassigns every level.
@@ -123,10 +133,12 @@ src/
     progression.ts     The one difficulty curve and its knobs
     rhythm.ts          Timing windows and scheduling constants
     scenes.ts          Scene keys
-    theme.ts           Palette and font stack
+    style.ts           The workshop treatment: outline, exaggeration, faces, grain
+    theme.ts           PALETTE: the four colours the shell, curtain and clear colour share
   core/
     BaseScene.ts       Scene base class owning the build/layout lifecycle
     Viewport.ts        Live layout frames (full / safe / content / designBox)
+    motionPreference.ts  The one live read of prefers-reduced-motion
     safeArea.ts        Reads env(safe-area-inset-*) via a probe element
     shell.ts           Controls the DOM overlays in index.html
   game/
@@ -147,17 +159,24 @@ src/
     judge.ts           Pure timing judgement; owns Perfect/Good/Miss
   scenes/
     BootScene.ts       Input tuning, orientation guard
-    PreloadScene.ts    Asset loading and progress bar
+    PreloadScene.ts    Texture generation and font registration
     MenuScene.ts       Title; owns the first audio gesture
     MapScene.ts        The endless road, rendered as a bounded window
     PlayScene.ts       One level: hosts a vignette, never judges
     SettingsScene.ts   Latency calibration, mute, reset progress
   textures/
-    generateCoreTextures.ts   Procedural placeholder art
+    materials.ts       Seeded canvas tiles: paper, wood, metal, cloth, parchment
   ui/
+    backdrop.ts        The shared stage behind a vignette: ground, light pool, paper
     colour.ts          hex / mix / shade, so depth tones derive from one palette
+    feedback.ts        Particle presets on generated textures; the soft glow disc
+    gear.ts, icons.ts  Drawn control glyphs; no symbol fonts
+    light.ts           The one key light: cast shadows and lit/shade/rim faces
+    panel.ts           Slabs and pucks with thickness, dressed per treatment
     path.ts            Catmull-Rom smoothing and dash spacing
+    spring.ts          Physical motion as pure f(t): spring, overshoot, squash, settle
     star.ts            The star glyph
+    type.ts            Display, body and label text from the treatment's bundled faces
   vignettes/
     registry.ts        The rotation. Order is the level assignment.
     Vignette.ts        The contract a vignette implements
@@ -267,8 +286,22 @@ Verified by testing, and easy to reintroduce:
 ## Assets
 
 All art is procedural: drawn as Phaser Graphics inside each vignette and scene,
-or generated at boot in `textures/generateCoreTextures.ts` and looked up by key
-from `TextureKey`. There are no image files.
+or generated at boot — material tiles in `textures/materials.ts`, particle and
+glow discs in `ui/feedback.ts` — and looked up by key. There are no image files.
+
+The typefaces are the exception to "nothing but the music is downloaded". Two
+variable fonts under `public/fonts/` — Fredoka for display, Nunito for body and
+labels, both under the SIL Open Font License with each family's `OFL.txt`
+committed beside it — load through Phaser's `load.font()` in
+`PreloadScene.preload()` before the menu builds, because Phaser `Text`
+rasterises at creation and never reflows for a font that arrives later. Text is
+made through `ui/type.ts`, never with a font family literal.
+
+The look is the workshop treatment in `config/style.ts`: one key light
+(`ui/light.ts`), generated materials, thick outlines, and physical motion from
+`ui/spring.ts`. Every drawing module reads its weights from `STYLE.current`
+rather than carrying its own; a new surface uses `ui/panel.ts`, `ui/type.ts`
+and `ui/icons.ts` rather than drawing a card or a glyph of its own.
 
 The repository does ship binary audio — the WAV masters in `bgm/` and the MP3s
 encoded from them — and that is the great majority of the checkout. Only the
@@ -319,7 +352,7 @@ A native build declares the lock in its manifest and never shows this prompt.
 Capacitor 8 wraps the web build (`capacitor.config.ts`, `android/`). `npm run
 android:apk` builds, syncs and assembles a debug APK; it needs JDK 21 and an
 Android SDK (platform 36, build-tools 36.0.0) referenced from the untracked
-`android/local.properties`. The launcher icon is an adaptive icon: a flat `#CE5133` background — the master's own ground, and the game's coral — under a full-bleed foreground, since the artwork is a scene rather than a glyph on transparency. The portrait lock lives in `AndroidManifest.xml`;
+`android/local.properties`. The launcher icon is an adaptive icon: a flat `#CE5133` background — the master's own ground, sampled from the artwork, which is why it is a shade off the game's `#CF5134` coral — under a full-bleed foreground, since the artwork is a scene rather than a glyph on transparency. `res/values/colors.xml` carries the palette for the native surfaces the WebView does not paint, and the launch window is a flat paper field rather than Capacitor's stock splash bitmap, so a cold start is one colour from the launcher to the menu. The portrait lock lives in `AndroidManifest.xml`;
 the DOM rotate prompt remains the browser fallback. `android/app/src/main/assets/public`
 is generated by `cap sync` and is not committed. No native plugins are used;
 the game never depends on a web-only API beyond Web Audio and pointer events.

@@ -24,7 +24,8 @@ describe('patterns and absolute scheduling', () => {
     const pattern = parsePattern('p', 'X - X - - - X X', 0.5);
     for (const bpm of [80, 100, 120]) {
       const plan = createRoundPlan(1, pattern, bpm, 10);
-      expect(plan.response - plan.demo).toBeCloseTo(8 * 60 / bpm);
+      // The response starts one phrase after the demonstration, with nothing in between.
+      expect(plan.response - plan.demo).toBeCloseTo(4 * 60 / bpm);
       expect(plan.targets.map(t => (t - plan.response) / (60 / bpm))).toEqual(expect.arrayContaining([0]));
       plan.targets.forEach((target, i) => expect(target).toBeCloseTo(plan.response + pattern.hits[i]! * 60 / bpm));
       expect(plan.cues.filter(c => c.kind === 'action').length).toBe(4);

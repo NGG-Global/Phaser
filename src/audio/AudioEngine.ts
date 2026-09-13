@@ -10,10 +10,18 @@ export interface VignetteSounds {
   readonly action: AudioBuffer;
   readonly success: AudioBuffer;
   readonly rough: AudioBuffer;
-  /** Optional judgement accents. The action sound is scheduled before the tap is
-      graded, so a reaction to the grade needs its own voice. Absent slots stay silent. */
-  readonly scrape?: AudioBuffer;
-  readonly judder?: AudioBuffer;
+  /**
+   * The judgement accents: `scrape` answers a tap that hit nothing, `judder` a beat that
+   * went by untapped. The action sound is scheduled before the tap is graded, so a
+   * reaction to the grade needs its own voice.
+   *
+   * Both are required. They were optional, and three of the five vignettes simply never
+   * declared them — so a mistake was silent on levels 1, 2 and 3 of every five and
+   * audible on 4 and 5, which is the inconsistency that got reported as broken audio.
+   * A new vignette that forgets them now fails to compile instead of shipping mute.
+   */
+  readonly scrape: AudioBuffer;
+  readonly judder: AudioBuffer;
 }
 export type AccentKind = 'scrape' | 'judder';
 
@@ -67,7 +75,7 @@ export class AudioEngine implements SoundSink {
   }
   /**
    * A reaction to a grade the judge has already returned. It sits under the action
-   * sound rather than replacing it, and no-ops for a sound set that declares neither.
+   * sound rather than replacing it.
    */
   public playAccent(time: number, kind: AccentKind): void {
     const buffer = this.sounds?.[kind];

@@ -16,7 +16,7 @@ export const VIGNETTES: readonly VignetteDefinition[] = [
     success: ['Nicely\ndone.', 'Right on the head.'], rough: ['It has\ncharacter.', 'Perfectly imperfect.'],
     endingSec: 1.35, successAccuracy: 70,
     create: scene => new HammerNailVignette(scene),
-    sounds: context => { const b = createImpactBuffers(context); return { action: b.hit, success: b.flush, rough: b.bent }; },
+    sounds: context => { const b = createImpactBuffers(context); return { action: b.hit, success: b.flush, rough: b.bent, scrape: b.skid, judder: b.dead }; },
   },
   {
     id: 'window', title: 'Window cleaning', intro: 'A clearer\nview.', ink: GLASS.ink,

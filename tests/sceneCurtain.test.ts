@@ -3,10 +3,13 @@ import type Phaser from 'phaser';
 import { SceneCurtain } from '../src/ui/SceneCurtain';
 
 vi.mock('phaser', () => ({ default: { Scenes: { Events: { SHUTDOWN: 'shutdown', UPDATE: 'update' } } } }));
+// The curtain reads the preference through the shared helper, so the fixture sets that.
+let reducedPreference = false;
+vi.mock('../src/core/motionPreference', () => ({ reducedMotion: () => reducedPreference }));
 afterEach(() => vi.unstubAllGlobals());
 
 function fixture(reduced = false) {
-  vi.stubGlobal('window', { matchMedia: () => ({ matches: reduced }) });
+  reducedPreference = reduced;
   const graphic = {
     setScrollFactor: vi.fn().mockReturnThis(), setDepth: vi.fn().mockReturnThis(),
     clear: vi.fn().mockReturnThis(), fillStyle: vi.fn().mockReturnThis(),

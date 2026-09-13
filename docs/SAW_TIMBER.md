@@ -31,7 +31,7 @@ happens. The blade stands 30° inside the plane of the cut, plunging into the ke
 than lying along the face; the kerf stays vertical because the tilt is within the cut
 plane. The blade is never drawn below the depth it has actually sawn — the in-kerf slice
 is bounded by `bladeVisibleDepth`, and the blade above the board is clipped at the top
-face, so a slide can shorten what shows but never reveal uncut wood. Georgia titles
+face, so a slide can shorten what shows but never reveal uncut wood. Display titles
 frame the opening and ending; the illustration stays dominant during play and there are
 no UI panels. Board, sawhorses, grain and the saw itself are Phaser Graphics with
 deterministic local geometry: no external assets, no dynamic masks, no per-stroke
@@ -50,9 +50,9 @@ Accurate strokes deepen the kerf and throw a sawdust plume. An extra tap skids a
 face, sounds dull and leaves a scuff; a missed target leaves the kerf exactly where it was
 and judders. Neither cuts, and an omission never invents a stroke the player did not make.
 Off strokes also walk the cut off the line, so a rough ending is visible before it is
-announced. The demonstration only ever cuts about halfway: on the handoff the cut length
-slides out of frame and an uncut length arrives on the readiness beat, so the
-demonstration never consumes the player's board. Reduced-motion preference suppresses
+announced. The demonstration strokes the board without cutting it at all, so the player
+starts on the board they watched. There is no bar between the demonstration and the
+response in which a fresh length could arrive. Reduced-motion preference suppresses
 timber flex, impact shake and the offering-gesture lift, and changes the board in place
 instead of travelling; the stroke, the cut and the judgement all still read.
 
@@ -90,10 +90,11 @@ Grading stays entirely outside the vignette. It receives `Judgement` and inspect
 `kind` and `index`; the strong/rough boundary is `successAccuracy` on the registry entry,
 compared by the host.
 
-At the base 120 BPM a four-beat phrase gives four beats each of preparation,
-demonstration, handoff and response: demonstration at 2.0 s from the plan's start,
-handoff at 4.0 s, response at 6.0 s, end at 8.0 s, the coda's contact one beat later at
-8.5 s, and the next task at 10.0 s. Faster tasks compress all of it proportionally,
+At the base 120 BPM a four-beat phrase gives four beats each of demonstration and
+response: for a task with no lead-in the demonstration is at the plan's start, the
+response at 2.0 s, the end at 4.0 s, the coda's contact one beat later at 4.5 s, and the
+next task at 6.0 s. Only a level's first task and a long level's breather carry a
+lead-in, of one bar and four bars respectively. Faster tasks compress all of it proportionally,
 which is what the note above is about.
 
 ## Verification
@@ -113,11 +114,11 @@ changing; `tests/levels.test.ts` checks only that level 1 is Hammer and that nei
 levels differ, so `tests/saw.test.ts` pins the actual cycle — reordering or inserting a
 registry entry silently reassigns every level's vignette, and nothing else would catch it.
 
-Driven in headless Chromium at 393x851, entering the saw's level from the map, through preparation,
-demonstration, handoff, response, both codas and into the following task, with no console
+Driven in headless Chromium at 393x851, entering the saw's level from the map, through
+demonstration, response, both codas and into the following task, with no console
 or page errors: one pointer handler and a bounded 14 scene objects throughout; the kerf
-deepening only on accurate strokes and holding still through a miss; the handoff swapping
-in fresh timber; a strong finish at 80% severing the plank, dropping the offcut square and
+deepening only on accurate strokes and holding still through a miss; the demonstration
+leaving the board uncut; a strong finish at 80% severing the plank, dropping the offcut square and
 revealing "Two planks now." only after the finishing contact; a rough finish at 0% leaving
 a wandered kerf, three scuffs and the offcut hanging by its hinge with the copy held back.
 Under `prefers-reduced-motion: reduce` the board neither travels nor flexes, still swaps in

@@ -332,7 +332,6 @@ src/
     RoundHud.ts                 # phase, accuracy, pause, session summary
     Transition.ts
   textures/
-    generateCoreTextures.ts     # retain useful shared textures
     generateVignetteTextures.ts
   vite-env.d.ts
 public/assets/

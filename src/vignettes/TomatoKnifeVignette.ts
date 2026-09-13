@@ -1,8 +1,15 @@
 import type Phaser from 'phaser';
+import { STYLE } from '@/config/style';
+import { reducedMotion } from '@/core/motionPreference';
 import type { Viewport } from '@/core/Viewport';
 import type { Phase } from '@/game/RoundController';
 import type { RoundPlan } from '@/rhythm/RhythmScheduler';
 import type { Judgement } from '@/rhythm/judge';
+import { MaterialKey } from '@/textures/materials';
+import { Backdrop } from '@/ui/backdrop';
+import { shade } from '@/ui/colour';
+import { Feedback } from '@/ui/feedback';
+import { castShadow, faces } from '@/ui/light';
 import type { Vignette } from './Vignette';
 import {
   acceptDemoBeat, advanceSlice, clamp01, cutFraction, easeOut, juiceFall, knifeLift, knifeWindup,
@@ -61,7 +68,10 @@ function disc(cx: number, cy: number, a: number, b: number, tilt: number): numbe
 
 /** Owns an illustration and its motion. Judgement arrives already decided; it is never computed here. */
 export class TomatoKnifeVignette implements Vignette {
-  private readonly backdrop: Phaser.GameObjects.Graphics;
+  private readonly backdrop: Backdrop;
+  private readonly wall: Phaser.GameObjects.Graphics;
+  private readonly boardSurface: Phaser.GameObjects.TileSprite;
+  private readonly bursts: Feedback;
   private readonly stage: Phaser.GameObjects.Container;
   private readonly boardG: Phaser.GameObjects.Graphics;
   private readonly produce: Phaser.GameObjects.Container;
@@ -73,6 +83,8 @@ export class TomatoKnifeVignette implements Vignette {
   private readonly rings: Phaser.GameObjects.Graphics;
   private plan: RoundPlan | null = null;
   private phase: Phase = 'idle';
+  /** When the player's turn began; the stage light opens toward them from here. */
+  private respondAt = -100;
   private lastDemo = -Infinity;
   private strikes = 0;
   private strikeAt = -100;
@@ -90,8 +102,6 @@ export class TomatoKnifeVignette implements Vignette {
   private uneven = 0;
   private nicks: number[] = [];
   private judderAt = -100;
-  private handoffAt = -100;
-  private swapped = false;
   private finishAt: number | null = null;
   private finished = false;
   private successful = false;
@@ -99,12 +109,21 @@ export class TomatoKnifeVignette implements Vignette {
   private baseX = 0;
   private baseY = 0;
   private scale = 1;
-  private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /** Read per use, so a preference change applies mid-scene. */
+  private get reducedMotion(): boolean { return reducedMotion(); }
 
   public constructor(scene: Phaser.Scene) {
-    this.backdrop = scene.add.graphics().setDepth(-20);
+    // The pool of light sits over the board, where the work happens. It is barely warm
+    // and weak: this kitchen is deliberately cool, with the fruit the only saturated
+    // thing in frame, and a paper-on-paper pool at full strength simply bleached it.
+    this.backdrop = new Backdrop(scene, KITCHEN.paper, KITCHEN.board, { glowAt: { x: 0.42, y: 0.42 }, glowAlpha: 0.45 });
+    // The tiled wall and the counter, under the pool so the light falls across them.
+    this.wall = scene.add.graphics().setDepth(-20);
     this.stage = scene.add.container(0, 0).setDepth(-10);
     this.boardG = scene.add.graphics();
+    this.boardSurface = scene.add.tileSprite(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, MaterialKey.wood)
+      .setOrigin(0).setTint(KITCHEN.board).setAlpha(0.5 * STYLE.current.grain);
+    this.boardSurface.setTileScale(0.3, 0.3);
     this.produce = scene.add.container(0, 0);
     this.tomatoG = scene.add.graphics();
     this.slicesG = scene.add.graphics();
@@ -114,7 +133,8 @@ export class TomatoKnifeVignette implements Vignette {
     this.knife = scene.add.container(0, 0);
     this.knife.add(this.drawKnife(scene));
     this.rings = scene.add.graphics();
-    this.stage.add([this.boardG, this.produce, this.rings, this.knife]);
+    this.stage.add([this.boardG, this.boardSurface, this.produce, this.rings, this.knife]);
+    this.bursts = new Feedback(scene, -10, this.stage);
     this.cut = this.cutFrom = this.cutTo = this.cutStart();
   }
 
@@ -125,27 +145,39 @@ export class TomatoKnifeVignette implements Vignette {
   private drawKnife(scene: Phaser.Scene): Phaser.GameObjects.Graphics {
     // The tip is the origin and the pivot: a rocking chop keeps it near the board.
     const g = scene.add.graphics();
-    g.fillStyle(KITCHEN.ink, 0.08);
-    fan(g, [6, 10, BLADE_LEN + 6, 10, BLADE_LEN + 6, -62, 216, -64, 126, -52, 46, -24, 14, 2]);
+    const line = STYLE.current.outline * 1.4;
+    const blade = [0, 0, BLADE_LEN, 0, BLADE_LEN, -72, 210, -74, 120, -62, 40, -34, 8, -8];
+    const drop = castShadow(8);
+    g.fillStyle(KITCHEN.ink, drop.alpha);
+    fan(g, blade.map((v, i) => v + (i % 2 ? drop.dy : drop.dx)));
+    if (line > 0) {
+      g.lineStyle(line, shade(KITCHEN.steel, -0.55), 1).beginPath();
+      for (let i = 0; i < blade.length; i += 2) g[i === 0 ? 'moveTo' : 'lineTo'](blade[i]!, blade[i + 1]!);
+      g.closePath().strokePath();
+    }
     g.fillStyle(KITCHEN.steel);
-    fan(g, [0, 0, BLADE_LEN, 0, BLADE_LEN, -72, 210, -74, 120, -62, 40, -34, 8, -8]);
+    fan(g, blade);
     g.lineStyle(3, KITCHEN.steelLit, 0.9).lineBetween(6, -3, BLADE_LEN - 4, -3);
     g.lineStyle(2, KITCHEN.steelDark, 0.6).lineBetween(40, -33, BLADE_LEN - 2, -71);
     g.fillStyle(KITCHEN.steelDark).fillRoundedRect(BLADE_LEN - 8, -76, 22, 82, 5);
-    g.fillStyle(KITCHEN.handle).fillRoundedRect(BLADE_LEN + 8, -64, HANDLE_LEN, 58, 16);
+    const handle = faces(KITCHEN.handle);
+    if (line > 0) g.lineStyle(line, handle.edge, 1).strokeRoundedRect(BLADE_LEN + 8, -64, HANDLE_LEN, 58, 16);
+    g.fillStyle(handle.shade).fillRoundedRect(BLADE_LEN + 8, -64, HANDLE_LEN, 58, 16);
+    g.fillStyle(handle.face).fillRoundedRect(BLADE_LEN + 8, -64, HANDLE_LEN, 46, 16);
     g.fillStyle(KITCHEN.paper, 0.12).fillRoundedRect(BLADE_LEN + 22, -56, HANDLE_LEN - 40, 14, 7);
     g.fillStyle(KITCHEN.rivet);
     for (const x of [BLADE_LEN + 46, BLADE_LEN + 92, BLADE_LEN + 138]) g.fillCircle(x, -35, 6);
     return g;
   }
 
-  public layout({ full, safe }: Viewport): void {
+  public layout(viewport: Viewport): void {
+    const { full, safe } = viewport;
     this.scale = Math.min(safe.width / 900, safe.height / 1300);
     this.baseX = safe.centerX - 40 * this.scale;
     this.baseY = safe.top + safe.height * 0.62;
     this.stage.setPosition(this.baseX, this.baseY).setScale(this.scale);
-    const bg = this.backdrop.clear();
-    bg.fillStyle(KITCHEN.paper).fillRect(full.x, full.y, full.width, full.height);
+    this.backdrop.layout(viewport);
+    const bg = this.wall.clear();
     // Tile grout, faint and regular: a kitchen wall without a warm note in it.
     const tile = 120 * this.scale;
     const counterY = this.baseY + BOARD_THICK * this.scale;
@@ -155,10 +187,15 @@ export class TomatoKnifeVignette implements Vignette {
     bg.fillStyle(KITCHEN.counter, 0.35).fillRect(full.x, counterY, full.width, full.bottom - counterY);
     bg.fillStyle(KITCHEN.ink, 0.08).fillRect(full.x, counterY, full.width, 6 * this.scale);
     const b = this.boardG.clear();
-    b.fillStyle(KITCHEN.ink, 0.1).fillRect(BOARD_LEFT + 10, BOARD_THICK, BOARD_RIGHT - BOARD_LEFT - 20, 14);
-    b.fillStyle(KITCHEN.board).fillRoundedRect(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, 6);
-    b.fillStyle(KITCHEN.boardEdge).fillRect(BOARD_LEFT, BOARD_THICK - 16, BOARD_RIGHT - BOARD_LEFT, 16);
-    b.fillStyle(KITCHEN.paper, 0.35).fillRect(BOARD_LEFT + 4, 0, BOARD_RIGHT - BOARD_LEFT - 8, 4);
+    const board = faces(KITCHEN.board);
+    const line = STYLE.current.outline * 1.4;
+    const boardDrop = castShadow(10);
+    b.fillStyle(KITCHEN.ink, boardDrop.alpha).fillRect(BOARD_LEFT + 10 + boardDrop.dx, BOARD_THICK + boardDrop.dy, BOARD_RIGHT - BOARD_LEFT - 20, 14);
+    if (line > 0) b.lineStyle(line, shade(KITCHEN.board, -0.6), 1).strokeRoundedRect(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, 6);
+    b.fillStyle(board.face).fillRoundedRect(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, 6);
+    b.fillStyle(shade(KITCHEN.boardEdge, -0.1)).fillRect(BOARD_LEFT, BOARD_THICK - 16, BOARD_RIGHT - BOARD_LEFT, 16);
+    b.fillStyle(board.lit).fillRect(BOARD_LEFT + 4, 0, BOARD_RIGHT - BOARD_LEFT - 8, 7);
+    b.fillStyle(board.rim, 0.7).fillRect(BOARD_LEFT + 4, 0, BOARD_RIGHT - BOARD_LEFT - 8, 3);
     b.lineStyle(1.5, KITCHEN.boardLine, 0.7);
     for (const y of [11, 19]) b.lineBetween(BOARD_LEFT + 30, y, BOARD_RIGHT - 30, y + 1);
   }
@@ -170,6 +207,7 @@ export class TomatoKnifeVignette implements Vignette {
     this.strikes = this.slices = 0;
     this.strikeAt = -100;
     this.strikeX = this.cutStart();
+    this.respondAt = -100;
     this.sliceAt = [];
     this.sliceFrom = [];
     this.sliceWobble = [];
@@ -178,8 +216,6 @@ export class TomatoKnifeVignette implements Vignette {
     this.uneven = 0;
     this.nicks = [];
     this.judderAt = -100;
-    this.handoffAt = -100;
-    this.swapped = false;
     this.finishAt = null;
     this.finished = false;
     this.successful = false;
@@ -187,9 +223,10 @@ export class TomatoKnifeVignette implements Vignette {
 
   public onPhase(phase: Phase, now: number): void {
     this.phase = phase;
-    // The demonstrated tomato leaves and a whole one arrives, so the demonstration never
-    // eats into the player's fruit.
-    if (phase === 'handoff') { this.handoffAt = now; this.swapped = false; }
+    // The demonstration rocks the knife over the fruit without cutting it, so the player
+    // starts on the tomato they watched and nothing has to arrive in the instant before
+    // their turn.
+    if (phase === 'respond') { this.strikeAt = -100; this.setCut(0, now); this.respondAt = now; }
   }
 
   private setCut(fraction: number, now: number): void {
@@ -205,6 +242,9 @@ export class TomatoKnifeVignette implements Vignette {
   }
 
   private takeSlice(now: number, targets: number): void {
+    // Pulp thrown off the blade. The falling juice beside this stays hand drawn: it is
+    // scaled by the task's own tempo, which a particle's fixed lifetime cannot follow.
+    if (!this.reducedMotion) this.bursts.burst('dust', this.cutTo, -RY, [KITCHEN.flesh, KITCHEN.fleshRing, KITCHEN.seed], 6);
     this.sliceAt.push(now);
     this.sliceFrom.push(this.cutTo);
     // Off chops so far decide how crooked this slice lands; deterministic per slice.
@@ -216,10 +256,10 @@ export class TomatoKnifeVignette implements Vignette {
     const accepted = acceptDemoBeat(this.lastDemo, time);
     if (accepted === null) return;
     this.lastDemo = accepted;
+    // The rock, the board contact and its sound all play; only the slice is withheld.
+    // There is no bar between the demonstration and the response in which to replace
+    // the fruit.
     this.strike(time);
-    this.slices = advanceSlice(this.slices, 'hit');
-    // The demonstration only ever slices about halfway; the handoff supplies a whole fruit.
-    this.takeSlice(time, (this.plan?.targets.length ?? 3) * 2);
   }
 
   public onPlayerHit(now: number): void { this.strike(now); }
@@ -257,8 +297,18 @@ export class TomatoKnifeVignette implements Vignette {
     return this.plan?.cues.find(cue => cue.kind === 'action' && cue.time > now)?.time ?? null;
   }
 
+  /**
+   * The stage light opens toward the player the instant their turn starts, and holds open
+   * through the ending. It is the handover said without words, now that no bar separates
+   * the demonstration from the response.
+   */
+  private openStage(now: number): void {
+    const offered = this.phase === 'respond' || this.phase === 'result';
+    this.backdrop.open(offered ? easeOut((now - this.respondAt) / 0.7) : 0);
+  }
   public update(now: number): void {
     if (this.phase === 'paused') now = this.lastNow; else this.lastNow = now;
+    this.openStage(now);
     // Rendering may observe a beat before the controller's next pump. Contact is
     // sampled from the same absolute cue, so a throttled frame cannot shift it.
     if (this.phase === 'prepare' || this.phase === 'demonstrate') {
@@ -280,10 +330,10 @@ export class TomatoKnifeVignette implements Vignette {
     }
     const beat = this.beat();
     const age = now - this.strikeAt;
-    const press = age >= 0 && age < 0.14 ? Math.sin(age / 0.14 * Math.PI) : 0;
-    const shake = this.reducedMotion || age < 0 || age > 0.16 ? 0 : Math.sin(age * 120) * Math.exp(-age * 24) * 1.8;
+    const press = age >= 0 && age < 0.14 ? Math.sin(age / 0.14 * Math.PI) * STYLE.current.exaggeration : 0;
+    const shake = this.reducedMotion || age < 0 || age > 0.16 ? 0 : Math.sin(age * 120) * Math.exp(-age * 24) * 1.8 * STYLE.current.exaggeration;
     this.stage.setPosition(this.baseX + shake * this.scale, this.baseY + shake * this.scale * 0.5);
-    this.produce.setPosition(this.handoffSlide(now, beat), this.reducedMotion ? 0 : press * 1.4);
+    this.produce.setPosition(0, this.reducedMotion ? 0 : press * 1.4);
     this.poseKnife(now, beat, age);
     this.drawTomato();
     this.drawSlices(now, beat);
@@ -292,28 +342,8 @@ export class TomatoKnifeVignette implements Vignette {
     this.drawRings(age);
   }
 
-  /** The sliced fruit slides out and a whole one arrives on the readiness beat. */
-  private handoffSlide(now: number, beat: number): number {
-    if (this.phase !== 'handoff' || this.handoffAt < 0) return 0;
-    const p = clamp01((now - this.handoffAt) / (2 * beat));
-    if (p >= 0.5 && !this.swapped) {
-      this.swapped = true;
-      this.slices = 0;
-      this.sliceAt = [];
-      this.sliceFrom = [];
-      this.sliceWobble = [];
-      this.nicks = [];
-      this.uneven = 0;
-      this.cut = this.cutFrom = this.cutTo = this.cutStart();
-      this.strikeX = this.cutStart();
-    }
-    if (this.reducedMotion) return 0;
-    const travel = 1500;
-    return p < 0.5 ? -easeOut(p * 2) * travel : (1 - easeOut((p - 0.5) * 2)) * travel;
-  }
-
   private poseKnife(now: number, beat: number, age: number): void {
-    const parked = age > 0.5 && (this.phase === 'idle' || this.phase === 'prepare' || this.phase === 'handoff');
+    const parked = age > 0.5 && (this.phase === 'idle' || this.phase === 'prepare');
     let lift = knifeLift(age, beat);
     const next = this.upcoming(now);
     if (next !== null && next - now < tomatoTiming(beat).windupSec) lift = knifeWindup(next - now, lift, beat);
@@ -345,6 +375,12 @@ export class TomatoKnifeVignette implements Vignette {
     }
     g.fillStyle(KITCHEN.ink, 0.1);
     fan(g, disc(TOMATO_X + 8, 6, Math.min(RX, (this.cut - (TOMATO_X - RX)) / 2 + 4), 16, 0));
+    const line = STYLE.current.outline * 1.4;
+    if (line > 0) {
+      g.lineStyle(line, shade(KITCHEN.tomato, -0.55), 1).beginPath();
+      for (let i = 0; i < pts.length; i += 2) g[i === 0 ? 'moveTo' : 'lineTo'](pts[i]!, pts[i + 1]!);
+      g.closePath().strokePath();
+    }
     g.fillStyle(KITCHEN.tomato);
     fan(g, pts);
     if (this.cut > TOMATO_X - 60) {
@@ -379,6 +415,13 @@ export class TomatoKnifeVignette implements Vignette {
       const a = 5 + (SLICE_RX - 5) * Math.sin(Math.min(1, p) * Math.PI / 2);
       g.fillStyle(KITCHEN.ink, 0.1);
       fan(g, disc(x + 10, 6, a * 0.9 + 8, 12, 0));
+      const outline = STYLE.current.outline * 1.4;
+      if (outline > 0 && a > 12) {
+        const ring = disc(x, cy, a, b, lean);
+        g.lineStyle(outline, shade(KITCHEN.tomato, -0.55), 1).beginPath();
+        for (let i = 0; i < ring.length; i += 2) g[i === 0 ? 'moveTo' : 'lineTo'](ring[i]!, ring[i + 1]!);
+        g.closePath().strokePath();
+      }
       g.fillStyle(KITCHEN.tomato);
       fan(g, disc(x, cy, a, b, lean));
       g.fillStyle(KITCHEN.fleshRing);
@@ -439,5 +482,5 @@ export class TomatoKnifeVignette implements Vignette {
   }
 
   public translate(offset: number): void { this.stage.x += this.reducedMotion ? 0 : offset; }
-  public destroy(): void { this.stage.destroy(true); this.backdrop.destroy(); }
+  public destroy(): void { this.bursts.destroy(); this.wall.destroy(); this.stage.destroy(true); this.backdrop.destroy(); }
 }

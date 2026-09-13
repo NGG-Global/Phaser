@@ -4,7 +4,7 @@
 
 Menu → map → level → result → map. A level is one vignette and several tasks (see [Game design](GAME_DESIGN.md) for the progression curve); tasks hand over with the two-beat table slide, and the music's playback rate steps up on the same downbeat that starts the next task. The level is recorded (`game/progress.ts`, localStorage) the instant the last task resolves, not when the result screen draws — backgrounding the app during the coda used to discard a clear. The result screen shows stars and either TAP TO CONTINUE back to the map or TAP TO TRY AGAIN. ↻ restarts the level; MAP leaves for the map; both reset the music to its source tempo. There is no infinite difficulty escalation, randomness or new input mechanic.
 
-Progression is `game/levels.ts`: `levelSpec(level)` derives tasks, tempos, tier and clear bar from one difficulty curve, deterministically per level. `MapScene` draws the road from that and from saved progress and never decides difficulty itself. Adjacent half beats are 250 ms apart, closer than two 130 ms Good windows, so the judge's fixed nearest-target cells (midpoint tie to the earlier target) decide those, and Perfect windows never overlap. Four-beat count-ins and handoffs remain intact. Strong/rough outcomes are visual interpretations of the original score, not another judge.
+Progression is `game/levels.ts`: `levelSpec(level)` derives tasks, tempos, tier and clear bar from one difficulty curve, deterministically per level. `MapScene` draws the road from that and from saved progress and never decides difficulty itself. Adjacent half beats are 250 ms apart, closer than two 130 ms Good windows, so the judge's fixed nearest-target cells (midpoint tie to the earlier target) decide those, and Perfect windows never overlap. One four-beat count-in opens a level; after that a task runs demonstration straight into response, with a four-bar breather at the midpoint of a level long enough to need one. Strong/rough outcomes are visual interpretations of the original score, not another judge.
 
 ## Bug + Shoe
 
@@ -21,7 +21,8 @@ read as Hammer's warm workshop. One tap is one stroke and direction alternates; 
 tooth engagement lands on the beat, with the draw back as anticipation and the overshoot as
 follow-through. Accurate strokes deepen the kerf and throw sawdust; an extra tap skids and
 scuffs, a missed target judders, and neither cuts or invents a stroke. Fresh timber arrives
-on the handoff, and an unscored coda severs the plank. Stroke phases are fractions of a
+during the demonstration, which strokes the board without cutting it so the player starts on
+the board they watched; an unscored coda severs the plank. Stroke phases are fractions of a
 beat, so the stroke tightens with the level's tempo ramp. See [saw notes](SAW_TIMBER.md).
 
 `sawSounds.ts` supplies deterministic bite/skid/judder/sever/creak synthesis. The engine
@@ -39,7 +40,7 @@ rise after it do not. Each accurate chop takes a slice, which topples off the cu
 on the pile as a disc showing its cross-section; an extra tap lands on bare board with a
 hollow clack and a nick, a missed target leaves the knife hovering with a tremble, and
 neither takes a slice. Off chops make the later slices uneven, so a rough ending is visible
-before it is announced. A whole tomato arrives on the handoff, and the unscored coda takes
+before it is announced. The demonstration rocks the knife without slicing, so the tomato the player is given is the one they watched, and the unscored coda takes
 the standing heel; a rough coda squashes the last slice instead. Chop phases are fractions
 of a beat, so the knife is always back up before the next possible hit at any tempo. See
 [knife notes](TOMATO_KNIFE.md).
@@ -133,3 +134,55 @@ still unmeasured.
 `MapScene` is a vertically scrolling road: level 1 at the bottom, ten levels per themed area, the road continuing twelve levels past the frontier. Drag scrolls with a little inertia; a tap under the slop threshold selects. Cleared nodes are filled with their stars, the frontier pulses, locked nodes are faded and ignore taps. The whole road is one static Graphics rebuilt in `layout()`; only the pulse ring and tap acknowledgement redraw per frame. `PlayScene` receives `{ level, autoStart }`, builds the vignette for that level, and steps `MusicSystem.setRate` on each task's downbeat; the last task's ending schedules the rate back to 1.
 
 Browser check: a fresh profile went menu → map → level 1 (Good replay, 70%, two stars) → TAP TO CONTINUE → map with level 2 unlocked and the frontier moved; level 2 with the Rough replay failed with the bar shown and TAP TO TRY AGAIN restarting the same level; MAP mid-level returned to the road with the music running at rate 1. A seeded profile at level 25 played six tasks from 120 to 134 BPM with the music rate stepping 1 → 1.025 → 1.05 → 1.067 → 1.092 → 1.117 on task downbeats and back to 1 at the end; every plan started exactly on the previous ending's `next`. Console error and warning logs were empty.
+
+## The turn, the marks and the mistake accents (12 September 2026)
+
+Two reports, one root: the game never told a player they had got something wrong.
+Nothing distinguished the example from their turn but a single word in the headline,
+in the same place at the same size, and the only outcome marks in the code sat behind
+`if (!this.debugMode) return;`, so no shipping build drew them. The QA pass above
+recorded exactly this — "Perfect and Good are visually identical and omissions have no
+immediate cue" — and this entry closes it.
+
+The turn is now stated three ways at once. The headline reads **Watch** in the vignette's
+ink and **Your turn** in coral. A beat track sits below the action: a plate cut to the
+length of the phrase, one bead per beat, filling in ink as the example sounds and turning
+to coral sockets the instant the turn passes. The stage light opens with it — the pool the
+`Backdrop` already owns, moved down the frame and warmed toward its own colour rather than
+merely brightened, because on a pale stage another tenth of alpha on an open pool is
+invisible. The Hammer had this last cue alone on its own disc; all five carry it now,
+level 1 included, since that is where the hand-over has to be clearest.
+
+Each bead then records its beat: Perfect filled in coral, Good a smaller fill inside a
+ring, a missed beat struck through, and an extra tap — which answers no beat and carries
+no index — rattles the row rather than marking any of it. A word rises above the plate
+with it, one instance retargeted rather than stacked, so a quick double cannot pile two
+up. The finished row stays through the ending and goes only when the summary claims the
+band. The count-in shows as four pips on the last four lead ticks, so the opening bar is
+no longer dead air and a sixteen-beat breather reads as a rest rather than a count of
+sixteen. The logic — the mark for a judgement, the row geometry, beats played, count-in —
+is in `src/game/beatTrack.ts`, Phaser-free and unit-tested under node; the scene draws
+what it returns. The judge, the timing windows, the scorer and the phase machine are
+untouched.
+
+The audio report was the same hole. `VignetteSounds` had `scrape` (a tap that hit nothing)
+and `judder` (a beat that went by untapped) as optional, and `playAccent` no-ops on an
+absent slot. Only the Saw and the Tomato declared them, so a mistake was silent on levels
+1, 2 and 3 of every five and audible on 4 and 5 — heard as broken audio rather than as
+quiet. The Hammer, Window and Bug now synthesize both in their own material, the two slots
+are required, and a new vignette that forgets them fails to compile.
+
+Measured rather than listened to: all 25 buffers across the five vignettes are between 180
+and 700 ms, mono, peak 0.16 to 0.91, with no non-finite samples. The Tomato's judder was
+the one outlier at a fifth of its siblings' peak and has been levelled with them. One bug
+underneath: `settle` returned NaN for an age of +Infinity — `sin(Infinity)` is NaN and NaN
+against a zero envelope is still NaN — and callers hold the time of the last impact as
+-Infinity, so the track's rattle voided every bead's coordinate and the row drew nothing
+at all. Pinned by a test now.
+
+Browser checks: the count-in, example, hand-over and a deliberately mixed row (Perfect,
+Good, Miss fed through the judge's own entry at a controlled error) all render as intended
+at three and at ten beats, and the production bundle — byte-identical to the one in the
+APK — plays through menu, map and level with an empty console and no failed requests.
+Not verifiable here: whether the hand-over reads to someone who has never seen the game,
+and how the new accents sit in the mix acoustically. Both need a person and a handset.

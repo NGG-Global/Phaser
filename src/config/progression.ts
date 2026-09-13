@@ -22,6 +22,13 @@ export const PROGRESSION = {
   /** Mean task accuracy needed to clear: 40% at level 1 rising toward 80%. */
   clearMin: 40,
   clearRange: 40,
+  /**
+   * A long level gets one rest at its midpoint, because nothing else in a task waits any
+   * more: demonstration runs straight into response and one task straight into the next.
+   * Four bars, and only from the length at which a level starts to feel relentless.
+   */
+  breatherBars: 4,
+  breatherFromTasks: 6,
   /** Levels shown on the map beyond the highest unlocked one. */
   mapLookahead: 12,
 } as const;

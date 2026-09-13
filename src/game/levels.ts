@@ -1,8 +1,15 @@
 import { PROGRESSION } from '../config/progression';
+import { RHYTHM } from '../config/rhythm';
 import { parsePattern, type Pattern } from '../rhythm/patterns';
 import { VIGNETTES } from '../vignettes/registry';
 
-export interface LevelTask { readonly pattern: Pattern; readonly bpm: number; readonly tier: number }
+export interface LevelTask {
+  readonly pattern: Pattern;
+  readonly bpm: number;
+  readonly tier: number;
+  /** Whole beats of lead-in before this task's demonstration. Zero for most tasks. */
+  readonly leadBeats: number;
+}
 export interface Area { readonly name: string; readonly sky: number; readonly ground: number; readonly road: number; readonly ink: number; readonly paper: number }
 export interface LevelSpec {
   readonly level: number;
@@ -65,6 +72,14 @@ function seeded(seed: number): () => number {
   };
 }
 
+/**
+ * Which task carries the level's breather, or -1 for a level short enough not to need one.
+ * The midpoint, so the rest falls between two roughly equal halves of work.
+ */
+export function breatherTask(count: number): number {
+  return count >= PROGRESSION.breatherFromTasks ? Math.floor(count / 2) : -1;
+}
+
 export function levelSpec(level: number): LevelSpec {
   const d = difficulty(level);
   const P = PROGRESSION;
@@ -73,6 +88,7 @@ export function levelSpec(level: number): LevelSpec {
   const peakBpm = P.baseBpm + 2 * Math.round(P.peakBpmRange * d ** P.tempoExponent / 2);
   const maxTier = Math.min(P.tierCount - 1, Math.floor(P.tierCount * d ** P.tierExponent));
   const minTier = Math.max(0, maxTier - P.tierSpan);
+  const breather = breatherTask(count);
   const random = seeded(level);
   let previous: Pattern | null = null;
   const tasks: LevelTask[] = [];
@@ -82,7 +98,11 @@ export function levelSpec(level: number): LevelSpec {
     const pool = PATTERN_TIERS[tier]!.filter(pattern => pattern !== previous);
     const pattern = pool[Math.floor(random() * pool.length)]!;
     previous = pattern;
-    tasks.push({ pattern, tier, bpm: Math.round(P.baseBpm + (peakBpm - P.baseBpm) * progress) });
+    // One bar to open the level and find the pulse, four bars for the breather, and
+    // nothing between any other pair of tasks.
+    const leadBeats = i === 0 ? RHYTHM.leadInBeats
+      : i === breather ? P.breatherBars * RHYTHM.beatsPerBar : 0;
+    tasks.push({ pattern, tier, leadBeats, bpm: Math.round(P.baseBpm + (peakBpm - P.baseBpm) * progress) });
   }
   const clearAccuracy = Math.round(P.clearMin + P.clearRange * d);
   const gap = (100 - clearAccuracy) / 3;

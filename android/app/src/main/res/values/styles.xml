@@ -16,7 +16,14 @@
     </style>
 
 
+    <!--
+      The cold-start window. It was Capacitor's stock splash bitmap: a white field
+      with the Capacitor logo, which is the first thing an installing player saw.
+      A flat paper field matches the WebView's own background colour, so the launch
+      window, the WebView and the menu are all the same colour and the start reads
+      as one screen rather than three.
+    -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
+        <item name="android:background">@color/paper</item>
     </style>
 </resources>

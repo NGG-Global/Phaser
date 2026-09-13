@@ -15,8 +15,12 @@ Boot → Preload → **menu** → **map** → **play** → back to the map, with
 - **The map** is an endless scrollable road grouped into ten-level areas:
   Grass, Pavement, Sand, Snow, Dusk, then the same five again numbered II, III
   and so on. It renders a bounded window of levels, not the whole road.
-- **A level** is one vignette and three to eight tasks. Each task is four beats
-  of preparation, a demonstration, a handoff, then the player's response.
+- **A level** is one vignette and three to eight tasks. A task is a demonstration
+  phrase and then the player's response, back to back on the bar line — nothing
+  waits between the two, and nothing waits between one task and the next. One
+  preparation bar opens the level so the player can find the pulse, and a level
+  of six tasks or more gets one four-bar breather at its midpoint with the beat
+  kept alive through it.
 - **Five vignettes** rotate strictly by registry order in
   `src/vignettes/registry.ts`: Hammer & nail, Window cleaning, Bug & shoe, Saw &
   timber, Knife & tomato. `levelSpec` picks `VIGNETTES[(level - 1) % length]`, so
@@ -109,8 +113,8 @@ src/
   input/        Unified timestamped taps
   rhythm/       Patterns, scheduling and pure timing judgement
   scenes/       Boot, Preload, Menu, Map, Play, Settings
-  textures/     Procedural placeholder art
-  ui/           Colour, path and star drawing helpers
+  textures/     Generated material tiles
+  ui/           The drawing system: light, panels, type, icons, motion, materials
   vignettes/    One module per act, plus their pure motion curves
 ```
 
@@ -139,7 +143,9 @@ edited by hand. It needs `ffmpeg` on PATH. The repository does ship binary audio
 MP3s encoded from them, which together are the great majority of the checkout.
 Only the premixed MP3 reaches the bundle. Sound effects are synthesized locally
 per vignette in `src/audio/`, so nothing is downloaded at runtime but the one
-music track.
+music track and the typefaces: four variable fonts under `public/fonts/`, each
+under the SIL Open Font License with its `OFL.txt` alongside, registered by
+Phaser's font loader before the menu builds.
 
 ## Orientation
 

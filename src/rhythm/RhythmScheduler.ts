@@ -9,7 +9,6 @@ export interface RoundPlan {
   readonly bpm: number;
   readonly start: number;
   readonly demo: number;
-  readonly handoff: number;
   readonly response: number;
   readonly end: number;
   readonly targets: readonly number[];
@@ -20,21 +19,34 @@ export interface SoundSink {
   cancel(): void;
 }
 
-export function createRoundPlan(id: number, pattern: Pattern, bpm: number, start: number): RoundPlan {
+/**
+ * One task on the shared grid: an optional lead-in, the demonstration phrase, then the
+ * player's response on the very next downbeat. There is no bar between the two — the
+ * demonstration ends on a bar line and the response begins there, so a task is
+ * call-and-response rather than call, wait, response.
+ *
+ * `leadBeats` is whole beats of lead-in before the demonstration, and it is the only
+ * thing that ever separates two tasks: one bar to open a level so the player finds the
+ * pulse, four bars for a long level's breather, and nothing at all in between.
+ */
+export function createRoundPlan(id: number, pattern: Pattern, bpm: number, start: number, leadBeats = 0): RoundPlan {
   validatePattern(pattern);
   if (!Number.isFinite(start)) throw new Error('Invalid round origin.');
+  if (!Number.isInteger(leadBeats) || leadBeats < 0) throw new Error('Lead-in must be whole beats.');
   const beat = secondsPerBeat(bpm);
-  const demo = start + RHYTHM.prepareBeats * beat;
+  const demo = start + leadBeats * beat;
   const phraseBeats = Math.ceil(pattern.lengthBeats / RHYTHM.beatsPerBar) * RHYTHM.beatsPerBar;
-  const handoff = demo + phraseBeats * beat;
-  const response = handoff + RHYTHM.handoffBeats * beat;
+  const response = demo + phraseBeats * beat;
   return Object.freeze({
-    id, pattern, bpm, start, demo, handoff, response, end: response + phraseBeats * beat,
+    id, pattern, bpm, start, demo, response, end: response + phraseBeats * beat,
     targets: Object.freeze(pattern.hits.map(hit => response + hit * beat)),
     cues: Object.freeze([
-      ...Array.from({ length: RHYTHM.prepareBeats }, (_, i) => ({ time: start + i * beat, kind: 'count' as const })),
+      // The last lead beat is a distinct readiness tick rather than another count: it is
+      // the one that says the demonstration starts next, and it is never a target.
+      ...Array.from({ length: leadBeats }, (_, i) => ({
+        time: start + i * beat, kind: (i === leadBeats - 1 ? 'ready' : 'count') as SoundKind,
+      })),
       ...pattern.hits.map(hit => ({ time: demo + hit * beat, kind: 'action' as const })),
-      ...Array.from({ length: RHYTHM.handoffBeats }, (_, i) => ({ time: handoff + i * beat, kind: 'ready' as const })),
     ]),
   });
 }

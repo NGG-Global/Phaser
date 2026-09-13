@@ -1,14 +1,24 @@
 import Phaser from 'phaser';
+import { reducedMotion } from '@/core/motionPreference';
 import { sharedAudio, isMuted, toggleMute } from '@/audio/sharedAudio';
 import { PROGRESSION } from '@/config/progression';
 import { SceneKey } from '@/config/scenes';
+import { STYLE } from '@/config/style';
+import { PALETTE } from '@/config/theme';
 import { BaseScene } from '@/core/BaseScene';
 import { areaOf, levelSpec, starsFor, type Area } from '@/game/levels';
 import { loadProgress, type Progress } from '@/game/progress';
-import { hex, mix, shade } from '@/ui/colour';
+import { MaterialKey } from '@/textures/materials';
+import { mix, shade } from '@/ui/colour';
+import { FxKey } from '@/ui/feedback';
 import { dashes, smoothPath, type Point } from '@/ui/path';
 import { drawGear } from '@/ui/gear';
+import { drawBack, drawPlay, drawSpeaker } from '@/ui/icons';
+import { castShadow, faces } from '@/ui/light';
+import { BRASS, drawDisc, drawPanel, placeSurface, surface } from '@/ui/panel';
 import { drawStar } from '@/ui/star';
+import { arrive, settle, spring, squash } from '@/ui/spring';
+import { body, display, label, resize } from '@/ui/type';
 import { resizedScroll, scrollStep } from '@/ui/navigation';
 import { SceneCurtain } from '@/ui/SceneCurtain';
 import { VIGNETTES } from '@/vignettes/registry';
@@ -19,8 +29,6 @@ const MAP = {
   roadWidth: 58, tapSlop: 14, friction: 5,
   /** Spline samples per level span. Enough that the curve reads smooth at any width. */
   smoothing: 14,
-  /** Vertical offset of every cast shadow: one light source, high and to the left. */
-  shadowDrop: 9,
   /** Bands used for the haze ramp up each area and for the blend across a boundary. */
   hazeBands: 12, blendBands: 9, blendHeight: 120,
   /**
@@ -29,14 +37,28 @@ const MAP = {
    * on every entry and re-laid them out on every resize.
    */
   window: 48, history: 20,
+  /** The frontier puck hops once a bar at the game's own tempo. */
+  hopSec: 1.6, pressSec: 0.42,
+  sign: { width: 340, height: 92, top: 26, ropeInset: 40 },
 } as const;
+
+/** The few colours the map owns outright; every area tone derives from `AREAS`. */
+const LOOK = {
+  sign: 0xd98a48, puck: 0xf6ead0, ink: PALETTE.ink, coral: PALETTE.coral,
+  bench: 0xe6dcc4, block: 0xf6ead0, cream: 0xfff4dc, rope: 0x6b4a2e, shadow: 0x1a1410,
+} as const;
+
+const HINT = 'A little further, a little better.';
 
 /**
  * Endless, scrollable road of levels grouped into themed areas. Pure presentation of
  * `levelSpec`/`Progress`: the map never decides difficulty, it only draws it.
  *
- * Everything except the pulse and the touch ripple is baked in `layout()`, so the depth
- * work — the raised road, cast shadows, terrain and scenery — costs nothing per frame.
+ * Everything except the frontier puck, the tap ripple and a live press is baked in
+ * `layout()`, so the depth work — the raised road, cast shadows, terrain and scenery —
+ * costs nothing per frame. The header is a sign hung over the road and the footer a
+ * bench with the next level's block on it; both are fixed to the camera and drawn in
+ * screen space, since a Container cannot hold a scroll factor.
  */
 export class MapScene extends BaseScene {
   private progress!: Progress;
@@ -47,13 +69,15 @@ export class MapScene extends BaseScene {
   private world!: Phaser.GameObjects.Graphics;
   private pulse!: Phaser.GameObjects.Graphics;
   private touch!: Phaser.GameObjects.Graphics;
-  private frame!: Phaser.GameObjects.Graphics;
-  private hudBack!: Phaser.GameObjects.Graphics;
+  private glow!: Phaser.GameObjects.Image;
+  private fibre!: Phaser.GameObjects.TileSprite;
+  private signBack!: Phaser.GameObjects.Graphics;
+  private signSurface!: Phaser.GameObjects.TileSprite;
   private edition!: Phaser.GameObjects.Text;
   private status!: Phaser.GameObjects.Text;
-  private menu!: Phaser.GameObjects.Text;
-  private mute!: Phaser.GameObjects.Text;
+  private pucks!: Phaser.GameObjects.Graphics;
   private dock!: Phaser.GameObjects.Graphics;
+  private dockSurface!: Phaser.GameObjects.TileSprite;
   private dockLabel!: Phaser.GameObjects.Text;
   private dockTitle!: Phaser.GameObjects.Text;
   private dockHint!: Phaser.GameObjects.Text;
@@ -63,8 +87,15 @@ export class MapScene extends BaseScene {
   private lastHeight = 0;
   private feedbackAt = -Infinity;
   private lockedIndex = -1;
+  private frontierIndex = -1;
   private dockRect = new Phaser.Geom.Rectangle();
+  private blockRect = new Phaser.Geom.Rectangle();
+  private signRect = new Phaser.Geom.Rectangle();
+  private ceiling = { x: 0, y: 0 };
+  private backAt = { x: 0, y: 0 };
   private setupAt = { x: 0, y: 0 };
+  private muteAt = { x: 0, y: 0 };
+  private muted = false;
   private numbers: Phaser.GameObjects.Text[] = [];
   private areaTitles: Phaser.GameObjects.Text[] = [];
   private areaRanges: Phaser.GameObjects.Text[] = [];
@@ -82,7 +113,14 @@ export class MapScene extends BaseScene {
   private focus = 1;
   private centered = false;
   private disposed = false;
-  private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  private enteredAt = 0;
+  private pressedAt = -Infinity;
+  private pressDirty = false;
+  private puckPressed: 'back' | 'setup' | 'mute' | null = null;
+  private puckPressedAt = -Infinity;
+  private puckDirty = false;
+  /** Read per use, so a preference change applies mid-scene. */
+  private get reducedMotion(): boolean { return reducedMotion(); }
 
   public constructor() { super(SceneKey.Map); }
 
@@ -91,8 +129,10 @@ export class MapScene extends BaseScene {
     this.centered = false;
     this.drag = null;
     this.velocity = 0;
-    this.feedbackAt = this.touchAt = -Infinity;
+    this.feedbackAt = this.touchAt = this.pressedAt = this.puckPressedAt = -Infinity;
     this.lockedIndex = -1;
+    this.puckPressed = null;
+    this.muted = isMuted(this);
     this.progress = loadProgress();
     const data = this.sys.settings.data as { focus?: number } | undefined;
     this.focus = Math.max(1, Math.min(this.progress.unlocked, data?.focus ?? this.progress.unlocked));
@@ -101,26 +141,29 @@ export class MapScene extends BaseScene {
     this.shown = Math.min(top, this.first + MAP.window - 1) - this.first + 1;
     // Bands are addressed absolutely, because the window rarely starts on a band edge.
     this.firstBand = Math.floor((this.first - 1) / PROGRESSION.areaSize);
-    this.world = this.add.graphics();
-    this.pulse = this.add.graphics().setDepth(4);
+    this.world = this.add.graphics().setDepth(1);
+    // The frontier puck lives here, under the numbers, so it can hop without a baked copy beneath.
+    this.pulse = this.add.graphics().setDepth(3);
     this.touch = this.add.graphics().setDepth(5);
-    this.numbers = Array.from({ length: this.shown }, (_, i) => this.add.text(0, 0, String(this.first + i), { fontFamily: 'Georgia, serif', fontSize: '32px' }).setOrigin(0.5).setDepth(3));
+    this.numbers = Array.from({ length: this.shown }, (_, i) => display(this, String(this.first + i), { size: 32, colour: LOOK.cream }).setOrigin(0.5).setDepth(4));
     const areas = Math.floor((this.first + this.shown - 2) / PROGRESSION.areaSize) - this.firstBand + 1;
-    this.areaTitles = Array.from({ length: areas }, () => this.add.text(0, 0, '', { fontFamily: 'Georgia, serif', fontSize: '40px' }).setOrigin(0, 0.5).setDepth(2));
-    this.areaRanges = Array.from({ length: areas }, () => this.add.text(0, 0, '', { fontFamily: 'monospace', fontSize: '15px' }).setLetterSpacing(2).setOrigin(0, 0.5).setDepth(2));
-    // Frames the scrolling strip; fixed to the camera so it reads as the window, not the world.
-    this.frame = this.add.graphics().setScrollFactor(0).setDepth(6);
-    this.hudBack = this.add.graphics().setScrollFactor(0).setDepth(10);
-    const hud = (value: string, size: number, font: string) => this.add.text(0, 0, value, { fontFamily: font, fontSize: `${size}px`, color: '#2b3a2f' }).setScrollFactor(0).setDepth(11);
-    this.edition = hud('THE LITTLE ROAD', 16, 'monospace').setLetterSpacing(2);
-    this.status = hud('', 38, 'Georgia, serif');
-    this.menu = hud('←', 30, 'Arial, sans-serif').setOrigin(0.5);
-    this.mute = hud(isMuted(this) ? '×' : '♪', 30, 'Georgia, serif').setOrigin(0.5);
+    this.areaTitles = Array.from({ length: areas }, () => display(this, '', { size: 30, colour: LOOK.cream }).setOrigin(0, 0.5).setDepth(2));
+    this.areaRanges = Array.from({ length: areas }, () => label(this, '', { size: 13, colour: LOOK.cream }).setOrigin(0, 0.5).setDepth(2).setAlpha(0.8));
+    // The pool of light stays put while the ground scrolls under it: a lamp over a table.
+    this.glow = this.add.image(0, 0, FxKey.glow).setScrollFactor(0).setDepth(6).setAlpha(0.22);
+    this.fibre = this.add.tileSprite(0, 0, 1, 1, MaterialKey.paper).setOrigin(0).setScrollFactor(0).setDepth(6).setAlpha(0.32 * STYLE.current.grain);
+    this.signBack = this.add.graphics().setScrollFactor(0).setDepth(10);
+    this.signSurface = surface(this, MaterialKey.wood, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, LOOK.sign, 0.7).setScrollFactor(0).setDepth(10);
+    this.edition = label(this, 'The little road', { size: 15, colour: LOOK.cream }).setScrollFactor(0).setDepth(11).setAlpha(0.8);
+    this.status = display(this, '', { size: 40, colour: LOOK.cream }).setScrollFactor(0).setDepth(11);
+    this.pucks = this.add.graphics().setScrollFactor(0).setDepth(10);
     this.dock = this.add.graphics().setScrollFactor(0).setDepth(10);
-    this.dockLabel = hud('', 14, 'monospace').setLetterSpacing(2);
-    this.dockTitle = hud('', 30, 'Georgia, serif');
-    this.dockHint = hud('', 15, 'monospace').setLetterSpacing(1);
-    this.location = this.add.text(0, 0, 'YOU ARE HERE', { fontFamily: 'monospace', color: '#2c4629' }).setOrigin(1, 0.5).setLetterSpacing(2).setDepth(5);
+    this.dockSurface = surface(this, MaterialKey.parchment, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, LOOK.block, 0.5).setScrollFactor(0).setDepth(10);
+    this.dockLabel = label(this, '', { size: 15, colour: LOOK.ink }).setScrollFactor(0).setDepth(11).setAlpha(0.7);
+    this.dockTitle = display(this, '', { size: 30, colour: LOOK.ink }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(11);
+    this.dockHint = body(this, HINT, { size: 16, colour: LOOK.ink }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(11).setAlpha(0.7);
+    this.location = label(this, 'Play', { size: 15, colour: LOOK.ink }).setOrigin(1, 0.5).setDepth(5);
+    this.enteredAt = performance.now() / 1000;
     this.curtain = new SceneCurtain(this);
     this.events.once(Phaser.Scenes.Events.CREATE, () => this.curtain.reveal());
     this.input.on(Phaser.Input.Events.POINTER_DOWN, this.pointerDown, this);
@@ -166,9 +209,14 @@ export class MapScene extends BaseScene {
     this.drawScenery(g, s);
     this.drawPlaques(g, s);
     this.drawNodes(g, s);
-    this.drawFrame(s);
-    this.drawHud(s);
-    this.drawDock(s);
+    const size = Math.max(full.width, full.height) * 1.25;
+    this.glow.setPosition(full.x + full.width * 0.38, full.y + full.height * 0.34).setDisplaySize(size, size)
+      .setTint(mix(0xf6e6bc, areaOf(this.progress.unlocked).area.sky, 0.4));
+    this.fibre.setPosition(full.x, full.y).setSize(full.width, full.height);
+    this.drawSign(s, 0, 0);
+    this.drawPucks(s, 0);
+    this.drawDock(s, 0);
+    this.pressDirty = this.puckDirty = true;
     this.cameras.main.setBounds(0, 0, full.width, this.worldHeight);
     if (!this.centered) { this.centered = true; this.scrollTo(this.focus); }
     else this.scrollY = resizedScroll(this.scrollY, oldScale, s, oldHeader, this.hudHeight, this.lastHeight, full.height);
@@ -295,60 +343,73 @@ export class MapScene extends BaseScene {
     return (this.road[Math.max(0, Math.min(this.road.length - 1, index))] ?? this.road[0]!).x;
   }
 
-  /** A plate for the area name, on whichever side of the road has room for it. */
+  /** A painted wooden sign for the area name, on whichever side of the road has room for it. */
   private placePlaque(g: Phaser.GameObjects.Graphics, area: Area, name: string, index: number, bottom: number, s: number, levels: readonly [number, number]): void {
     const { safe } = this.viewport;
-    const y = bottom - 66 * s;
+    const y = bottom - 72 * s;
     const roadX = this.roadXAt(y);
     const onLeft = roadX > safe.centerX;
-    const h = 74 * s;
-    // Size the plate to its own text: area names are authored, and a long one overflowed.
-    const title = this.areaTitles[index]!.setText(name.toUpperCase()).setFontSize(30 * s);
-    const range = this.areaRanges[index]!.setText(`LEVELS ${levels[0]}\u2013${levels[1]}`).setFontSize(13 * s);
+    const h = 80 * s;
+    // Size the sign to its own text: area names are authored, and a long one overflowed.
+    const title = this.areaTitles[index]!.setText(name);
+    resize(title, 30 * s, LOOK.cream);
+    const range = this.areaRanges[index]!.setText(`LEVELS ${levels[0]}–${levels[1]}`).setFontSize(13 * s);
     const pad = 52 * s;
     const w = Math.min(safe.width - 36 * s, Math.max(206 * s, Math.max(title.width, range.width) + pad));
-    // Repeat areas gain a numeral (GRASS VIII), so shrink rather than overflow the plate.
-    if (title.width > w - pad) title.setFontSize(30 * s * (w - pad) / title.width);
+    // Repeat areas gain a numeral (Grass VIII), so shrink rather than overflow the sign.
+    if (title.width > w - pad) resize(title, 30 * s * (w - pad) / title.width, LOOK.cream);
     const x = onLeft ? safe.left + 18 * s : safe.right - 18 * s - w;
-    const plate = shade(area.paper, -0.02);
-    g.fillStyle(shade(area.ground, -0.3), 0.22).fillRoundedRect(x + 3 * s, y - h / 2 + MAP.shadowDrop * s * 0.7, w, h, 16 * s);
-    g.fillStyle(plate, 0.94).fillRoundedRect(x, y - h / 2, w, h, 16 * s);
-    g.lineStyle(2 * s, area.ink, 0.28).strokeRoundedRect(x, y - h / 2, w, h, 16 * s);
-    g.fillStyle(area.ink, 0.9).fillRoundedRect(x, y - h / 2 + 12 * s, 5 * s, h - 24 * s, 3 * s);
-    title.setPosition(x + 22 * s, y - 13 * s).setColor(hex(area.ink)).setAlpha(1);
-    range.setPosition(x + 22 * s, y + 18 * s).setColor(hex(area.ink)).setAlpha(0.62);
+    const fill = mix(LOOK.sign, area.road, 0.35);
+    drawPanel(g, new Phaser.Geom.Rectangle(x, y - h / 2, w, h), s, { fill, depth: 8 });
+    // Painted grain, keyed on the band so no two signs match, and two screw heads.
+    g.lineStyle(1.5 * s, shade(fill, -0.1), 0.5);
+    for (let i = 0; i < 3; i++) {
+      const gy = y + (i - 1) * h * 0.24;
+      const wobble = (MapScene.noise(index * 7 + this.firstBand * 3 + i) - 0.5) * 6 * s;
+      g.lineBetween(x + 14 * s, gy, x + w * 0.5, gy + wobble).lineBetween(x + w * 0.5, gy + wobble, x + w - 14 * s, gy);
+    }
+    for (const sx of [x + 16 * s, x + w - 16 * s]) {
+      g.fillStyle(faces(BRASS).edge).fillCircle(sx, y - h / 2 + 17 * s, 4.5 * s);
+      g.fillStyle(BRASS).fillCircle(sx, y - h / 2 + 16 * s, 4.5 * s);
+    }
+    title.setPosition(x + 24 * s, y - 12 * s);
+    range.setPosition(x + 24 * s, y + 20 * s);
   }
 
-  /** The ribbon: a dropped shadow, the surface, a top sheen and dashed markings. */
+  /** The ribbon: a cast shadow, a casing, the surface, a top sheen and dashed markings. */
   private drawRoad(g: Phaser.GameObjects.Graphics, s: number): void {
     const width = MAP.roadWidth * s;
+    const outline = STYLE.current.outline * s * 0.55;
     const stroke = (path: readonly Point[], w: number, colour: number, alpha: number, dy = 0): void => {
       g.lineStyle(w, colour, alpha);
       g.beginPath();
       path.forEach((p, i) => g[i === 0 ? 'moveTo' : 'lineTo'](p.x, p.y + dy));
       g.strokePath();
     };
-    const { area: base } = areaOf(1);
-    // One shadow for the whole ribbon, offset like every other cast shadow on the map.
-    stroke(this.road, width + 10 * s, shade(base.ground, -0.55), 0.2, MAP.shadowDrop * s);
-    const surface = (slice: readonly Point[], colour: number): void => {
-      if (slice.length < 2) return;
-      stroke(slice, width + 6 * s, shade(colour, -0.34), 1);
-      stroke(slice, width, colour, 1);
-      stroke(slice, width * 0.42, shade(colour, 0.14), 0.5, -width * 0.24);
-    };
+    const shadow = castShadow(6);
+    stroke(this.road, width + 10 * s, LOOK.shadow, shadow.alpha, shadow.dy * s);
     // One stretch per level. A span that crosses an area boundary is split at its
     // midpoint, which is exactly where the ground changes, so surface and terrain
     // change on the same line instead of a node apart.
+    const slices: [readonly Point[], number][] = [];
     for (let i = 0; i < this.shown; i++) {
       const from = Math.max(0, i * MAP.smoothing - 1);
       const to = i * MAP.smoothing + MAP.smoothing + 1;
       const here = areaOf(this.first + i).area.road;
       const next = areaOf(this.first + i + 1).area.road;
-      if (here === next) { surface(this.road.slice(from, to), here); continue; }
+      if (here === next) { slices.push([this.road.slice(from, to), here]); continue; }
       const mid = i * MAP.smoothing + Math.floor(MAP.smoothing / 2);
-      surface(this.road.slice(from, mid + 1), here);
-      surface(this.road.slice(mid, to), next);
+      slices.push([this.road.slice(from, mid + 1), here], [this.road.slice(mid, to), next]);
+    }
+    // The outline goes down first for every slice, then the surfaces: drawn per slice, a
+    // later slice's wider outline would leave a dark tick across the join before it.
+    for (const [slice, colour] of slices) if (slice.length >= 2) stroke(slice, width + 6 * s + outline * 2, shade(colour, -0.6), 1);
+    for (const [slice, colour] of slices) {
+      if (slice.length < 2) continue;
+      const f = faces(colour);
+      stroke(slice, width + 6 * s, f.edge, 1);
+      stroke(slice, width, f.face, 1);
+      stroke(slice, width * 0.42, f.rim, 0.45, -width * 0.24);
     }
     for (const [from, to] of dashes(this.road, 26 * s, 30 * s)) {
       g.lineStyle(4 * s, 0xffffff, 0.45).lineBetween(from.x, from.y, to.x, to.y);
@@ -387,12 +448,12 @@ export class MapScene extends BaseScene {
   /** Two silhouettes per area, so a band has variety without a sprite sheet. */
   private prop(g: Phaser.GameObjects.Graphics, kind: number, variant: number, x: number, y: number, k: number, area: Area): void {
     const ink = shade(area.ink, 0.06);
-    const drop = MAP.shadowDrop * k;
     const quad = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number): void => {
       g.fillTriangle(ax, ay, bx, by, cx, cy);
       g.fillTriangle(ax, ay, cx, cy, dx, dy);
     };
-    g.fillStyle(shade(area.ground, -0.45), 0.2).fillEllipse(x + 6 * k, y + drop, (variant ? 62 : 74) * k, 19 * k, 10);
+    const shadow = castShadow(6);
+    g.fillStyle(LOOK.shadow, shadow.alpha).fillEllipse(x + shadow.dx * k, y + shadow.dy * k, (variant ? 62 : 74) * k, 19 * k, 10);
     if (kind === 0 && variant === 0) {
       // Pine: stacked canopy, each tier hazed a little further toward the sky.
       g.fillStyle(shade(0x4a6b3a, -0.15)).fillRect(x - 5 * k, y - 26 * k, 10 * k, 28 * k);
@@ -471,132 +532,170 @@ export class MapScene extends BaseScene {
     }
   }
 
-  /** Raised discs: cast shadow, a side wall, a face, a rim light. */
+  /** The three puck states share one geometry; only the frontier is left out of the bake. */
+  private puckOf(i: number): { r: number; depth: number; fill: number; number: number; size: number; state: 'frontier' | 'cleared' | 'locked' } {
+    const level = this.first + i;
+    const { area } = areaOf(level);
+    const s = this.uiScale;
+    if (level === this.progress.unlocked) return { r: MAP.nodeRadius * 1.1 * s, depth: 10, fill: LOOK.coral, number: LOOK.cream, size: 34 * s, state: 'frontier' };
+    if (level < this.progress.unlocked) return { r: MAP.nodeRadius * s, depth: 8, fill: area.ink, number: area.paper, size: 30 * s, state: 'cleared' };
+    return { r: MAP.nodeRadius * 0.84 * s, depth: 5, fill: mix(area.paper, area.ground, 0.35), number: mix(area.ink, area.ground, 0.4), size: 26 * s, state: 'locked' };
+  }
+
+  /** One puck, drawn where it stands or lifted by a hop. */
+  private drawPuck(g: Phaser.GameObjects.Graphics, i: number, lift: number): void {
+    const node = this.nodes[i]!;
+    const p = this.puckOf(i);
+    const t = p.state === 'locked' ? { ...STYLE.current, outline: STYLE.current.outline * 0.7 } : STYLE.current;
+    drawDisc(g, node.x, node.y - lift, p.r, this.uiScale, { fill: p.fill, depth: p.depth }, t);
+  }
+
+  /** Raised pucks with cast shadows, a star plate under each cleared one and a padlock under each locked one. */
   private drawNodes(g: Phaser.GameObjects.Graphics, s: number): void {
+    this.frontierIndex = -1;
     for (let i = 0; i < this.shown; i++) {
       const level = this.first + i;
       const { area } = areaOf(level);
       const node = this.nodes[i]!;
-      const cleared = level < this.progress.unlocked;
-      const current = level === this.progress.unlocked;
-      const r = (current ? MAP.nodeRadius * 1.1 : cleared ? MAP.nodeRadius : MAP.nodeRadius * 0.84) * s;
-      const text = this.numbers[i]!.setPosition(node.x, node.y).setFontSize((current ? 33 : cleared ? 30 : 26) * s);
-      g.fillStyle(shade(area.ground, -0.5), 0.24).fillEllipse(node.x + 4 * s, node.y + (MAP.shadowDrop + 2) * s, r * 2.05, r * 1.15, 14);
-      const face = cleared ? area.ink : current ? 0xcf5134 : mix(area.ground, area.paper, 0.32);
-      // A darker disc peeking below the face is the whole trick: it reads as thickness.
-      g.fillStyle(shade(face, -0.3), cleared || current ? 1 : 0.85).fillCircle(node.x, node.y + 5 * s, r);
-      g.fillStyle(face, cleared || current ? 1 : 0.92).fillCircle(node.x, node.y, r);
-      g.lineStyle(2.5 * s, shade(area.ink, cleared ? 0.25 : 0), cleared ? 0.5 : current ? 0.85 : 0.32).strokeCircle(node.x, node.y, r);
-      g.fillStyle(0xffffff, cleared || current ? 0.08 : 0.14).fillEllipse(node.x - r * 0.22, node.y - r * 0.42, r * 1.05, r * 0.5, 12);
-      if (current) {
-        g.lineStyle(2 * s, 0x963c29, 1).strokeCircle(node.x, node.y, r);
-        text.setColor('#fff9e8').setAlpha(1);
+      const p = this.puckOf(i);
+      const text = this.numbers[i]!.setPosition(node.x, node.y).setScale(1);
+      resize(text, p.size, p.number);
+      text.setColor(`#${p.number.toString(16).padStart(6, '0')}`);
+      const plateY = node.y + p.r + (p.depth + 24) * s;
+      if (p.state === 'frontier') {
+        this.frontierIndex = i;
         const left = node.x > this.viewport.safe.centerX;
         this.location.setText('PLAY ' + String(level).padStart(2, '0')).setOrigin(left ? 1 : 0, 0.5)
-          .setPosition(node.x + (left ? -1 : 1) * (r + 28 * s), node.y)
-          .setFontSize(16 * s).setColor(hex(area.ink));
-        this.drawStars(g, node, r, 3, 0, area, s);
-      } else if (cleared) {
-        text.setColor(hex(area.paper)).setAlpha(1);
-        this.drawStars(g, node, r, starsFor(this.progress.best[level] ?? 0, levelSpec(level)), 3, area, s);
+          .setPosition(node.x + (left ? -1 : 1) * (p.r + 28 * s), node.y)
+          .setFontSize(Math.max(15 * s, 8 * this.viewport.unitScale)).setColor(`#${area.ink.toString(16).padStart(6, '0')}`);
+        continue;
+      }
+      this.drawPuck(g, i, 0);
+      if (p.state === 'cleared') {
+        this.drawStars(g, node.x, plateY, starsFor(this.progress.best[level] ?? 0, levelSpec(level)), area, s);
       } else {
-        text.setColor(hex(area.ink)).setAlpha(0.48);
         // A shackle and body say locked without needing a glyph the device font might lack.
-        const ly = node.y + r + 17 * s;
-        g.lineStyle(4 * s, area.ink, 0.45).beginPath();
-        g.arc(node.x, ly - 1 * s, 9 * s, Math.PI, 0);
-        g.strokePath();
-        g.fillStyle(area.ink, 0.5).fillRoundedRect(node.x - 13 * s, ly, 26 * s, 19 * s, 5 * s);
-        g.fillStyle(area.paper, 0.5).fillCircle(node.x, ly + 9 * s, 3.2 * s);
+        const ly = plateY - 10 * s;
+        const outline = STYLE.current.outline * s * 0.55;
+        const f = faces(area.ink);
+        g.lineStyle(4 * s + outline * 2, shade(area.ink, -0.6), 1).beginPath().arc(node.x, ly - 1 * s, 9 * s, Math.PI, 0).strokePath();
+        g.lineStyle(4 * s, area.ink, 1).beginPath().arc(node.x, ly - 1 * s, 9 * s, Math.PI, 0).strokePath();
+        g.lineStyle(outline, shade(area.ink, -0.6), 1).strokeRoundedRect(node.x - 13 * s, ly, 26 * s, 19 * s, 5 * s);
+        g.fillStyle(f.shade).fillRoundedRect(node.x - 13 * s, ly, 26 * s, 19 * s, 5 * s);
+        g.fillStyle(f.face).fillRoundedRect(node.x - 13 * s, ly - 2 * s, 26 * s, 17 * s, 5 * s);
+        g.fillStyle(p.fill).fillCircle(node.x, ly + 7 * s, 3.2 * s);
       }
     }
   }
 
-  /** Stars on their own plate, so they never sit directly on the road surface. */
-  private drawStars(g: Phaser.GameObjects.Graphics, node: Point, r: number, stars: number, of: number, area: Area, s: number): void {
-    if (of === 0) return;
-    const w = 84 * s;
-    const h = 28 * s;
-    const y = node.y + r + 18 * s;
-    g.fillStyle(shade(area.ground, -0.45), 0.18).fillRoundedRect(node.x - w / 2 + 2 * s, y - h / 2 + 5 * s, w, h, h / 2);
-    g.fillStyle(shade(area.paper, -0.03), 0.96).fillRoundedRect(node.x - w / 2, y - h / 2, w, h, h / 2);
-    g.lineStyle(1.5 * s, area.ink, 0.24).strokeRoundedRect(node.x - w / 2, y - h / 2, w, h, h / 2);
-    for (let k = 0; k < of; k++) {
-      drawStar(g, node.x + (k - 1) * 24 * s, y, 9 * s, k < stars ? shade(area.ink, 0.1) : area.ink, k < stars, k < stars ? 1 : 0.28);
+  /** Stars on their own small slab, so they never sit directly on the road surface. */
+  private drawStars(g: Phaser.GameObjects.Graphics, x: number, y: number, stars: number, area: Area, s: number): void {
+    drawPanel(g, new Phaser.Geom.Rectangle(x - 46 * s, y - 17 * s, 92 * s, 34 * s), s, { fill: shade(area.paper, -0.03), depth: 4, radius: 17 });
+    for (let k = 0; k < 3; k++) {
+      drawStar(g, x + (k - 1) * 24 * s, y, 9 * s, k < stars ? shade(area.ink, 0.1) : area.ink, k < stars, k < stars ? 1 : 0.28);
     }
   }
 
-  /** Edge shading: the strip reads as a lit corridor rather than a flat fill. */
-  private drawFrame(s: number): void {
-    const { full } = this.viewport;
-    const g = this.frame.clear();
-    const bands = 7;
-    const width = 46 * s;
-    for (let b = 0; b < bands; b++) {
-      const alpha = 0.05 * (1 - b / bands);
-      g.fillStyle(0x1d2a20, alpha);
-      g.fillRect(full.x, full.y, width * (1 - b / bands), full.height);
-      g.fillRect(full.right - width * (1 - b / bands), full.y, width * (1 - b / bands), full.height);
-    }
+  /** Places a screen-space object as if it hung from the ceiling anchor, rotated by `angle`. */
+  private hang(target: { setPosition(x: number, y: number): unknown; setRotation(r: number): unknown }, lx: number, ly: number, angle: number, drop: number): void {
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    target.setPosition(this.ceiling.x + lx * cos - ly * sin, this.ceiling.y + drop + lx * sin + ly * cos);
+    target.setRotation(angle);
   }
 
-  private drawHud(s: number): void {
+  /** The header: a sign on two ropes over the road, fixed to the camera. */
+  private drawSign(s: number, angle: number, drop: number): void {
     const { safe, full } = this.viewport;
-    const g = this.hudBack.clear();
-    const paper = 0xf4f0e2;
-    const ink = 0x2b3a2f;
-    g.fillStyle(ink, 0.1).fillRect(full.x, this.hudHeight, full.width, 10 * s);
-    g.fillStyle(ink, 0.05).fillRect(full.x, this.hudHeight, full.width, 4 * s);
-    g.fillStyle(paper, 1).fillRect(full.x, full.y, full.width, this.hudHeight);
-    g.lineStyle(1.5 * s, ink, 0.22).lineBetween(full.x, this.hudHeight, full.right, this.hudHeight);
-    const left = safe.centerX - 310 * s;
-    this.edition.setPosition(left, safe.top + 34 * s).setFontSize(Math.max(17 * s, 9 * this.viewport.unitScale));
+    const w = MAP.sign.width * s, h = MAP.sign.height * s;
+    this.ceiling = { x: safe.centerX - 310 * s + w / 2, y: full.y - 4 * s };
+    const ropeLength = safe.top + MAP.sign.top * s - this.ceiling.y;
+    this.signRect.setTo(-w / 2, ropeLength, w, h);
+    const g = this.signBack.clear();
+    const inset = w / 2 - MAP.sign.ropeInset * s;
+    for (const x of [-inset, inset]) {
+      g.lineStyle(STYLE.current.outline * s * 0.55 + 8 * s, shade(LOOK.rope, -0.5), 1).lineBetween(x, 0, x, ropeLength);
+      g.lineStyle(8 * s, LOOK.rope, 1).lineBetween(x, 0, x, ropeLength);
+      g.lineStyle(2 * s, shade(LOOK.rope, 0.35), 0.6).lineBetween(x - 2 * s, 0, x - 2 * s, ropeLength);
+      g.fillStyle(faces(BRASS).edge, 1).fillCircle(x, ropeLength + 2 * s, 8 * s);
+      g.fillStyle(BRASS, 1).fillCircle(x, ropeLength, 8 * s);
+      g.fillStyle(shade(LOOK.sign, -0.6), 1).fillCircle(x, ropeLength, 3 * s);
+    }
+    drawPanel(g, this.signRect, s, { fill: LOOK.sign, depth: 10, hero: true });
+    this.hang(this.signBack, 0, 0, angle, drop);
+    placeSurface(this.signSurface, this.signRect, s);
+    // The surface tile and the texts are separate objects: each is hung from the same anchor.
+    const inner = STYLE.current.radius * s * 0.7;
+    this.hang(this.signSurface, this.signRect.x + inner, this.signRect.y + inner, angle, drop);
+    this.edition.setFontSize(Math.max(15 * s, 8 * this.viewport.unitScale));
+    this.hang(this.edition, this.signRect.x + 22 * s, this.signRect.y + 13 * s, angle, drop);
     const current = areaOf(this.progress.unlocked);
-    this.status.setText(current.name + '.').setPosition(left - 2 * s, safe.top + 66 * s).setFontSize(44 * s);
-    // Round chips, sized to the accessible floor, so both controls read as buttons.
-    const chip = (cx: number, cy: number, radius: number) => {
-      g.lineStyle(1.5 * s, ink, 0.2).strokeCircle(cx, cy, radius);
-    };
-    const radius = 27 * s;
-    const muteX = safe.centerX + 283 * s;
-    const gap = Math.max(104 * s, 56 * this.viewport.unitScale);
-    const menuX = muteX - gap;
-    const cy = safe.top + 70 * s;
-    this.setupAt = { x: menuX - gap, y: cy };
-    chip(this.setupAt.x, cy, radius);
-    chip(menuX, cy, radius);
-    chip(muteX, cy, radius);
-    drawGear(g, this.setupAt.x, cy, 13 * s, ink, 0.8);
-    this.menu.setPosition(menuX, cy - 2 * s).setFontSize(30 * s);
-    this.mute.setPosition(muteX, cy).setFontSize(28 * s);
+    this.status.setText(current.name);
+    resize(this.status, 40 * s, LOOK.cream);
+    // Repeat areas ("Pavement VIII") are long; shrink to the sign, never below 28 units.
+    if (this.status.width > w - 44 * s) resize(this.status, Math.max(28 * s, 40 * s * (w - 44 * s) / this.status.width), LOOK.cream);
+    this.hang(this.status, this.signRect.x + 20 * s, this.signRect.y + 30 * s, angle, drop);
   }
 
-  private drawDock(s: number): void {
-    const { safe, full } = this.viewport;
-    const x = safe.centerX - 310 * s, y = this.footerTop;
-    const g = this.dock.clear();
-    for (let b = 0; b < 8; b++) {
-      g.fillStyle(0xf4f0e2, (b + 1) / 8).fillRect(full.x, y - (8 - b) * 5 * s, full.width, 5 * s + 1);
+  /** Back, settings and mute as pucks at the top right, clear of the sign's swing. */
+  private drawPucks(s: number, press: number): void {
+    const { safe } = this.viewport;
+    const r = 34 * s;
+    const gap = Math.max(88 * s, this.controlSize + 4 * s);
+    this.muteAt = { x: safe.right - 56 * s, y: safe.top + 66 * s };
+    this.setupAt = { x: this.muteAt.x - gap, y: this.muteAt.y };
+    this.backAt = { x: this.setupAt.x - gap, y: this.muteAt.y };
+    const g = this.pucks.clear();
+    const sinkOf = (key: 'back' | 'setup' | 'mute') => (this.puckPressed === key ? press : 0);
+    for (const [key, at] of [['back', this.backAt], ['setup', this.setupAt], ['mute', this.muteAt]] as const) {
+      drawDisc(g, at.x, at.y, r, s, { fill: LOOK.puck, depth: 7, press: sinkOf(key) });
     }
-    g.fillStyle(0xf4f0e2).fillRect(full.x, y, full.width, full.bottom - y);
+    const sink = (key: 'back' | 'setup' | 'mute') => 7 * s * sinkOf(key) * 0.8;
+    drawBack(g, this.backAt.x, this.backAt.y + sink('back'), r * 0.42, LOOK.ink);
+    drawGear(g, this.setupAt.x, this.setupAt.y + sink('setup'), r * 0.52, LOOK.ink, 1);
+    drawSpeaker(g, this.muteAt.x, this.muteAt.y + sink('mute'), r * 0.5, LOOK.ink, this.muted);
+  }
+
+  /** The footer: a bench across the frame, the next level's block on it, the area's ten beads. */
+  private drawDock(s: number, press: number): void {
+    const { safe, full } = this.viewport;
+    const y = this.footerTop;
+    const g = this.dock.clear();
+    // The bench: only its top face and edge are on screen, so it is three flat strips rather
+    // than a slab whose shadow and side wall would be drawn under the frame every frame.
+    const bench = faces(LOOK.bench);
+    g.fillStyle(bench.face).fillRect(full.x, y, full.width, full.bottom - y);
+    g.fillStyle(bench.rim, 0.6).fillRect(full.x, y + 2 * s, full.width, 3 * s);
+    g.fillStyle(shade(LOOK.bench, -0.6)).fillRect(full.x, y - STYLE.current.outline * s * 0.55, full.width, STYLE.current.outline * s * 0.55);
+    const height = Math.max(112 * s, this.controlSize + 16 * s);
+    this.blockRect.setTo(safe.centerX - 310 * s, y + 20 * s, 620 * s, height);
+    drawPanel(g, this.blockRect, s, { fill: LOOK.block, depth: 12, press, hero: true });
+    const sink = 12 * s * press * 0.8;
+    placeSurface(this.dockSurface, this.blockRect, s, sink);
     const level = this.progress.unlocked;
     const definition = VIGNETTES.find(v => v.id === levelSpec(level).vignette)!;
-    this.dockLabel.setText(`UP NEXT  /  LEVEL ${String(level).padStart(2, '0')}`).setPosition(x, y + 24 * s).setFontSize(Math.max(17 * s, 9 * this.viewport.unitScale)).setAlpha(0.65);
-    this.dockTitle.setText(definition.title).setPosition(x, y + 56 * s).setFontSize(32 * s);
-    this.dockHint.setText('A little further, a little better.').setPosition(x, y + 167 * s).setFontSize(Math.max(17 * s, 9 * this.viewport.unitScale)).setAlpha(0.6);
-    const cy = y + 74 * s, cx = safe.centerX + 254 * s;
-    const radius = Math.max(46 * s, this.controlSize / 2);
-    g.fillStyle(0x243e35, 0.14).fillCircle(cx, cy + 5 * s, radius);
-    g.fillStyle(0x243e35).fillCircle(cx, cy, radius);
-    g.lineStyle(3 * s, 0xf4f0e2).lineBetween(cx - 14 * s, cy, cx + 15 * s, cy);
-    g.lineBetween(cx + 4 * s, cy - 11 * s, cx + 15 * s, cy).lineBetween(cx + 15 * s, cy, cx + 4 * s, cy + 11 * s);
-    this.dockRect.setTo(x, y + 12 * s, 620 * s, Math.max(118 * s, this.controlSize));
-    // Ten understated marks correspond to the ten stops in the current area.
+    const bx = this.blockRect.x, by = this.blockRect.y + sink;
+    this.dockLabel.setText(`UP NEXT · LEVEL ${String(level).padStart(2, '0')}`).setFontSize(Math.max(15 * s, 8 * this.viewport.unitScale)).setPosition(bx + 24 * s, by + 16 * s);
+    this.dockTitle.setText(definition.title);
+    resize(this.dockTitle, 30 * s, LOOK.ink);
+    this.dockTitle.setPosition(bx + 24 * s, by + height * 0.64);
+    const r = Math.max(40 * s, this.controlSize / 2);
+    const cx = this.blockRect.right - 24 * s - r, cy = this.blockRect.centerY + sink;
+    drawDisc(g, cx, cy, r, s, { fill: LOOK.coral, depth: 9, press });
+    drawPlay(g, cx + 2 * s, cy + 9 * s * press * 0.8, r * 0.42, LOOK.cream);
+    this.dockRect.setTo(this.blockRect.x - 8 * s, this.blockRect.y - 8 * s, this.blockRect.width + 16 * s, this.blockRect.height + 16 * s);
+    // Ten beads for the ten stops in the current area.
+    const beadY = this.blockRect.bottom + 12 * s + 26 * s;
+    const at = (level - 1) % PROGRESSION.areaSize;
     for (let i = 0; i < PROGRESSION.areaSize; i++) {
-      const at = (level - 1) % PROGRESSION.areaSize;
-      g.fillStyle(i === at ? 0xcf5134 : 0x243e35, i <= at ? 1 : 0.14)
-        .fillRoundedRect(x + i * 63 * s, y + 138 * s, 49 * s, 3 * s, 1.5 * s);
+      const x = this.blockRect.x + 12 * s + i * 28 * s;
+      const colour = i === at ? LOOK.coral : i < at ? LOOK.ink : shade(LOOK.bench, -0.25);
+      const f = faces(colour);
+      const rr = (i === at ? 7 : 6) * s;
+      g.fillStyle(f.edge, 1).fillCircle(x, beadY + 2.5 * s, rr);
+      g.fillStyle(f.face, 1).fillCircle(x, beadY, rr);
+      g.fillStyle(f.rim, 0.8).fillCircle(x - rr * 0.3, beadY - rr * 0.35, rr * 0.3);
     }
+    this.dockHint.setFontSize(Math.max(16 * s, 10 * this.viewport.unitScale)).setPosition(this.blockRect.x + 300 * s, beadY);
   }
 
   private scrollTo(level: number): void {
@@ -619,24 +718,56 @@ export class MapScene extends BaseScene {
     }
     const s = this.uiScale;
     const now = performance.now() / 1000;
-    this.pulse.clear();
-    const current = this.nodes[this.progress.unlocked - this.first];
-    if (current && !this.reducedMotion) {
-      const r = MAP.nodeRadius * 1.1 * s;
-      const p = (now * 0.5) % 1;
-      this.pulse.lineStyle(2 * s, 0xcf5134, (1 - p) * 0.45).strokeCircle(current.x, current.y, r + 8 * s + p * 24 * s);
+    const still = this.reducedMotion;
+    const ex = STYLE.current.exaggeration;
+
+    // The sign drops in on its ropes and swings itself quiet, then hangs still.
+    const age = now - this.enteredAt;
+    if (age < 2.4) {
+      const entry = still ? { rise: 0 } : arrive(age - 0.1, 0.9);
+      const swing = still ? 0 : settle(age - 0.3, 5.2, 1.6) * 0.05 * ex;
+      this.drawSign(s, swing, -entry.rise * 200 * s);
     }
-    this.touch.clear();
-    const age = now - this.touchAt;
-    if (age < 0.3) this.touch.lineStyle(2.5 * s, 0x2b3a2f, (1 - age / 0.3) * 0.7).strokeCircle(this.touchPoint.x, this.touchPoint.y + this.scrollY, (20 + age * 160) * s);
+
+    // The frontier puck hops once a bar and lands with a spread; a ring rolls out from it.
+    const g = this.pulse.clear();
+    const frontier = this.nodes[this.frontierIndex];
+    if (frontier) {
+      const p = this.puckOf(this.frontierIndex);
+      const beat = (now % MAP.hopSec);
+      const lift = still || beat >= 0.32 ? 0 : Math.sin(Math.PI * beat / 0.32) * 10 * s * ex;
+      const { area } = areaOf(this.first + this.frontierIndex);
+      this.drawStars(g, frontier.x, frontier.y - lift + p.r + (p.depth + 24) * s, 0, area, s);
+      this.drawPuck(g, this.frontierIndex, lift);
+      this.numbers[this.frontierIndex]!.setY(frontier.y - lift);
+      this.location.setY(frontier.y - lift);
+      if (!still) {
+        const ring = spring(beat / 0.6, 4.5, 2.2);
+        g.lineStyle(STYLE.current.outline * s * 0.55, LOOK.coral, Math.max(0, 1 - beat / 1.1) * 0.55).strokeCircle(frontier.x, frontier.y - lift, p.r + 4 * s + ring * 22 * s);
+      }
+    }
+    // A tapped locked puck: its number squashes and a ring says "not yet".
     const feedbackAge = now - this.feedbackAt;
     const locked = this.nodes[this.lockedIndex];
     if (locked && feedbackAge < 0.36) {
-      const text = this.numbers[this.lockedIndex]!;
-      text.setX(locked.x + (this.reducedMotion ? 0 : Math.sin(feedbackAge * 48) * Math.exp(-feedbackAge * 12) * 9 * s));
-      this.pulse.lineStyle(3 * s, 0xcf5134, (1 - feedbackAge / 0.36) * 0.7).strokeCircle(locked.x, locked.y, MAP.nodeRadius * 0.84 * s + 5 * s);
-    } else if (locked) { this.numbers[this.lockedIndex]!.setX(locked.x); this.lockedIndex = -1; }
-    if (feedbackAge > 2.2 && this.dockHint.text !== 'A little further, a little better.') this.dockHint.setText('A little further, a little better.');
+      const q = still ? 0 : squash(feedbackAge, 0.36, 0.16 * ex);
+      this.numbers[this.lockedIndex]!.setScale(1 + q, 1 - q * 0.6);
+      const ring = spring(feedbackAge / 0.36, 5, 1.6);
+      g.lineStyle(STYLE.current.outline * s * 0.55, LOOK.coral, (1 - feedbackAge / 0.36) * 0.7).strokeCircle(locked.x, locked.y, MAP.nodeRadius * 0.84 * s + 5 * s + ring * 10 * s);
+    } else if (locked) { this.numbers[this.lockedIndex]!.setScale(1); this.lockedIndex = -1; }
+    // The tap acknowledgement.
+    this.touch.clear();
+    const touchAge = now - this.touchAt;
+    if (touchAge < 0.35) {
+      const ring = spring(touchAge / 0.35, 5, 1.6);
+      this.touch.lineStyle(STYLE.current.outline * s * 0.55, LOOK.ink, (1 - touchAge / 0.35) * 0.6).strokeCircle(this.touchPoint.x, this.touchPoint.y + this.scrollY, 12 * s + ring * 30 * s);
+    }
+    // Presses redraw only while live, then one frame at rest.
+    const press = this.pressedAt > -Infinity ? 1 - spring((now - this.pressedAt) / MAP.pressSec, 5, 2) : 0;
+    if (press > 0.001 || this.pressDirty) { this.drawDock(s, Math.max(0, press)); this.pressDirty = press > 0.001; }
+    const puckPress = this.puckPressedAt > -Infinity ? 1 - spring((now - this.puckPressedAt) / MAP.pressSec, 5, 2) : 0;
+    if (puckPress > 0.001 || this.puckDirty) { this.drawPucks(s, Math.max(0, puckPress)); this.puckDirty = puckPress > 0.001; }
+    if (feedbackAge > 2.2 && this.dockHint.text !== HINT) this.dockHint.setText(HINT);
   }
 
   private pointerDown(pointer: Phaser.Input.Pointer): void {
@@ -669,25 +800,38 @@ export class MapScene extends BaseScene {
     this.velocity = 0;
     this.handleTap(pointer.x, pointer.y);
   }
+  private pressPuck(key: 'back' | 'setup' | 'mute'): void {
+    this.puckPressed = key;
+    this.puckPressedAt = performance.now() / 1000;
+    this.puckDirty = true;
+  }
   private handleTap(x: number, y: number): void {
     if (this.curtain.active) return;
-    if (Math.abs(x - this.mute.x) < this.controlSize / 2 && Math.abs(y - this.mute.y) < this.controlSize / 2) {
-      this.mute.setText(toggleMute(sharedAudio(this)) ? '×' : '♪');
+    const near = (at: { x: number; y: number }) => Math.abs(x - at.x) < this.controlSize / 2 && Math.abs(y - at.y) < this.controlSize / 2;
+    if (near(this.muteAt)) {
+      this.muted = toggleMute(sharedAudio(this));
+      this.pressPuck('mute');
       return;
     }
-    if (Math.abs(x - this.setupAt.x) < this.controlSize / 2 && Math.abs(y - this.setupAt.y) < this.controlSize / 2) {
+    if (near(this.setupAt)) {
+      this.pressPuck('setup');
       this.curtain.cover(() => this.scene.start(SceneKey.Settings, { from: SceneKey.Map }));
       return;
     }
-    if (Math.abs(x - this.menu.x) < this.controlSize / 2 && Math.abs(y - this.menu.y) < this.controlSize / 2) { this.curtain.cover(() => this.scene.start(SceneKey.Menu)); return; }
-    if (this.dockRect.contains(x, y)) { this.openLevel(this.progress.unlocked); return; }
+    if (near(this.backAt)) { this.pressPuck('back'); this.curtain.cover(() => this.scene.start(SceneKey.Menu)); return; }
+    if (this.dockRect.contains(x, y)) {
+      this.pressedAt = performance.now() / 1000;
+      this.pressDirty = true;
+      this.openLevel(this.progress.unlocked);
+      return;
+    }
     if (y < this.hudHeight || y >= this.footerTop) return;
     const worldY = y + this.scrollY;
     const reach = Math.max(MAP.nodeRadius * this.uiScale, this.controlSize / 2);
     const index = this.nodes.findIndex(node => Math.hypot(node.x - x, node.y - worldY) <= reach);
     if (index < 0) return;
     if (this.first + index > this.progress.unlocked) {
-      if (this.lockedIndex >= 0) this.numbers[this.lockedIndex]!.setX(this.nodes[this.lockedIndex]!.x);
+      if (this.lockedIndex >= 0) this.numbers[this.lockedIndex]!.setScale(1);
       this.lockedIndex = index;
       this.feedbackAt = performance.now() / 1000;
       this.dockHint.setText(`First, find the rhythm in level ${this.progress.unlocked}.`);
