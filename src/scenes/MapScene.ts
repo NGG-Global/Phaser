@@ -9,7 +9,7 @@ import { BaseScene } from '@/core/BaseScene';
 import { areaOf, levelSpec, starsFor, type Area } from '@/game/levels';
 import { loadProgress, type Progress } from '@/game/progress';
 import { MaterialKey } from '@/textures/materials';
-import { mix, shade } from '@/ui/colour';
+import { mix, shade, starColour } from '@/ui/colour';
 import { CHROME, drawPuck, drawRopes, pressAmount, puckSink } from '@/ui/chrome';
 import { FxKey } from '@/ui/feedback';
 import { dashes, smoothPath, type Point } from '@/ui/path';
@@ -540,7 +540,6 @@ export class MapScene extends BaseScene {
       const p = this.puckOf(i);
       const text = this.numbers[i]!.setPosition(node.x, node.y).setScale(1);
       resize(text, p.size, p.number, STYLE.current, p.state !== 'locked');
-      text.setColor(`#${p.number.toString(16).padStart(6, '0')}`);
       const plateY = node.y + p.r + (p.depth + 24) * s;
       if (p.state === 'frontier') {
         this.frontierIndex = i;
@@ -566,9 +565,10 @@ export class MapScene extends BaseScene {
 
   /** Stars on their own small slab, so they never sit directly on the road surface. */
   private drawStars(g: Phaser.GameObjects.Graphics, x: number, y: number, stars: number, area: Area, s: number): void {
-    drawPanel(g, new Phaser.Geom.Rectangle(x - 46 * s, y - 17 * s, 92 * s, 34 * s), s, { fill: shade(area.paper, -0.03), depth: 4, radius: 17 });
+    const plate = shade(area.paper, -0.03);
+    drawPanel(g, new Phaser.Geom.Rectangle(x - 46 * s, y - 17 * s, 92 * s, 34 * s), s, { fill: plate, depth: 4, radius: 17 });
     for (let k = 0; k < 3; k++) {
-      drawStar(g, x + (k - 1) * 24 * s, y, 9 * s, k < stars ? shade(area.ink, 0.1) : area.ink, k < stars, k < stars ? 1 : 0.7);
+      drawStar(g, x + (k - 1) * 24 * s, y, 9 * s, starColour(k < stars, shade(area.ink, 0.1), plate));
     }
   }
 
@@ -640,7 +640,9 @@ export class MapScene extends BaseScene {
     const definition = VIGNETTES.find(v => v.id === levelSpec(level).vignette)!;
     const bx = this.blockRect.x, by = this.blockRect.y + sink;
     this.dockTitle.setText(definition.title);
-    resize(this.dockTitle, 30 * s, PALETTE.ink);
+    // Caption size on cream: the same undressed Fredoka the locked numbers use, so the
+    // outline does not close the counters on a 30-unit word.
+    resize(this.dockTitle, 30 * s, PALETTE.ink, STYLE.current, false);
     this.dockTitle.setPosition(bx + 24 * s, by + height * 0.5);
     const r = Math.max(40 * s, this.controlSize / 2);
     const cx = this.blockRect.right - 24 * s - r, cy = this.blockRect.centerY + sink;

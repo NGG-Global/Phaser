@@ -85,6 +85,9 @@ export function label(scene: Phaser.Scene, text: string, spec: TypeSpec, t = STY
  */
 export function resize(text: Phaser.GameObjects.Text, size: number, colour: number, t = STYLE.current, dress = true): void {
   text.setFontSize(size);
+  // Fill used to stay on whatever the text was created with, so "Your turn" kept the
+  // vignette ink while only its outline shifted — the colour argument was a no-op.
+  text.setColor(hex(colour));
   if (!dress) {
     // A previous dressed size would otherwise leave a headline stroke on a caption.
     text.setStroke('#000000', 0);

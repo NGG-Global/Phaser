@@ -5,6 +5,7 @@ import { sharedAudio, toggleMute } from '@/audio/sharedAudio';
 import { MUSIC } from '@/config/music';
 import { TaskSequence } from '@/game/TaskSequence';
 import { SceneKey } from '@/config/scenes';
+import { LAYOUT } from '@/config/design';
 import { RHYTHM } from '@/config/rhythm';
 import { BaseScene } from '@/core/BaseScene';
 import { isTouchPrimary } from '@/core/shell';
@@ -20,12 +21,12 @@ import { STYLE } from '@/config/style';
 import { PALETTE, SHELL } from '@/config/theme';
 import { drawMap, drawRestart, drawSpeaker } from '@/ui/icons';
 import { faces } from '@/ui/light';
-import { hex, mix, shade } from '@/ui/colour';
+import { mix, shade, starColour } from '@/ui/colour';
 import { CHROME, drawPuck, pressAmount, puckSink } from '@/ui/chrome';
 import { drawPanel, placeSurface, Rect, surface } from '@/ui/panel';
 import { Feedback } from '@/ui/feedback';
 import { arrive, overshoot, settle, squash, stagger } from '@/ui/spring';
-import { display, resize } from '@/ui/type';
+import { body, display, resize } from '@/ui/type';
 import { drawStar } from '@/ui/star';
 import { SceneCurtain } from '@/ui/SceneCurtain';
 import { VIGNETTES } from '@/vignettes/registry';
@@ -69,6 +70,7 @@ export class PlayScene extends BaseScene {
   private accuracy!: Phaser.GameObjects.Text;
   /** The three pucks — map, restart, mute — drawn as one baked graphic. */
   private chrome!: Phaser.GameObjects.Graphics;
+  private actionRoot!: Phaser.GameObjects.Container;
   private action!: Phaser.GameObjects.Graphics;
   private actionSurface!: Phaser.GameObjects.TileSprite;
   private actionLabel!: Phaser.GameObjects.Text;
@@ -76,6 +78,7 @@ export class PlayScene extends BaseScene {
   private actionCaption = '';
   private actionPressedAt = -Infinity;
   private actionPressDirty = false;
+  private actionShownAt = -Infinity;
   private mapAt = { x: 0, y: 0 };
   private restartAt = { x: 0, y: 0 };
   private muteAt = { x: 0, y: 0 };
@@ -139,11 +142,13 @@ export class PlayScene extends BaseScene {
     this.stars = this.add.graphics().setDepth(9);
     this.fx = new Feedback(this, 5);
     this.headline = display(this, this.definition.intro, { size: 88, colour: ink, align: 'center' }).setOrigin(0.5, 0).setDepth(12);
-    this.accuracy = display(this, '', { size: 46, colour: ink }).setOrigin(0.5).setDepth(11);
+    this.accuracy = body(this, '', { size: 34, colour: ink }).setOrigin(0.5).setDepth(11);
     this.chrome = this.add.graphics().setDepth(10);
-    this.action = this.add.graphics().setDepth(10);
-    this.actionSurface = surface(this, MaterialKey.cloth, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, PALETTE.coral, 0.35).setDepth(10);
-    this.actionLabel = display(this, '', { size: 40, colour: SHELL.cream, align: 'center' }).setOrigin(0.5).setDepth(11);
+    this.actionRoot = this.add.container(0, 0).setDepth(10);
+    this.action = this.add.graphics();
+    this.actionSurface = surface(this, MaterialKey.cloth, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, PALETTE.coral, 0.35);
+    this.actionLabel = display(this, '', { size: 40, colour: SHELL.cream, align: 'center' }).setOrigin(0.5);
+    this.actionRoot.add([this.action, this.actionSurface, this.actionLabel]);
     this.marks = this.add.graphics().setDepth(8);
     this.verdict = display(this, '', { size: 38, colour: ink, align: 'center' }).setOrigin(0.5).setAlpha(0).setDepth(8);
     this.taskMarks = this.add.graphics().setDepth(11);
@@ -188,14 +193,14 @@ export class PlayScene extends BaseScene {
     this.drawChrome(s, 0);
     this.puckDirty = true;
     this.debug.setPosition(left, top + 360 * s).setFontSize(16 * s);
-    // The beat track sits in the band the stars take at the summary; the two never show
-    // at once, so they share it rather than competing for the frame.
-    this.trackY = safe.bottom - 248 * s;
+    // Same offset as the old drag track: an absolute distance from the thumb, so a tall
+    // handset does not leave the beads floating in the middle of the frame.
+    this.trackY = safe.bottom - LAYOUT.trackOffsetFromBottom * s;
     this.trackWidth = Math.min(620 * s, safe.width - 80 * s);
     this.verdictY = this.trackY - TRACK.plateHeight * s / 2 - 34 * s;
     this.verdict.setPosition(safe.centerX, this.verdictY);
     resize(this.verdict, 38 * s, this.verdictColour());
-    // Tighter than the menu's Play block, so stars and the percentage still fit above it.
+    // Tighter than the menu's Play block, so the result plaque still fits above it.
     const blockH = Math.max(96 * s, this.controlSize);
     this.actionRect.setTo(
       safe.centerX - CHROME.block.width * s / 2,
@@ -205,8 +210,8 @@ export class PlayScene extends BaseScene {
     );
     this.drawAction(0);
     this.actionPressDirty = true;
-    resize(this.accuracy, 46 * s, ink);
-    this.accuracy.setPosition(safe.centerX, (this.trackY + 28 * s + this.actionRect.y) / 2);
+    resize(this.accuracy, 34 * s, ink, STYLE.current, false);
+    this.accuracy.setPosition(safe.centerX, this.trackY + 28 * s);
     this.drawStars();
     this.drawTaskMarks();
   }
@@ -230,9 +235,7 @@ export class PlayScene extends BaseScene {
    */
   private drawAction(press: number): void {
     const shown = this.actionCaption !== '';
-    this.action.setVisible(shown);
-    this.actionSurface.setVisible(shown);
-    this.actionLabel.setVisible(shown);
+    this.actionRoot.setVisible(shown);
     if (!shown) return;
     const s = this.uiScale;
     const g = this.action.clear();
@@ -247,6 +250,7 @@ export class PlayScene extends BaseScene {
 
   private setAction(caption: string): void {
     if (this.actionCaption === caption) return;
+    if (caption !== '' && this.actionCaption === '') this.actionShownAt = performance.now() / 1000;
     this.actionCaption = caption;
     this.drawAction(0);
     this.actionPressDirty = true;
@@ -340,7 +344,7 @@ export class PlayScene extends BaseScene {
     const near = (at: { x: number; y: number }) => Math.abs(tap.x - at.x) < this.controlSize / 2 && Math.abs(tap.y - at.y) < this.controlSize / 2;
     if (near(this.muteAt)) {
       this.pressPuck('mute');
-      if (this.audio) { this.muted = toggleMute(this.audio); this.drawChrome(this.uiScale, 0); this.puckDirty = true; }
+      if (this.audio) this.muted = toggleMute(this.audio);
       return;
     }
     if (near(this.restartAt)) { this.pressPuck('restart'); void this.startRound(); return; }
@@ -469,6 +473,12 @@ export class PlayScene extends BaseScene {
       this.drawAction(Math.max(0, actionPress));
       this.actionPressDirty = actionPress > 0.001;
     }
+    if (this.actionCaption !== '') {
+      const { rise, alpha } = this.reducedMotion ? { rise: 0, alpha: 1 } : arrive(wall - this.actionShownAt, 0.5);
+      this.actionRoot.setY(rise * 24 * this.uiScale).setAlpha(alpha);
+    } else {
+      this.actionRoot.setY(0).setAlpha(1);
+    }
     // The verdict word rises and fades; one instance, so a quick double replaces rather
     // than stacks.
     const said = now - this.verdictAt;
@@ -532,9 +542,7 @@ export class PlayScene extends BaseScene {
     const word = result.kind === 'extra' ? 'Miss' : result.grade;
     const colour = this.verdictColour(result);
     this.verdictAt = now;
-    // setColor as well as resize: resize re-dresses the stroke and the drop for the new
-    // size, but the fill is the text's own and would otherwise stay on the vignette's ink.
-    this.verdict.setText(word).setColor(hex(colour));
+    this.verdict.setText(word);
     resize(this.verdict, 38 * this.uiScale, colour);
     if (result.grade === 'Perfect' && result.kind === 'hit' && !this.reducedMotion) {
       const { centres } = this.beads();
@@ -704,18 +712,27 @@ export class PlayScene extends BaseScene {
     }
   }
   private starAt(k: number): { x: number; y: number } {
-    return { x: this.viewport.safe.centerX + (k - 1) * 64 * this.uiScale, y: this.trackY };
+    return { x: this.viewport.safe.centerX + (k - 1) * 64 * this.uiScale, y: this.trackY - 14 * this.uiScale };
   }
   private drawStars(scales: readonly number[] = [1, 1, 1]): void {
     this.stars.clear();
     if (!this.summaryShown) return;
     const s = this.uiScale;
+    const { safe } = this.viewport;
+    // One cream plaque: stars above, the percentage below. They used to float on the
+    // timber of the bench, which is why empty outlines vanished and the score looked
+    // like a caption from another screen.
+    const plateW = 268 * s, plateH = 100 * s;
+    drawPanel(this.stars, new Rect(safe.centerX - plateW / 2, this.trackY - plateH / 2, plateW, plateH), s, {
+      fill: SHELL.puck, depth: 6, radius: 22,
+    });
     const earned = starsFor(meanAccuracy(this.results), this.spec);
+    const ink = this.definition.ink;
     for (let k = 0; k < 3; k++) {
       const scale = scales[k] ?? 1;
       if (scale <= 0) continue;
       const at = this.starAt(k);
-      drawStar(this.stars, at.x, at.y, 22 * s * scale, this.definition.ink, k < earned, k < earned ? 1 : 0.55);
+      drawStar(this.stars, at.x, at.y, 20 * s * scale, starColour(k < earned, ink, SHELL.puck));
     }
   }
   /** The stars land one after another, each overshooting its size, and an earned one throws confetti as it lands. */

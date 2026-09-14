@@ -41,6 +41,16 @@ export function contrastRatio(a: number, b: number): number {
 }
 
 /**
+ * How far an empty star is washed toward the plate it sits on. Earned stars use the
+ * full ink; empty ones stay filled (an outline-only star vanished on timber) but quieter.
+ */
+export const EMPTY_STAR_MIX = 0.68;
+
+export function starColour(earned: boolean, ink: number, plate: number): number {
+  return earned ? ink : mix(plate, ink, EMPTY_STAR_MIX);
+}
+
+/**
  * Outline for dressed type. Light paint (cream on timber, cream on coral) used to
  * self-shade into a muddy brown halo that sat at about 2.5:1 on the wood; the
  * workshop outline is the game's ink, the same dark the props use. Dark or saturated

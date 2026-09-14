@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hex, mix, shade, contrastRatio, relativeLuminance, typeStroke } from '../src/ui/colour';
+import { hex, mix, shade, contrastRatio, relativeLuminance, typeStroke, starColour } from '../src/ui/colour';
 import { PALETTE, SHELL } from '../src/config/theme';
 import { pressAmount } from '../src/ui/spring';
 import { dashes, pathLength, smoothPath, type Point } from '../src/ui/path';
@@ -109,6 +109,22 @@ describe('workshop contrast', () => {
     expect(contrastRatio(typeStroke(PALETTE.coral), PALETTE.paper)).toBeGreaterThan(4.5);
     expect(typeStroke(PALETTE.ink)).not.toBe(PALETTE.ink);
   });
+  it('keeps empty stars readable on their plate', () => {
+    const areas = [
+      { name: 'Grass', ground: 0xb0bb91, ink: 0x2c4629, paper: 0xf4f0e2 },
+      { name: 'Pavement', ground: 0xbdb7ae, ink: 0x35322f, paper: 0xf5f2ee },
+      { name: 'Sand', ground: 0xe3c88f, ink: 0x5a4224, paper: 0xfff7e6 },
+      { name: 'Snow', ground: 0xdfe8f0, ink: 0x2d4759, paper: 0xffffff },
+      { name: 'Dusk', ground: 0x433856, ink: 0xf3e7d8, paper: 0x2a2236 },
+    ] as const;
+    for (const area of areas) {
+      const plate = shade(area.paper, -0.03);
+      expect(contrastRatio(starColour(false, shade(area.ink, 0.1), plate), plate), area.name).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(starColour(true, shade(area.ink, 0.1), plate), plate), area.name).toBeGreaterThan(4.5);
+    }
+    expect(contrastRatio(starColour(false, PALETTE.ink, SHELL.puck), SHELL.puck)).toBeGreaterThanOrEqual(3);
+  });
+
   it('keeps locked level numbers readable on every area', () => {
     // Copied from AREAS so this file never loads the vignette registry (Phaser).
     const areas = [
