@@ -187,29 +187,26 @@ export class PlayScene extends BaseScene {
     this.mapAt = { x: safe.left + 56 * s, y: this.muteAt.y };
     this.drawChrome(s, 0);
     this.puckDirty = true;
-    const blockH = Math.max(CHROME.block.height * s, this.controlSize);
+    this.debug.setPosition(left, top + 360 * s).setFontSize(16 * s);
+    // The beat track sits in the band the stars take at the summary; the two never show
+    // at once, so they share it rather than competing for the frame.
+    this.trackY = safe.bottom - 248 * s;
+    this.trackWidth = Math.min(620 * s, safe.width - 80 * s);
+    this.verdictY = this.trackY - TRACK.plateHeight * s / 2 - 34 * s;
+    this.verdict.setPosition(safe.centerX, this.verdictY);
+    resize(this.verdict, 38 * s, this.verdictColour());
+    // Tighter than the menu's Play block, so stars and the percentage still fit above it.
+    const blockH = Math.max(96 * s, this.controlSize);
     this.actionRect.setTo(
       safe.centerX - CHROME.block.width * s / 2,
-      safe.bottom - CHROME.block.fromBottom * s - blockH,
+      safe.bottom - 72 * s - blockH,
       CHROME.block.width * s,
       blockH,
     );
     this.drawAction(0);
     this.actionPressDirty = true;
     resize(this.accuracy, 46 * s, ink);
-    this.accuracy.setPosition(safe.centerX, this.actionRect.y - 36 * s);
-    this.debug.setPosition(left, top + 360 * s).setFontSize(16 * s);
-    // The beat track sits in the band the stars take at the summary; the two never show
-    // at once, so they share it rather than competing for the frame.
-    // High enough that the plate and its shadow clear the caption line: the two do coexist,
-    // because the line left over from one task is still fading while the next is answered.
-    this.trackY = safe.bottom - 248 * s;
-    this.trackWidth = Math.min(620 * s, safe.width - 80 * s);
-    // The plate is sized to its own phrase in `drawBeatTrack`; only the band it occupies
-    // is fixed here, because the word above it must not move when the phrase gets longer.
-    this.verdictY = this.trackY - TRACK.plateHeight * s / 2 - 34 * s;
-    this.verdict.setPosition(safe.centerX, this.verdictY);
-    resize(this.verdict, 38 * s, this.verdictColour());
+    this.accuracy.setPosition(safe.centerX, (this.trackY + 28 * s + this.actionRect.y) / 2);
     this.drawStars();
     this.drawTaskMarks();
   }
@@ -707,7 +704,7 @@ export class PlayScene extends BaseScene {
     }
   }
   private starAt(k: number): { x: number; y: number } {
-    return { x: this.viewport.safe.centerX + (k - 1) * 64 * this.uiScale, y: this.actionRect.y - 108 * this.uiScale };
+    return { x: this.viewport.safe.centerX + (k - 1) * 64 * this.uiScale, y: this.trackY };
   }
   private drawStars(scales: readonly number[] = [1, 1, 1]): void {
     this.stars.clear();
