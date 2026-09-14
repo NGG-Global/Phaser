@@ -9,7 +9,13 @@ export const RHYTHM = {
   leadInBeats: 4,
   pumpMs: 20,
   stallMs: 250,
-  clockStampMaxAgeMs: 250,
+  /**
+   * How old a `getOutputTimestamp()` pair may be before it is ignored. Bluetooth A2DP
+   * routinely reports 200–400 ms of output delay; the previous 250 ms ceiling treated
+   * those stamps as stale, fell back to the render clock, and jumped the scene forward
+   * by the delay — which expired the player's targets before they heard them.
+   */
+  clockStampMaxAgeMs: 1000,
   goodPoints: 70,
   extraPenalty: 25,
 } as const;
