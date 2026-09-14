@@ -17,7 +17,7 @@ import { faces } from '@/ui/light';
 import { drawPanel, placeSurface, surface } from '@/ui/panel';
 import { SceneCurtain } from '@/ui/SceneCurtain';
 import { arrive } from '@/ui/spring';
-import { display, resize } from '@/ui/type';
+import { body, display, resize } from '@/ui/type';
 
 const PANEL = {
   cardHeight: 144, cardGap: 24,
@@ -92,9 +92,9 @@ export class SettingsScene extends BaseScene {
     this.controls = this.add.graphics().setDepth(2);
     this.beats = this.add.graphics().setDepth(2);
     this.headline = display(this, 'Settings', { size: 66, colour: LOOK.ink }).setDepth(1);
-    this.offsetValue = display(this, '', { size: 32, colour: LOOK.ink }).setOrigin(0, 0.5).setDepth(1);
-    this.soundValue = display(this, '', { size: 32, colour: LOOK.ink }).setOrigin(0, 0.5).setDepth(1);
-    this.progressValue = display(this, '', { size: 32, colour: LOOK.ink }).setOrigin(0, 0.5).setDepth(1);
+    this.offsetValue = body(this, '', { size: 32, colour: LOOK.ink }).setOrigin(0, 0.5).setDepth(1);
+    this.soundValue = body(this, '', { size: 32, colour: LOOK.ink }).setOrigin(0, 0.5).setDepth(1);
+    this.progressValue = body(this, '', { size: 32, colour: LOOK.ink }).setOrigin(0, 0.5).setDepth(1);
     this.buttons = {
       calibrate: this.button('Calibrate', false),
       sound: this.button('', false),
@@ -109,7 +109,7 @@ export class SettingsScene extends BaseScene {
     this.refreshCopy();
   }
   private button(caption: string, hero: boolean): Button {
-    const text = display(this, caption, { size: hero ? 30 : 25, colour: hero ? LOOK.cream : LOOK.ink }).setOrigin(0.5).setDepth(3);
+    const text = (hero ? display : body)(this, caption, { size: hero ? 30 : 25, colour: hero ? LOOK.cream : LOOK.ink }).setOrigin(0.5).setDepth(3);
     return { rect: new Phaser.Geom.Rectangle(), label: text, hero };
   }
 
@@ -134,7 +134,7 @@ export class SettingsScene extends BaseScene {
       const rect = this.cards[index]!.setTo(left, top + index * (card + gap), width, card);
       drawPanel(g, rect, s, { fill: LOOK.card, depth: 8 });
       placeSurface(this.surfaces[index]!, rect, s);
-      resize(value, 32 * s, LOOK.ink);
+      resize(value, 32 * s, LOOK.ink, STYLE.current, false);
       value.setPosition(left + 28 * s, rect.centerY - 2 * s);
       const w = Math.max(buttonWidth * s, control);
       button.rect.setTo(left + width - 24 * s - w, rect.centerY - control / 2, w, control);
@@ -159,7 +159,7 @@ export class SettingsScene extends BaseScene {
       const depth = button.hero ? 14 : 8;
       drawPanel(g, button.rect, s, { fill: button.hero ? LOOK.done : LOOK.button, depth, press: p, hero: button.hero, radius: Math.min(button.rect.height / 2, STYLE.current.radius) });
       const size = button.hero ? 30 * s : 25 * s;
-      resize(button.label, size, button.hero ? LOOK.cream : LOOK.ink);
+      resize(button.label, size, button.hero ? LOOK.cream : LOOK.ink, STYLE.current, button.hero);
       button.label.setPosition(button.rect.centerX, button.rect.centerY + depth * s * p * 0.8);
     }
   }

@@ -539,7 +539,7 @@ export class MapScene extends BaseScene {
       const node = this.nodes[i]!;
       const p = this.puckOf(i);
       const text = this.numbers[i]!.setPosition(node.x, node.y).setScale(1);
-      resize(text, p.size, p.number);
+      resize(text, p.size, p.number, STYLE.current, p.state !== 'locked');
       text.setColor(`#${p.number.toString(16).padStart(6, '0')}`);
       const plateY = node.y + p.r + (p.depth + 24) * s;
       if (p.state === 'frontier') {
@@ -568,7 +568,7 @@ export class MapScene extends BaseScene {
   private drawStars(g: Phaser.GameObjects.Graphics, x: number, y: number, stars: number, area: Area, s: number): void {
     drawPanel(g, new Phaser.Geom.Rectangle(x - 46 * s, y - 17 * s, 92 * s, 34 * s), s, { fill: shade(area.paper, -0.03), depth: 4, radius: 17 });
     for (let k = 0; k < 3; k++) {
-      drawStar(g, x + (k - 1) * 24 * s, y, 9 * s, k < stars ? shade(area.ink, 0.1) : area.ink, k < stars, k < stars ? 1 : 0.45);
+      drawStar(g, x + (k - 1) * 24 * s, y, 9 * s, k < stars ? shade(area.ink, 0.1) : area.ink, k < stars, k < stars ? 1 : 0.7);
     }
   }
 

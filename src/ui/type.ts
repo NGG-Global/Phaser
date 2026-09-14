@@ -85,7 +85,12 @@ export function label(scene: Phaser.Scene, text: string, spec: TypeSpec, t = STY
  */
 export function resize(text: Phaser.GameObjects.Text, size: number, colour: number, t = STYLE.current, dress = true): void {
   text.setFontSize(size);
-  if (!dress) return;
+  if (!dress) {
+    // A previous dressed size would otherwise leave a headline stroke on a caption.
+    text.setStroke('#000000', 0);
+    text.setShadow(0, 0, '#000000', 0, false, false);
+    return;
+  }
   const stroke = strokeFor(t, size);
   text.setStroke(hex(typeStroke(colour)), stroke);
   const sh = shadowFor(colour, size);

@@ -718,7 +718,7 @@ export class PlayScene extends BaseScene {
       const scale = scales[k] ?? 1;
       if (scale <= 0) continue;
       const at = this.starAt(k);
-      drawStar(this.stars, at.x, at.y, 22 * s * scale, this.definition.ink, k < earned, k < earned ? 1 : 0.45);
+      drawStar(this.stars, at.x, at.y, 22 * s * scale, this.definition.ink, k < earned, k < earned ? 1 : 0.55);
     }
   }
   /** The stars land one after another, each overshooting its size, and an earned one throws confetti as it lands. */
