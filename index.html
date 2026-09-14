@@ -32,6 +32,22 @@
     <title>Tiny Tempo — Rhythm in the Everyday</title>
 
     <style>
+      @font-face {
+        font-family: 'Fredoka';
+        src: url('./fonts/fredoka/Fredoka.ttf') format('truetype');
+        font-weight: 300 700;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      @font-face {
+        font-family: 'Nunito';
+        src: url('./fonts/nunito/Nunito.ttf') format('truetype');
+        font-weight: 200 1000;
+        font-style: normal;
+        font-display: swap;
+      }
+
       :root {
 /* Shell palette. Mirrored in src/config/theme.ts (PALETTE), the theme-color
            meta tag above, capacitor.config.ts and android values/colors.xml. These
@@ -63,7 +79,7 @@
         overflow: hidden;
         background: var(--shell-bg);
         color: var(--shell-fg);
-        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        font-family: 'Nunito', system-ui, sans-serif;
 
         /* Kill browser-level touch behaviour that competes with game input:
            pull-to-refresh, overscroll glow, long-press selection, tap flash. */
@@ -119,9 +135,9 @@
 
       .overlay__title {
         margin: 0;
-        font-size: 1.05rem;
-        font-weight: 600;
-        letter-spacing: 0.01em;
+        font-family: 'Fredoka', system-ui, sans-serif;
+        font-size: 1.35rem;
+        font-weight: 700;
       }
 
       .overlay__note {
@@ -197,9 +213,9 @@
       reads as a broken page, so the shell shows this immediately and the game
       hides it once the first scene is running.
     -->
-    <div class="overlay" id="boot-overlay">
+    <div class="overlay" id="boot-overlay" role="status" aria-label="Loading">
       <div class="spinner"></div>
-      <p class="overlay__title">Loading</p>
+      <p class="overlay__title" id="boot-title" hidden></p>
       <p class="overlay__note" id="boot-error" hidden></p>
     </div>
 
@@ -209,8 +225,7 @@
     -->
     <div class="overlay" id="orientation-overlay" hidden>
       <div class="rotate-icon"></div>
-      <p class="overlay__title">Rotate your device</p>
-      <p class="overlay__note">This game is designed for portrait orientation.</p>
+      <p class="overlay__title">Portrait, please</p>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

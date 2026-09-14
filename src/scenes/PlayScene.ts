@@ -23,7 +23,7 @@ import { hex, mix, shade } from '@/ui/colour';
 import { drawDisc, drawPanel, Rect } from '@/ui/panel';
 import { Feedback } from '@/ui/feedback';
 import { arrive, overshoot, settle, squash, stagger } from '@/ui/spring';
-import { body, display, label, resize } from '@/ui/type';
+import { display, resize } from '@/ui/type';
 import { drawStar } from '@/ui/star';
 import { SceneCurtain } from '@/ui/SceneCurtain';
 import { VIGNETTES } from '@/vignettes/registry';
@@ -64,8 +64,6 @@ export class PlayScene extends BaseScene {
   private get definition() { return VIGNETTES.find(v => v.id === this.spec.vignette) ?? VIGNETTES[0]!; }
   private stars!: Phaser.GameObjects.Graphics;
   private headline!: Phaser.GameObjects.Text;
-  private edition!: Phaser.GameObjects.Text;
-  private caption!: Phaser.GameObjects.Text;
   private invitation!: Phaser.GameObjects.Text;
   private accuracy!: Phaser.GameObjects.Text;
   /** The three pucks — map, restart, mute — drawn as one baked graphic. */
@@ -128,11 +126,11 @@ export class PlayScene extends BaseScene {
     const ink = this.definition.ink;
     this.stars = this.add.graphics();
     this.fx = new Feedback(this, 5);
-    this.edition = label(this, `Level ${this.spec.level}`, { size: 15, colour: ink }).setOrigin(0.5, 0).setAlpha(0.75);
     this.headline = display(this, this.definition.intro, { size: 88, colour: ink, align: 'center' }).setOrigin(0.5, 0);
-    this.caption = body(this, this.definition.title, { size: 24, colour: ink, align: 'center' }).setOrigin(0.5);
-    this.invitation = label(this, 'Tap anywhere to begin', { size: 16, colour: ink }).setOrigin(0.5).setAlpha(0.8);
-    this.accuracy = label(this, '', { size: 16, colour: ink }).setOrigin(0.5);
+    // Map entry starts automatically. This line is reserved for a result, pause or error,
+    // rather than repeating instructions throughout normal play.
+    this.invitation = display(this, '', { size: 30, colour: ink }).setOrigin(0.5).setAlpha(0.82);
+    this.accuracy = display(this, '', { size: 46, colour: ink }).setOrigin(0.5);
     this.chrome = this.add.graphics();
     this.marks = this.add.graphics();
     this.verdict = display(this, '', { size: 38, colour: ink, align: 'center' }).setOrigin(0.5).setAlpha(0).setDepth(6);
@@ -165,10 +163,8 @@ export class PlayScene extends BaseScene {
     const left = safe.centerX - 310 * s;
     const top = safe.top;
     const ink = this.definition.ink;
-    // The HUD is a centred stack under the pucks — the cue, then the progress beads —
-    // rather than a text column down the left edge.
-    this.edition.setPosition(safe.centerX, top + 40 * s).setFontSize(Math.max(15 * s, 8 * this.viewport.unitScale));
-    this.headlineY = top + 96 * s;
+    // The phase cue and task beads are the whole HUD. Level metadata lives on the map.
+    this.headlineY = top + 84 * s;
     this.headlineSize = (this.controller?.active ? 48 : 88) * s;
     resize(this.headline, this.headlineSize, ink);
     this.headline.setPosition(safe.centerX, this.headlineY).setLineSpacing(-12 * s);
@@ -178,11 +174,10 @@ export class PlayScene extends BaseScene {
     this.restartAt = { x: this.muteAt.x - gap, y: this.muteAt.y };
     this.mapAt = { x: safe.left + 56 * s, y: this.muteAt.y };
     this.drawChrome(s);
-    // Floors in CSS pixels, because these are read at arm's length on a phone: the caption
-    // never drops below 13 px and the labels never below 10 px.
-    this.caption.setFontSize(Math.max(26 * s, 13 * this.viewport.unitScale)).setPosition(safe.centerX, safe.bottom - 160 * s);
-    this.invitation.setFontSize(Math.max(18 * s, 10 * this.viewport.unitScale)).setPosition(safe.centerX, safe.bottom - 72 * s);
-    this.accuracy.setFontSize(Math.max(18 * s, 10 * this.viewport.unitScale)).setPosition(safe.centerX, safe.bottom - 115 * s);
+    resize(this.invitation, 30 * s, ink);
+    this.invitation.setPosition(safe.centerX, safe.bottom - 68 * s);
+    resize(this.accuracy, 46 * s, ink);
+    this.accuracy.setPosition(safe.centerX, safe.bottom - 122 * s);
     this.debug.setPosition(left, top + 360 * s).setFontSize(16 * s);
     // The beat track sits in the band the stars take at the summary; the two never show
     // at once, so they share it rather than competing for the frame.
@@ -233,7 +228,7 @@ export class PlayScene extends BaseScene {
     this.demoCount = 0;
     if (this.blocked()) return;
     this.starting = true;
-    this.invitation.setText('ONE MOMENT');
+    this.invitation.setText('…');
     try {
       if (!this.controller) {
         this.audio = sharedAudio(this);
@@ -257,7 +252,7 @@ export class PlayScene extends BaseScene {
       }
       await this.audio!.unlock();
       if (this.disposed || request !== this.startRequest || this.blocked()) return;
-      this.invitation.setText('LOADING MUSIC');
+      this.invitation.setText('…');
       await this.audio!.music.load();
       if (this.disposed || request !== this.startRequest || this.blocked()) return;
       this.starting = false;
@@ -271,9 +266,9 @@ export class PlayScene extends BaseScene {
       this.controller?.dispose();
       this.audio?.cancel();
       this.audio?.music.stop();
-      this.changeHeadline('One more\ntry.');
-      this.caption.setText(error instanceof Error ? error.message : 'Sound could not start.');
-      this.invitation.setText('TAP TO RETRY');
+      console.error('Unable to start round', error);
+      this.changeHeadline('No sound');
+      this.invitation.setText('Retry');
     }
   }
   private beginTask(startAt: number): void {
@@ -281,7 +276,6 @@ export class PlayScene extends BaseScene {
     this.demoCount = 0;
     this.finishUnlock = Infinity;
     this.accuracy.setText('');
-    this.edition.setText(`LEVEL ${String(this.spec.level).padStart(2, '0')}`);
     this.outcomes = this.task.pattern.hits.map(() => 'pending');
     this.struckIndex = -1;
     this.struckAt = this.extraAt = this.verdictAt = -Infinity;
@@ -400,7 +394,6 @@ export class PlayScene extends BaseScene {
     const headlineSize = (playing ? 48 : 88) * this.uiScale;
     if (headlineSize !== this.headlineSize) { this.headlineSize = headlineSize; resize(this.headline, headlineSize, this.headlineColour); }
     this.headline.setAlpha(reveal * endReveal).setY(this.headlineY + (1 - reveal * endReveal) * 12 * this.uiScale);
-    this.caption.setAlpha(endReveal);
     if (this.summaryShown) {
       this.accuracy.setAlpha(this.reducedMotion ? 1 : easeOut((now - this.summaryAt) / 0.45));
       this.animateStars(now);
@@ -432,14 +425,13 @@ export class PlayScene extends BaseScene {
     // A lead-in longer than the level's opening bar is the breather, and it is the only
     // place in a level where nothing is being asked of the player.
     const resting = this.task.leadBeats > RHYTHM.leadInBeats;
-    if (phase === 'prepare') { this.changeHeadline(resting ? 'Breathe' : 'Watch'); this.caption.setText(''); this.invitation.setText(''); }
-    if (phase === 'demonstrate') { this.changeHeadline('Watch'); this.caption.setText(''); }
+    if (phase === 'prepare') { this.changeHeadline(resting ? 'Breathe' : 'Watch'); this.invitation.setText(''); }
+    if (phase === 'demonstrate') this.changeHeadline('Watch');
     // The demonstration runs straight into the response, so this flip is the only thing
     // that tells the player their turn has started. It cannot be deferred a frame. The
     // word, its colour and the beat track's beads all turn over together.
     if (phase === 'respond') {
       this.changeHeadline('Your turn', PALETTE.coral);
-      this.caption.setText('');
       this.invitation.setText('');
       this.demoCount = 0;
       this.struckIndex = -1;
@@ -594,8 +586,7 @@ export class PlayScene extends BaseScene {
     }
     const copy = strong ? this.definition.success : this.definition.rough;
     this.changeHeadline(copy[0]);
-    this.caption.setText(copy[1]);
-    this.accuracy.setText(this.debugMode ? `${Math.round(result.accuracy)}% IN TIME` : '');
+    this.accuracy.setText(this.debugMode ? `${Math.round(result.accuracy)}%` : '');
     this.invitation.setText('');
   }
   /** Idempotent: the level is scored and saved once, however often this is reached. */
@@ -615,16 +606,9 @@ export class PlayScene extends BaseScene {
     const accuracy = meanAccuracy(this.results);
     this.recordOutcome();
     const outcome = this.outcome!;
-    const stars = starsFor(accuracy, this.spec);
-    this.changeHeadline(outcome.cleared ? `Level ${this.spec.level}\ncleared.` : 'Not quite\nyet.');
-    this.caption.setText(this.saveFailed
-      // Silently losing a clear is worse than saying so once.
-      ? 'Cleared — but this device would not save it.'
-      : outcome.cleared
-      ? (stars === 3 ? 'Every beat where it belongs.' : stars === 2 ? 'Steady hands.' : 'That will do nicely.')
-      : `${this.spec.clearAccuracy}% in time clears this one.`);
-    this.accuracy.setText(`${Math.round(accuracy)}% IN TIME`);
-    this.invitation.setText(outcome.cleared ? 'TAP TO CONTINUE' : 'TAP TO TRY AGAIN');
+    this.changeHeadline(this.saveFailed ? 'Couldn’t save' : outcome.cleared ? 'Cleared' : 'Again?');
+    this.accuracy.setText(`${Math.round(accuracy)}%`);
+    this.invitation.setText(outcome.cleared ? 'Continue' : 'Try again');
     this.drawStars();
     this.drawTaskMarks();
   }
@@ -693,9 +677,8 @@ export class PlayScene extends BaseScene {
   }
   private showPause(): void {
     this.vignette.pause();
-    this.changeHeadline('Take a\nbreath.');
-    this.caption.setText('We’ll take it from the top.');
-    this.invitation.setText('TAP TO RESUME');
+    this.changeHeadline('Paused');
+    this.invitation.setText('Resume');
   }
   private interrupt(): void {
     ++this.startRequest;

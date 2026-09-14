@@ -38,6 +38,7 @@ export class Backdrop {
   /** Travel of the pool when the turn passes to the player: down the frame and in toward it. */
   private readonly travel = { x: 0, y: 0 };
   private opened = 0;
+  private destroyed = false;
 
   public constructor(private readonly scene: Phaser.Scene, private readonly paper: number, private readonly glowColour: number, options: BackdropOptions = {}) {
     this.glowAt = options.glowAt ?? DEFAULT_GLOW_AT;
@@ -80,12 +81,14 @@ export class Backdrop {
   }
 
   private ground(): void {
-    if (this.paper !== PALETTE.paper) this.scene.cameras.main.setBackgroundColor(this.paper);
+    if (this.paper !== PALETTE.paper) this.scene.cameras?.main?.setBackgroundColor(this.paper);
   }
 
   public destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
     // A scene's camera outlives its vignette: the next one must not inherit this paper.
-    if (this.paper !== PALETTE.paper) this.scene.cameras.main.setBackgroundColor(PALETTE.paper);
+    if (this.paper !== PALETTE.paper) this.scene.cameras?.main?.setBackgroundColor(PALETTE.paper);
     this.glow.destroy();
     this.fibre.destroy();
   }

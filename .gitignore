@@ -7,6 +7,8 @@ dist-ssr/
 
 # Vite / tooling caches
 .vite/
+test-results/
+playwright-report/
 *.tsbuildinfo
 
 # Editor / OS

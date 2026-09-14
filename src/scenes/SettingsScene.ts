@@ -1,14 +1,13 @@
 import Phaser from 'phaser';
 import { applyCalibration, currentAudio, isMuted, sharedAudio, toggleMute } from '@/audio/sharedAudio';
-import { MUSIC } from '@/config/music';
 import { SceneKey } from '@/config/scenes';
 import { STYLE } from '@/config/style';
 import { PALETTE } from '@/config/theme';
 import { BaseScene } from '@/core/BaseScene';
 import { reducedMotion } from '@/core/motionPreference';
-import { areaOf } from '@/game/levels';
+import { CalibrationRun, CALIBRATION } from '@/game/CalibrationRun';
 import { clearProgress, loadProgress } from '@/game/progress';
-import { calibrationFrom, CALIBRATION_TAPS, loadSettings } from '@/game/settings';
+import { CALIBRATION_TAPS, loadSettings } from '@/game/settings';
 import { TapInput, type Tap } from '@/input/TapInput';
 import { MaterialKey } from '@/textures/materials';
 import { Backdrop } from '@/ui/backdrop';
@@ -17,12 +16,10 @@ import { faces } from '@/ui/light';
 import { drawPanel, placeSurface, surface } from '@/ui/panel';
 import { SceneCurtain } from '@/ui/SceneCurtain';
 import { spring } from '@/ui/spring';
-import { body, display, label, resize } from '@/ui/type';
+import { display, resize } from '@/ui/type';
 
 const PANEL = {
-  cardHeight: 156, cardGap: 22, pressSec: 0.42,
-  /** Four beats of count-in before a tap counts, then room for twice the taps asked for. */
-  leadBeats: 4, measureBeats: 20,
+  cardHeight: 144, cardGap: 24, pressSec: 0.42,
 } as const;
 
 /** The few colours the scene owns; the paper is the game's clear colour. */
@@ -49,16 +46,10 @@ export class SettingsScene extends BaseScene {
   private beats!: Phaser.GameObjects.Graphics;
   private surfaces: Phaser.GameObjects.TileSprite[] = [];
   private cards: Phaser.Geom.Rectangle[] = [];
-  private eyebrow!: Phaser.GameObjects.Text;
   private headline!: Phaser.GameObjects.Text;
-  private offsetLabel!: Phaser.GameObjects.Text;
   private offsetValue!: Phaser.GameObjects.Text;
-  private offsetNote!: Phaser.GameObjects.Text;
-  private soundLabel!: Phaser.GameObjects.Text;
   private soundValue!: Phaser.GameObjects.Text;
-  private progressLabel!: Phaser.GameObjects.Text;
   private progressValue!: Phaser.GameObjects.Text;
-  private footnote!: Phaser.GameObjects.Text;
   private buttons: Record<'calibrate' | 'sound' | 'reset' | 'done', Button> = null!;
   private taps!: TapInput;
   private curtain!: SceneCurtain;
@@ -67,9 +58,7 @@ export class SettingsScene extends BaseScene {
   private phase: Phase = 'idle';
   private calibrationMs = 0;
   private measuredMs: number | null = null;
-  private residuals: number[] = [];
-  private origin = 0;
-  private period = 60 / MUSIC.sourceBpm;
+  private run: CalibrationRun | null = null;
   private pressedAt = -Infinity;
   private pressed: Button | null = null;
   private pressDirty = false;
@@ -86,7 +75,7 @@ export class SettingsScene extends BaseScene {
     this.from = data?.from === SceneKey.Map ? SceneKey.Map : SceneKey.Menu;
     this.phase = 'idle';
     this.resetArmed = false;
-    this.residuals = [];
+    this.run = null;
     this.measuredMs = null;
     this.pressedAt = -Infinity;
     this.pressed = null;
@@ -97,19 +86,10 @@ export class SettingsScene extends BaseScene {
     this.cards = [0, 1, 2].map(() => new Phaser.Geom.Rectangle());
     this.controls = this.add.graphics().setDepth(2);
     this.beats = this.add.graphics().setDepth(2);
-    this.eyebrow = label(this, 'Tiny Tempo', { size: 15, colour: LOOK.ink }).setDepth(1).setAlpha(0.7);
     this.headline = display(this, 'Settings', { size: 66, colour: LOOK.ink }).setDepth(1);
-    this.offsetLabel = label(this, 'Audio offset', { size: 12, colour: LOOK.ink }).setDepth(1).setAlpha(0.6);
-    this.offsetValue = display(this, '', { size: 28, colour: LOOK.ink }).setDepth(1);
-    this.offsetNote = body(this, '', { size: 16, colour: LOOK.ink }).setDepth(1).setAlpha(0.8);
-    this.soundLabel = label(this, 'Sound', { size: 12, colour: LOOK.ink }).setDepth(1).setAlpha(0.6);
-    this.soundValue = display(this, '', { size: 28, colour: LOOK.ink }).setDepth(1);
-    this.progressLabel = label(this, 'Progress', { size: 12, colour: LOOK.ink }).setDepth(1).setAlpha(0.6);
-    this.progressValue = display(this, '', { size: 28, colour: LOOK.ink }).setDepth(1);
-    this.footnote = body(this,
-      'Calibration matters most on Bluetooth headphones and speakers, where Android can '
-      + 'delay output well past the timing window. Wired output rarely needs it.',
-      { size: 17, colour: LOOK.ink }).setDepth(1).setAlpha(0.7);
+    this.offsetValue = display(this, '', { size: 32, colour: LOOK.ink }).setOrigin(0, 0.5).setDepth(1);
+    this.soundValue = display(this, '', { size: 32, colour: LOOK.ink }).setOrigin(0, 0.5).setDepth(1);
+    this.progressValue = display(this, '', { size: 32, colour: LOOK.ink }).setOrigin(0, 0.5).setDepth(1);
     this.buttons = {
       calibrate: this.button('Calibrate', false),
       sound: this.button('', false),
@@ -124,9 +104,7 @@ export class SettingsScene extends BaseScene {
     this.refreshCopy();
   }
   private button(caption: string, hero: boolean): Button {
-    const text = hero
-      ? display(this, caption, { size: 30, colour: LOOK.cream }).setOrigin(0.5).setDepth(3)
-      : label(this, caption, { size: 15, colour: LOOK.ink }).setOrigin(0.5).setDepth(3);
+    const text = display(this, caption, { size: hero ? 30 : 25, colour: hero ? LOOK.cream : LOOK.ink }).setOrigin(0.5).setDepth(3);
     return { rect: new Phaser.Geom.Rectangle(), label: text, hero };
   }
 
@@ -137,31 +115,27 @@ export class SettingsScene extends BaseScene {
     this.backdrop.layout(this.viewport);
     const left = safe.centerX - 322 * s;
     const width = 644 * s;
-    this.eyebrow.setPosition(left, safe.top + 40 * s).setFontSize(Math.max(15 * s, 8 * this.viewport.unitScale));
     resize(this.headline, 66 * s, LOOK.ink);
-    this.headline.setPosition(left - 2 * s, safe.top + 62 * s);
-    const top = safe.top + 184 * s;
+    this.headline.setPosition(left - 2 * s, safe.top + 58 * s);
+    const top = safe.top + 164 * s;
     const card = PANEL.cardHeight * s;
     const gap = PANEL.cardGap * s;
     // Buttons keep a full touch target even where the card is short.
     const control = Math.max(88 * s, 48 * this.viewport.unitScale);
     const g = this.plates.clear();
-    const place = (index: number, caption: Phaser.GameObjects.Text, value: Phaser.GameObjects.Text, button: Button, buttonWidth: number) => {
+    const place = (index: number, value: Phaser.GameObjects.Text, button: Button, buttonWidth: number) => {
       const rect = this.cards[index]!.setTo(left, top + index * (card + gap), width, card);
       drawPanel(g, rect, s, { fill: LOOK.card, depth: 8 });
       placeSurface(this.surfaces[index]!, rect, s);
-      caption.setPosition(left + 26 * s, rect.y + 22 * s).setFontSize(Math.max(12 * s, 8 * this.viewport.unitScale));
-      resize(value, 28 * s, LOOK.ink);
-      value.setPosition(left + 26 * s, rect.y + 44 * s);
+      resize(value, 32 * s, LOOK.ink);
+      value.setPosition(left + 28 * s, rect.centerY - 2 * s);
       const w = Math.max(buttonWidth * s, control);
-      button.rect.setTo(left + width - 26 * s - w, rect.y + card - 26 * s - control, w, control);
+      button.rect.setTo(left + width - 24 * s - w, rect.centerY - control / 2, w, control);
     };
-    place(0, this.offsetLabel, this.offsetValue, this.buttons.calibrate, 210);
-    this.offsetNote.setFontSize(Math.max(16 * s, 10 * this.viewport.unitScale)).setPosition(left + 26 * s, top + 92 * s).setWordWrapWidth(width - 290 * s);
-    this.beadRow = { x: left + 26 * s + 7 * s, y: top + 128 * s, gap: 26 * s, radius: 6 * s };
-    place(1, this.soundLabel, this.soundValue, this.buttons.sound, 150);
-    place(2, this.progressLabel, this.progressValue, this.buttons.reset, 150);
-    this.footnote.setFontSize(Math.max(17 * s, 11 * this.viewport.unitScale)).setPosition(left + 4 * s, top + 3 * (card + gap) + 16 * s).setWordWrapWidth(width - 8 * s);
+    place(0, this.offsetValue, this.buttons.calibrate, 190);
+    this.beadRow = { x: left + 34 * s, y: top + card - 24 * s, gap: 26 * s, radius: 6 * s };
+    place(1, this.soundValue, this.buttons.sound, 150);
+    place(2, this.progressValue, this.buttons.reset, 160);
     const done = this.buttons.done;
     const doneHeight = Math.max(96 * s, control);
     done.rect.setTo(safe.centerX - 200 * s, safe.bottom - 132 * s - doneHeight, 400 * s, doneHeight);
@@ -177,8 +151,8 @@ export class SettingsScene extends BaseScene {
       const p = this.pressed === button ? press : 0;
       const depth = button.hero ? 14 : 8;
       drawPanel(g, button.rect, s, { fill: button.hero ? LOOK.done : LOOK.button, depth, press: p, hero: button.hero, radius: Math.min(button.rect.height / 2, STYLE.current.radius) });
-      const size = button.hero ? 30 * s : Math.max(15 * s, 9 * this.viewport.unitScale);
-      if (button.hero) resize(button.label, size, LOOK.cream); else button.label.setFontSize(size);
+      const size = button.hero ? 30 * s : 25 * s;
+      resize(button.label, size, button.hero ? LOOK.cream : LOOK.ink);
       button.label.setPosition(button.rect.centerX, button.rect.centerY + depth * s * p * 0.8);
     }
   }
@@ -188,17 +162,14 @@ export class SettingsScene extends BaseScene {
     const progress = loadProgress();
     const shown = this.phase === 'measured' && this.measuredMs !== null ? this.measuredMs : this.calibrationMs;
     // A typographic minus, to match the rest of the game's type rather than a hyphen.
-    this.offsetValue.setText(`${shown > 0 ? '+' : ''}${String(shown).replace('-', '−')} ms`);
-    this.offsetNote.setText(
-      this.phase === 'counting' ? `Tap on the beat.  ${this.residuals.length} of ${CALIBRATION_TAPS}`
-      : this.phase === 'measured' ? 'Measured. Keep it, or run it again.'
-      : this.phase === 'failed' ? 'Too few taps landed near a beat. Try again.'
-      : 'Taps are judged this much earlier, to match output your device delays.');
-    this.buttons.calibrate.label.setText(this.phase === 'counting' ? 'STOP' : this.phase === 'measured' ? 'KEEP IT' : 'CALIBRATE');
-    this.soundValue.setText(muted ? 'Muted' : 'On');
-    this.buttons.sound.label.setText(muted ? 'UNMUTE' : 'MUTE');
-    this.progressValue.setText(progress.unlocked === 1 ? 'A new road' : `Level ${progress.unlocked} · ${areaOf(progress.unlocked).name}`);
-    this.buttons.reset.label.setText(this.resetArmed ? 'TAP AGAIN' : 'RESET');
+    this.offsetValue.setText(this.phase === 'counting' ? `${this.run?.count ?? 0} / ${CALIBRATION_TAPS}`
+      : this.phase === 'failed' ? 'Try again'
+      : `${shown > 0 ? '+' : ''}${String(shown).replace('-', '−')} ms`);
+    this.buttons.calibrate.label.setText(this.phase === 'counting' ? 'Stop' : this.phase === 'measured' ? 'Keep' : this.phase === 'failed' ? 'Retry' : 'Calibrate');
+    this.soundValue.setText(muted ? 'Sound off' : 'Sound on');
+    this.buttons.sound.label.setText(muted ? 'Unmute' : 'Mute');
+    this.progressValue.setText(this.resetArmed ? 'Reset progress?' : `Level ${progress.unlocked}`);
+    this.buttons.reset.label.setText(this.resetArmed ? 'Confirm' : 'Reset');
   }
 
   public override update(): void {
@@ -224,7 +195,8 @@ export class SettingsScene extends BaseScene {
     const g = this.beats.clear();
     this.beadsShown = true;
     const s = this.uiScale;
-    const elapsed = (audio.context.currentTime - this.origin) / this.period;
+    if (!this.run) return;
+    const elapsed = this.run.beatAt(audio.context.currentTime);
     const beat = Math.floor(Math.max(0, elapsed));
     const phase = Math.max(0, elapsed) % 1;
     const still = this.reducedMotion;
@@ -237,7 +209,7 @@ export class SettingsScene extends BaseScene {
       g.fillStyle(f.face, 1).fillCircle(x, this.beadRow.y, r);
       g.fillStyle(f.rim, 0.8).fillCircle(x - r * 0.3, this.beadRow.y - r * 0.35, r * 0.3);
     }
-    if (elapsed > PANEL.leadBeats + PANEL.measureBeats) this.finishCalibration();
+    if (audio.context.currentTime > this.run.end) this.finishCalibration();
   }
 
   private handleTap(tap: Tap): void {
@@ -279,38 +251,32 @@ export class SettingsScene extends BaseScene {
       await audio.unlock();
     } catch {
       this.phase = 'failed';
-      this.offsetNote.setText('Sound is blocked on this device. Tap again to retry.');
+      this.refreshCopy();
       return;
     }
     audio.clock.refresh();
-    this.residuals = [];
     this.phase = 'counting';
-    this.origin = audio.context.currentTime + 0.6;
-    for (let beat = 0; beat < PANEL.leadBeats + PANEL.measureBeats; beat++) {
-      audio.play(this.origin + beat * this.period, beat % 4 === 0 ? 'ready' : 'count');
+    this.run = new CalibrationRun(audio.context.currentTime + CALIBRATION.startLeadSec, this.calibrationMs);
+    for (let beat = 0; beat < CALIBRATION.leadBeats + CALIBRATION.measureBeats; beat++) {
+      audio.play(this.run.origin + beat * this.run.period, beat % 4 === 0 ? 'ready' : 'count');
     }
     this.refreshCopy();
   }
 
   private recordTap(tap: Tap): void {
     const audio = currentAudio(this);
-    if (!audio) return;
+    if (!audio || !this.run) return;
     audio.clock.refresh();
     const at = audio.clock.input(tap.timestamp);
-    const beat = Math.round((at - this.origin) / this.period);
-    // Ignore the count-in, anything past the last scheduled beat, and a tap nearer the gap
-    // between beats than to either of them: none of those says anything about latency.
-    if (beat < PANEL.leadBeats || beat >= PANEL.leadBeats + PANEL.measureBeats) return;
-    const residual = (at - (this.origin + beat * this.period)) * 1000;
-    if (Math.abs(residual) >= this.period * 500 * 0.8) return;
-    this.residuals.push(residual);
-    if (this.residuals.length >= CALIBRATION_TAPS) this.finishCalibration();
+    if (!this.run.tap(at)) return;
+    if (this.run.complete) this.finishCalibration();
     else this.refreshCopy();
   }
 
   private finishCalibration(): void {
     currentAudio(this)?.cancel();
-    const measured = calibrationFrom(this.calibrationMs, this.residuals);
+    const measured = this.run?.result() ?? null;
+    this.run = null;
     this.measuredMs = measured;
     this.phase = measured === null ? 'failed' : 'measured';
     this.refreshCopy();
@@ -322,7 +288,7 @@ export class SettingsScene extends BaseScene {
     this.resetArmed = false;
     const cleared = clearProgress();
     this.refreshCopy();
-    if (!cleared) this.progressValue.setText('This device would not clear it.');
+    if (!cleared) this.progressValue.setText('Couldn’t reset');
   }
 
   private shutdown(): void {

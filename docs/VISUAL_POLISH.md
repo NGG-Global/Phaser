@@ -1,21 +1,20 @@
-# Visual and navigation refinement
+# Workshop visual system
 
-Superseded in part by the workshop treatment (`src/config/style.ts`), which
-replaced the printed-cover composition described below with objects under one
-light: the title hangs from the top edge on ropes, the action is a block, and
-every control is a puck. What still holds is the navigation behaviour, the
-boundaries and the map's input model.
+The app uses one tactile workshop treatment (`src/config/style.ts`): objects sit
+under one warm key light, the title hangs from the top edge on ropes, primary
+actions are physical blocks, and compact controls are pucks. Fredoka is the
+display face and Nunito is the supporting face, including the DOM shell shown
+before Phaser has loaded.
 
 ## Design
 
-- The title was a printed-cover composition: larger serif type, a quieter caption,
-  coral tempo dots, and a matte full-width action. The next-level information sat
-  directly on the paper instead of inside a glossy score-style card.
+- The title screen is an object composition, not a menu: hanging wooden title,
+  floating hammer and nail, tempo beads and one coral Play block.
 - Hammer has an opt-in cover framing that leaves room for the title on short
   screens. Its gameplay scale, poses, sounds and contact timing are unchanged.
-- The road uses a softer sage/sand palette, a coral current-level marker and a
-  persistent next-level dock. Locked levels remain discoverable but subordinate.
-  Tapping one gives a short, local nudge and explains the next available step.
+- The road uses a sage/sand palette, a coral current-level marker and a persistent
+  next-level dock. Locked levels remain discoverable but subordinate. Their ring,
+  squash and padlock provide local feedback without an explanatory message.
 - Navigation uses a 320 ms diagonal sweep: a card of paper with a coral edge and
   an ink edge ahead of it, both weighted by the treatment's outline. A completed
   outgoing sweep remains opaque until scene shutdown, avoiding a flash when Phaser
@@ -23,6 +22,12 @@ boundaries and the map's input model.
 - Gameplay replaces the task-number string with quiet progress marks and gently
   reveals the result stars. Essential navigation targets are separated by at
   least 56 CSS pixels, with at least 48 CSS pixel hit areas.
+- Copy is deliberately sparse. The scene carries meaning through composition,
+  motion and object state; text is reserved for the current area, vignette name,
+  phase handoff, result, and actionable settings. Uppercase eyebrows, level labels,
+  taglines, helper captions and technical footnotes do not appear in normal play.
+- Settings retain the same raised paper and coral-block language. Each card has one
+  large state and one action, rather than a heading, value and explanation stack.
 
 ## Boundaries
 
@@ -54,6 +59,9 @@ outgoing action voices; shared background music retains its existing lifetime.
 - Rapid restarts, leaving during play, and Menu → Map → Play → Map → Menu were
   exercised. The debug readout stayed at one pointer handler and stable object
   counts (17 Hammer / 16 Window); debug controls disappeared on scene exit.
+- Calibration samples are limited to one per beat and reject erratic runs, so
+  rapid tapping cannot manufacture a device offset. The backdrop teardown is
+  idempotent even under an aggressive same-scene restart.
 - Observed roughly 60–61 fps during the browser runs and no warning/error console
   entries. This is not a physical-device performance or latency certification.
 

@@ -4,8 +4,6 @@ import { SceneKey } from '@/config/scenes';
 import { STYLE } from '@/config/style';
 import { BaseScene } from '@/core/BaseScene';
 import { reducedMotion } from '@/core/motionPreference';
-import { levelSpec } from '@/game/levels';
-import { loadProgress } from '@/game/progress';
 import { TapInput, type Tap } from '@/input/TapInput';
 import { MaterialKey } from '@/textures/materials';
 import { shade } from '@/ui/colour';
@@ -15,15 +13,13 @@ import { faces } from '@/ui/light';
 import { BRASS, drawDisc, drawPanel, placeSurface, surface } from '@/ui/panel';
 import { SceneCurtain } from '@/ui/SceneCurtain';
 import { arrive, settle, spring } from '@/ui/spring';
-import { body, display, label, resize } from '@/ui/type';
+import { display, resize } from '@/ui/type';
 import { HammerNailVignette } from '@/vignettes/HammerNailVignette';
-import { VIGNETTES } from '@/vignettes/registry';
 import type { Vignette } from '@/vignettes/Vignette';
 
 const MENU = {
   sign: { width: 560, height: 300, top: 118, ropeInset: 150 },
   button: { width: 560, height: 110, fromBottom: 96 },
-  tag: { height: 88, gap: 22 },
   puck: 34,
   /** Beats per second of the sign's tempo beads: the game's own 120 BPM. */
   beatHz: 2, dots: 4,
@@ -31,7 +27,7 @@ const MENU = {
 } as const;
 
 /** The few colours the menu owns outright. Everything else is derived through `faces()`. */
-const LOOK = { sign: 0xd98a48, title: 0xfff4dc, button: 0xcf5134, tag: 0xf6ead0, puck: 0xf6ead0, icon: 0x243e35, ink: 0x243e35, rope: 0x6b4a2e } as const;
+const LOOK = { sign: 0xd98a48, title: 0xfff4dc, button: 0xcf5134, puck: 0xf6ead0, icon: 0x243e35, rope: 0x6b4a2e } as const;
 
 /**
  * Title screen. Owns the first audio gesture: PLAY unlocks the shared AudioEngine and
@@ -49,11 +45,6 @@ export class MenuScene extends BaseScene {
   private boardSurface!: Phaser.GameObjects.TileSprite;
   private beads!: Phaser.GameObjects.Graphics;
   private headline!: Phaser.GameObjects.Text;
-  private caption!: Phaser.GameObjects.Text;
-  private tag!: Phaser.GameObjects.Graphics;
-  private tagSurface!: Phaser.GameObjects.TileSprite;
-  private progressLabel!: Phaser.GameObjects.Text;
-  private progressValue!: Phaser.GameObjects.Text;
   private button!: Phaser.GameObjects.Graphics;
   private buttonSurface!: Phaser.GameObjects.TileSprite;
   private playLabel!: Phaser.GameObjects.Text;
@@ -64,7 +55,6 @@ export class MenuScene extends BaseScene {
   private uiScale = 1;
   private ceilingY = 0;
   private buttonRect = new Phaser.Geom.Rectangle();
-  private tagRect = new Phaser.Geom.Rectangle();
   private boardRect = new Phaser.Geom.Rectangle();
   private controlSize = 96;
   private muteAt = { x: 0, y: 0 };
@@ -94,20 +84,11 @@ export class MenuScene extends BaseScene {
     this.boardSurface = surface(this, MaterialKey.wood, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, this.look.sign, 0.7);
     this.beads = this.add.graphics();
     this.headline = display(this, 'Tiny\nTempo', { size: 96, colour: this.look.title, align: 'center' }).setOrigin(0.5, 0.5);
-    this.caption = body(this, 'Little things. Perfect timing.', { size: 24, colour: this.look.title }).setOrigin(0.5).setAlpha(0.85);
-    this.sign.add([this.ropes, this.board, this.boardSurface, this.beads, this.headline, this.caption]);
-
-    const progress = loadProgress();
-    const fresh = progress.unlocked === 1;
-    const next = VIGNETTES.find(v => v.id === levelSpec(progress.unlocked).vignette)!;
-    this.tag = this.add.graphics();
-    this.tagSurface = surface(this, MaterialKey.parchment, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, this.look.tag, 0.5);
-    this.progressLabel = label(this, `${fresh ? 'Begin here' : 'Next up'} · level ${progress.unlocked}`, { size: 15, colour: this.look.ink }).setAlpha(0.7);
-    this.progressValue = display(this, next.title, { size: 30, colour: this.look.ink }).setOrigin(0, 0.5);
+    this.sign.add([this.ropes, this.board, this.boardSurface, this.beads, this.headline]);
 
     this.button = this.add.graphics();
     this.buttonSurface = surface(this, MaterialKey.cloth, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, this.look.button, 0.35);
-    this.playLabel = display(this, fresh ? 'Let’s play' : 'Keep playing', { size: 40, colour: 0xfff4dc, align: 'center' }).setOrigin(0.5);
+    this.playLabel = display(this, 'Play', { size: 40, colour: 0xfff4dc, align: 'center' }).setOrigin(0.5);
     this.pucks = this.add.graphics();
 
     this.taps = new TapInput(this, tap => this.handleTap(tap));
@@ -135,9 +116,8 @@ export class MenuScene extends BaseScene {
     drawPanel(this.board, this.boardRect, s, { fill: this.look.sign, depth: 14, hero: true });
     placeSurface(this.boardSurface, this.boardRect, s);
     resize(this.headline, 96 * s, this.look.title);
-    this.headline.setLineSpacing(-22 * s).setPosition(0, this.boardRect.y + h * 0.42);
-    this.caption.setFontSize(Math.max(24 * s, 12 * this.viewport.unitScale)).setPosition(0, this.boardRect.y + h * 0.78);
-    this.beadRow = { x: -1.5 * 34 * s, y: this.boardRect.y + h * 0.9, gap: 34 * s, radius: 6 * s };
+    this.headline.setLineSpacing(-22 * s).setPosition(0, this.boardRect.y + h * 0.45);
+    this.beadRow = { x: -1.5 * 34 * s, y: this.boardRect.y + h * 0.82, gap: 34 * s, radius: 6 * s };
 
     // Utility pucks, top right, inside the safe frame and clear of the sign's swing.
     this.controlSize = Math.max(88 * s, 48 * this.viewport.unitScale);
@@ -149,13 +129,6 @@ export class MenuScene extends BaseScene {
     // The block sits a fixed distance above the bottom edge: thumb reach is absolute, not proportional.
     const height = Math.max(MENU.button.height * s, this.controlSize);
     this.buttonRect.setTo(safe.centerX - MENU.button.width * s / 2, safe.bottom - MENU.button.fromBottom * s - height, MENU.button.width * s, height);
-    this.tagRect.setTo(this.buttonRect.x, this.buttonRect.y - (MENU.tag.height + MENU.tag.gap) * s, this.buttonRect.width, MENU.tag.height * s);
-    this.tag.clear();
-    drawPanel(this.tag, this.tagRect, s, { fill: this.look.tag, depth: 6 });
-    placeSurface(this.tagSurface, this.tagRect, s);
-    this.progressLabel.setFontSize(Math.max(15 * s, 8 * this.viewport.unitScale)).setPosition(this.tagRect.x + 26 * s, this.tagRect.y + 14 * s);
-    resize(this.progressValue, 30 * s, this.look.ink);
-    this.progressValue.setPosition(this.tagRect.x + 26 * s, this.tagRect.y + this.tagRect.height * 0.64);
     this.drawButton(0, s);
     resize(this.playLabel, 40 * s, 0xfff4dc);
   }
@@ -256,21 +229,20 @@ export class MenuScene extends BaseScene {
     if (this.busy) return;
     const request = ++this.request;
     this.busy = true;
-    this.playLabel.setText('Waking up…');
+    this.playLabel.setText('…');
     try {
       const audio = sharedAudio(this);
       await audio.unlock();
       if (this.disposed || request !== this.request) return;
-      this.playLabel.setText('Tuning up…');
+      this.playLabel.setText('…');
       await audio.music.load();
       if (this.disposed || request !== this.request) return;
-      this.playLabel.setText('Here we go.');
+      this.playLabel.setText('Play');
       this.curtain.cover(() => this.scene.start(SceneKey.Map));
     } catch (error) {
       if (this.disposed || request !== this.request) return;
       this.busy = false;
-      this.playLabel.setText('Try again');
-      this.caption.setText('Sound needs another try.');
+      this.playLabel.setText('Retry');
       console.error('Unable to prepare music', error);
     }
   }

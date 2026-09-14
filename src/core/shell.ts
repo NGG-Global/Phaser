@@ -45,6 +45,7 @@ export function showBootError(message: string): void {
   const title = overlay.querySelector('.overlay__title');
   if (title !== null) {
     title.textContent = 'Unable to start';
+    title.removeAttribute('hidden');
   }
 
   target.textContent = message;

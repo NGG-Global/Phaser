@@ -16,7 +16,7 @@
     "music:encode": "node scripts/encode-music.mjs",
     "icons": "node scripts/generate-icons.mjs",
     "android:sync": "npm run build && npx cap sync android",
-    "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug"
+    "android:apk": "npm run android:sync && node scripts/build-android.mjs"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"

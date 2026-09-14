@@ -18,7 +18,7 @@ import { castShadow, faces } from '@/ui/light';
 import { BRASS, drawDisc, drawPanel, placeSurface, surface } from '@/ui/panel';
 import { drawStar } from '@/ui/star';
 import { arrive, settle, spring, squash } from '@/ui/spring';
-import { body, display, label, resize } from '@/ui/type';
+import { display, resize } from '@/ui/type';
 import { resizedScroll, scrollStep } from '@/ui/navigation';
 import { SceneCurtain } from '@/ui/SceneCurtain';
 import { VIGNETTES } from '@/vignettes/registry';
@@ -48,8 +48,6 @@ const LOOK = {
   bench: 0xe6dcc4, block: 0xf6ead0, cream: 0xfff4dc, rope: 0x6b4a2e, shadow: 0x1a1410,
 } as const;
 
-const HINT = 'A little further, a little better.';
-
 /**
  * Endless, scrollable road of levels grouped into themed areas. Pure presentation of
  * `levelSpec`/`Progress`: the map never decides difficulty, it only draws it.
@@ -73,15 +71,11 @@ export class MapScene extends BaseScene {
   private fibre!: Phaser.GameObjects.TileSprite;
   private signBack!: Phaser.GameObjects.Graphics;
   private signSurface!: Phaser.GameObjects.TileSprite;
-  private edition!: Phaser.GameObjects.Text;
   private status!: Phaser.GameObjects.Text;
   private pucks!: Phaser.GameObjects.Graphics;
   private dock!: Phaser.GameObjects.Graphics;
   private dockSurface!: Phaser.GameObjects.TileSprite;
-  private dockLabel!: Phaser.GameObjects.Text;
   private dockTitle!: Phaser.GameObjects.Text;
-  private dockHint!: Phaser.GameObjects.Text;
-  private location!: Phaser.GameObjects.Text;
   private curtain!: SceneCurtain;
   private footerTop = 0;
   private lastHeight = 0;
@@ -98,7 +92,6 @@ export class MapScene extends BaseScene {
   private muted = false;
   private numbers: Phaser.GameObjects.Text[] = [];
   private areaTitles: Phaser.GameObjects.Text[] = [];
-  private areaRanges: Phaser.GameObjects.Text[] = [];
   private nodes: Point[] = [];
   private road: Point[] = [];
   private uiScale = 1;
@@ -148,21 +141,16 @@ export class MapScene extends BaseScene {
     this.numbers = Array.from({ length: this.shown }, (_, i) => display(this, String(this.first + i), { size: 32, colour: LOOK.cream }).setOrigin(0.5).setDepth(4));
     const areas = Math.floor((this.first + this.shown - 2) / PROGRESSION.areaSize) - this.firstBand + 1;
     this.areaTitles = Array.from({ length: areas }, () => display(this, '', { size: 30, colour: LOOK.cream }).setOrigin(0, 0.5).setDepth(2));
-    this.areaRanges = Array.from({ length: areas }, () => label(this, '', { size: 13, colour: LOOK.cream }).setOrigin(0, 0.5).setDepth(2).setAlpha(0.8));
     // The pool of light stays put while the ground scrolls under it: a lamp over a table.
     this.glow = this.add.image(0, 0, FxKey.glow).setScrollFactor(0).setDepth(6).setAlpha(0.22);
     this.fibre = this.add.tileSprite(0, 0, 1, 1, MaterialKey.paper).setOrigin(0).setScrollFactor(0).setDepth(6).setAlpha(0.32 * STYLE.current.grain);
     this.signBack = this.add.graphics().setScrollFactor(0).setDepth(10);
     this.signSurface = surface(this, MaterialKey.wood, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, LOOK.sign, 0.7).setScrollFactor(0).setDepth(10);
-    this.edition = label(this, 'The little road', { size: 15, colour: LOOK.cream }).setScrollFactor(0).setDepth(11).setAlpha(0.8);
     this.status = display(this, '', { size: 40, colour: LOOK.cream }).setScrollFactor(0).setDepth(11);
     this.pucks = this.add.graphics().setScrollFactor(0).setDepth(10);
     this.dock = this.add.graphics().setScrollFactor(0).setDepth(10);
     this.dockSurface = surface(this, MaterialKey.parchment, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, LOOK.block, 0.5).setScrollFactor(0).setDepth(10);
-    this.dockLabel = label(this, '', { size: 15, colour: LOOK.ink }).setScrollFactor(0).setDepth(11).setAlpha(0.7);
     this.dockTitle = display(this, '', { size: 30, colour: LOOK.ink }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(11);
-    this.dockHint = body(this, HINT, { size: 16, colour: LOOK.ink }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(11).setAlpha(0.7);
-    this.location = label(this, 'Play', { size: 15, colour: LOOK.ink }).setOrigin(1, 0.5).setDepth(5);
     this.enteredAt = performance.now() / 1000;
     this.curtain = new SceneCurtain(this);
     this.events.once(Phaser.Scenes.Events.CREATE, () => this.curtain.reveal());
@@ -192,8 +180,8 @@ export class MapScene extends BaseScene {
     const oldScale = this.uiScale, oldHeader = this.hudHeight;
     this.uiScale = s;
     this.controlSize = Math.max(88 * s, 48 * this.viewport.unitScale);
-    this.hudHeight = safe.top + 154 * s;
-    this.footerTop = safe.bottom - 242 * s;
+    this.hudHeight = safe.top + 144 * s;
+    this.footerTop = safe.bottom - 210 * s;
     this.worldHeight = (MAP.topPad + MAP.bottomPad + (this.shown - 1) * MAP.step) * s + this.hudHeight;
     // Level 1 sits at the bottom; the road climbs. x wanders left and right inside the safe frame.
     this.nodes = Array.from({ length: this.shown }, (_, i) => ({
@@ -230,7 +218,7 @@ export class MapScene extends BaseScene {
    * One rendered band: the part of absolute area `firstBand + k` that falls inside the
    * window, as node indices, plus the area's own full level range for its sign.
    */
-  private band(k: number): { area: Area; name: string; from: number; to: number; atBottom: boolean; atTop: boolean; range: readonly [number, number] } {
+  private band(k: number): { area: Area; name: string; from: number; to: number; atBottom: boolean; atTop: boolean } {
     const size = PROGRESSION.areaSize;
     const absolute = this.firstBand + k;
     const last = this.first + this.shown - 1;
@@ -243,7 +231,6 @@ export class MapScene extends BaseScene {
       to: endLevel - this.first,
       atBottom: startLevel <= this.first,
       atTop: endLevel >= last,
-      range: [absolute * size + 1, (absolute + 1) * size] as const,
     };
   }
 
@@ -289,7 +276,7 @@ export class MapScene extends BaseScene {
     for (let k = 0; k < this.areaTitles.length; k++) {
       const band = this.band(k);
       const first = this.nodes[band.from]!;
-      this.placePlaque(g, band.area, band.name, k, band.atBottom ? this.worldHeight : first.y + MAP.step * s / 2, s, band.range);
+      this.placePlaque(g, band.area, band.name, k, band.atBottom ? this.worldHeight : first.y + MAP.step * s / 2, s);
     }
   }
 
@@ -344,18 +331,17 @@ export class MapScene extends BaseScene {
   }
 
   /** A painted wooden sign for the area name, on whichever side of the road has room for it. */
-  private placePlaque(g: Phaser.GameObjects.Graphics, area: Area, name: string, index: number, bottom: number, s: number, levels: readonly [number, number]): void {
+  private placePlaque(g: Phaser.GameObjects.Graphics, area: Area, name: string, index: number, bottom: number, s: number): void {
     const { safe } = this.viewport;
     const y = bottom - 72 * s;
     const roadX = this.roadXAt(y);
     const onLeft = roadX > safe.centerX;
-    const h = 80 * s;
+    const h = 64 * s;
     // Size the sign to its own text: area names are authored, and a long one overflowed.
     const title = this.areaTitles[index]!.setText(name);
     resize(title, 30 * s, LOOK.cream);
-    const range = this.areaRanges[index]!.setText(`LEVELS ${levels[0]}–${levels[1]}`).setFontSize(13 * s);
     const pad = 52 * s;
-    const w = Math.min(safe.width - 36 * s, Math.max(206 * s, Math.max(title.width, range.width) + pad));
+    const w = Math.min(safe.width - 36 * s, Math.max(206 * s, title.width + pad));
     // Repeat areas gain a numeral (Grass VIII), so shrink rather than overflow the sign.
     if (title.width > w - pad) resize(title, 30 * s * (w - pad) / title.width, LOOK.cream);
     const x = onLeft ? safe.left + 18 * s : safe.right - 18 * s - w;
@@ -372,8 +358,7 @@ export class MapScene extends BaseScene {
       g.fillStyle(faces(BRASS).edge).fillCircle(sx, y - h / 2 + 17 * s, 4.5 * s);
       g.fillStyle(BRASS).fillCircle(sx, y - h / 2 + 16 * s, 4.5 * s);
     }
-    title.setPosition(x + 24 * s, y - 12 * s);
-    range.setPosition(x + 24 * s, y + 20 * s);
+    title.setPosition(x + 24 * s, y);
   }
 
   /** The ribbon: a cast shadow, a casing, the surface, a top sheen and dashed markings. */
@@ -564,10 +549,6 @@ export class MapScene extends BaseScene {
       const plateY = node.y + p.r + (p.depth + 24) * s;
       if (p.state === 'frontier') {
         this.frontierIndex = i;
-        const left = node.x > this.viewport.safe.centerX;
-        this.location.setText('PLAY ' + String(level).padStart(2, '0')).setOrigin(left ? 1 : 0, 0.5)
-          .setPosition(node.x + (left ? -1 : 1) * (p.r + 28 * s), node.y)
-          .setFontSize(Math.max(15 * s, 8 * this.viewport.unitScale)).setColor(`#${area.ink.toString(16).padStart(6, '0')}`);
         continue;
       }
       this.drawPuck(g, i, 0);
@@ -626,14 +607,12 @@ export class MapScene extends BaseScene {
     // The surface tile and the texts are separate objects: each is hung from the same anchor.
     const inner = STYLE.current.radius * s * 0.7;
     this.hang(this.signSurface, this.signRect.x + inner, this.signRect.y + inner, angle, drop);
-    this.edition.setFontSize(Math.max(15 * s, 8 * this.viewport.unitScale));
-    this.hang(this.edition, this.signRect.x + 22 * s, this.signRect.y + 13 * s, angle, drop);
     const current = areaOf(this.progress.unlocked);
     this.status.setText(current.name);
     resize(this.status, 40 * s, LOOK.cream);
     // Repeat areas ("Pavement VIII") are long; shrink to the sign, never below 28 units.
     if (this.status.width > w - 44 * s) resize(this.status, Math.max(28 * s, 40 * s * (w - 44 * s) / this.status.width), LOOK.cream);
-    this.hang(this.status, this.signRect.x + 20 * s, this.signRect.y + 30 * s, angle, drop);
+    this.hang(this.status, this.signRect.x + 20 * s, this.signRect.y + h * 0.5, angle, drop);
   }
 
   /** Back, settings and mute as pucks at the top right, clear of the sign's swing. */
@@ -674,10 +653,9 @@ export class MapScene extends BaseScene {
     const level = this.progress.unlocked;
     const definition = VIGNETTES.find(v => v.id === levelSpec(level).vignette)!;
     const bx = this.blockRect.x, by = this.blockRect.y + sink;
-    this.dockLabel.setText(`UP NEXT · LEVEL ${String(level).padStart(2, '0')}`).setFontSize(Math.max(15 * s, 8 * this.viewport.unitScale)).setPosition(bx + 24 * s, by + 16 * s);
     this.dockTitle.setText(definition.title);
     resize(this.dockTitle, 30 * s, LOOK.ink);
-    this.dockTitle.setPosition(bx + 24 * s, by + height * 0.64);
+    this.dockTitle.setPosition(bx + 24 * s, by + height * 0.5);
     const r = Math.max(40 * s, this.controlSize / 2);
     const cx = this.blockRect.right - 24 * s - r, cy = this.blockRect.centerY + sink;
     drawDisc(g, cx, cy, r, s, { fill: LOOK.coral, depth: 9, press });
@@ -695,7 +673,6 @@ export class MapScene extends BaseScene {
       g.fillStyle(f.face, 1).fillCircle(x, beadY, rr);
       g.fillStyle(f.rim, 0.8).fillCircle(x - rr * 0.3, beadY - rr * 0.35, rr * 0.3);
     }
-    this.dockHint.setFontSize(Math.max(16 * s, 10 * this.viewport.unitScale)).setPosition(this.blockRect.x + 300 * s, beadY);
   }
 
   private scrollTo(level: number): void {
@@ -740,7 +717,6 @@ export class MapScene extends BaseScene {
       this.drawStars(g, frontier.x, frontier.y - lift + p.r + (p.depth + 24) * s, 0, area, s);
       this.drawPuck(g, this.frontierIndex, lift);
       this.numbers[this.frontierIndex]!.setY(frontier.y - lift);
-      this.location.setY(frontier.y - lift);
       if (!still) {
         const ring = spring(beat / 0.6, 4.5, 2.2);
         g.lineStyle(STYLE.current.outline * s * 0.55, LOOK.coral, Math.max(0, 1 - beat / 1.1) * 0.55).strokeCircle(frontier.x, frontier.y - lift, p.r + 4 * s + ring * 22 * s);
@@ -767,7 +743,6 @@ export class MapScene extends BaseScene {
     if (press > 0.001 || this.pressDirty) { this.drawDock(s, Math.max(0, press)); this.pressDirty = press > 0.001; }
     const puckPress = this.puckPressedAt > -Infinity ? 1 - spring((now - this.puckPressedAt) / MAP.pressSec, 5, 2) : 0;
     if (puckPress > 0.001 || this.puckDirty) { this.drawPucks(s, Math.max(0, puckPress)); this.puckDirty = puckPress > 0.001; }
-    if (feedbackAge > 2.2 && this.dockHint.text !== HINT) this.dockHint.setText(HINT);
   }
 
   private pointerDown(pointer: Phaser.Input.Pointer): void {
@@ -834,7 +809,6 @@ export class MapScene extends BaseScene {
       if (this.lockedIndex >= 0) this.numbers[this.lockedIndex]!.setScale(1);
       this.lockedIndex = index;
       this.feedbackAt = performance.now() / 1000;
-      this.dockHint.setText(`First, find the rhythm in level ${this.progress.unlocked}.`);
       return;
     }
     this.openLevel(this.first + index);
