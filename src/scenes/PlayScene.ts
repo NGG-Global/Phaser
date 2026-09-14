@@ -391,8 +391,7 @@ export class PlayScene extends BaseScene {
   /** Development-only integration exercise: actual DOM mouse events go through TapInput. */
   private installReplayPanel(): void {
     const panel = document.createElement('div');
-    panel.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:20;display:flex;gap:6px;';
-    panel.style.flexWrap = 'wrap';
+    panel.style.cssText = 'position:fixed;left:8px;top:108px;z-index:20;display:flex;flex-direction:column;gap:6px;max-width:118px;';
     for (const mode of ['Accurate replay', 'Good replay', 'Rough replay', 'Spam replay'] as const) {
       const button = document.createElement('button');
       button.textContent = mode;
