@@ -73,6 +73,11 @@ export function stagger(index: number, count: number, spread: number): number {
   return spread * Math.max(0, Math.min(count - 1, index)) / (count - 1);
 }
 
+/** 1 at the tap, ringing back to 0. Shared so every press feels like the same material. */
+export function pressAmount(now: number, pressedAt: number, duration = 0.42): number {
+  return pressedAt > -Infinity ? Math.max(0, 1 - spring((now - pressedAt) / duration, 5, 2)) : 0;
+}
+
 /** An arrival: rises from below with a small overshoot and a fade, in `duration` seconds. */
 export function arrive(age: number, duration: number): { readonly rise: number; readonly alpha: number } {
   const p = clamp01(age / duration);

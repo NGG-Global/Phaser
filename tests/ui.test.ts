@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { hex, mix, shade } from '../src/ui/colour';
+import { hex, mix, shade, contrastRatio, relativeLuminance, typeStroke } from '../src/ui/colour';
+import { PALETTE, SHELL } from '../src/config/theme';
+import { pressAmount } from '../src/ui/spring';
 import { dashes, pathLength, smoothPath, type Point } from '../src/ui/path';
 
 describe('colour helpers', () => {
@@ -88,5 +90,46 @@ describe('road path helpers', () => {
     expect(dashes([{ x: 0, y: 0 }], 10, 10)).toEqual([]);
     // A gapless dash covers the line exactly once.
     expect(pathLength(dashes(line, 50, 0).flat())).toBeCloseTo(200);
+  });
+});
+
+describe('workshop contrast', () => {
+  it('keeps supporting ink readable on the paper', () => {
+    expect(contrastRatio(PALETTE.muted, PALETTE.paper)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(PALETTE.ink, PALETTE.paper)).toBeGreaterThanOrEqual(7);
+  });
+  it('outlines cream paint in a darker ink rather than a muddy self-shade', () => {
+    expect(relativeLuminance(typeStroke(SHELL.cream))).toBeLessThan(relativeLuminance(PALETTE.ink));
+    expect(contrastRatio(typeStroke(SHELL.cream), SHELL.wood)).toBeGreaterThan(4.5);
+    // The fill alone is not enough on the timber; that is why the outline exists.
+    expect(contrastRatio(SHELL.cream, SHELL.wood)).toBeLessThan(3);
+  });
+  it('keeps a darker self-shade on coral and ink fills', () => {
+    expect(relativeLuminance(typeStroke(PALETTE.coral))).toBeLessThan(relativeLuminance(PALETTE.coral));
+    expect(contrastRatio(typeStroke(PALETTE.coral), PALETTE.paper)).toBeGreaterThan(4.5);
+    expect(typeStroke(PALETTE.ink)).not.toBe(PALETTE.ink);
+  });
+  it('keeps locked level numbers readable on every area', () => {
+    // Copied from AREAS so this file never loads the vignette registry (Phaser).
+    const areas = [
+      { name: 'Grass', ground: 0xb0bb91, ink: 0x2c4629, paper: 0xf4f0e2 },
+      { name: 'Pavement', ground: 0xbdb7ae, ink: 0x35322f, paper: 0xf5f2ee },
+      { name: 'Sand', ground: 0xe3c88f, ink: 0x5a4224, paper: 0xfff7e6 },
+      { name: 'Snow', ground: 0xdfe8f0, ink: 0x2d4759, paper: 0xffffff },
+      { name: 'Dusk', ground: 0x433856, ink: 0xf3e7d8, paper: 0x2a2236 },
+    ] as const;
+    for (const area of areas) {
+      const fill = mix(area.paper, area.ground, 0.42);
+      const number = mix(area.ink, area.ground, 0.12);
+      expect(contrastRatio(number, fill), area.name).toBeGreaterThan(3);
+    }
+  });
+});
+
+describe('chrome press', () => {
+  it('is fully down at the tap and at rest after the window', () => {
+    expect(pressAmount(1, 1)).toBeCloseTo(1);
+    expect(pressAmount(2, 1)).toBe(0);
+    expect(pressAmount(1, Number.NEGATIVE_INFINITY)).toBe(0);
   });
 });

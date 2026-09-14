@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { applyCalibration, currentAudio, isMuted, sharedAudio, toggleMute } from '@/audio/sharedAudio';
 import { SceneKey } from '@/config/scenes';
 import { STYLE } from '@/config/style';
-import { PALETTE } from '@/config/theme';
+import { PALETTE, SHELL } from '@/config/theme';
 import { BaseScene } from '@/core/BaseScene';
 import { reducedMotion } from '@/core/motionPreference';
 import { CalibrationRun, CALIBRATION } from '@/game/CalibrationRun';
@@ -12,18 +12,19 @@ import { TapInput, type Tap } from '@/input/TapInput';
 import { MaterialKey } from '@/textures/materials';
 import { Backdrop } from '@/ui/backdrop';
 import { shade } from '@/ui/colour';
+import { pressAmount } from '@/ui/chrome';
 import { faces } from '@/ui/light';
 import { drawPanel, placeSurface, surface } from '@/ui/panel';
 import { SceneCurtain } from '@/ui/SceneCurtain';
-import { spring } from '@/ui/spring';
+import { arrive } from '@/ui/spring';
 import { display, resize } from '@/ui/type';
 
 const PANEL = {
-  cardHeight: 144, cardGap: 24, pressSec: 0.42,
+  cardHeight: 144, cardGap: 24,
 } as const;
 
 /** The few colours the scene owns; the paper is the game's clear colour. */
-const LOOK = { ink: PALETTE.ink, card: 0xf6ead0, button: 0xfff4dc, done: PALETTE.coral, cream: 0xfff4dc, sun: 0xdfc37f } as const;
+const LOOK = { ink: PALETTE.ink, card: SHELL.puck, button: SHELL.cream, done: PALETTE.coral, cream: SHELL.cream, sun: SHELL.sun } as const;
 
 type Phase = 'idle' | 'counting' | 'measured' | 'failed';
 interface Button { readonly rect: Phaser.Geom.Rectangle; readonly label: Phaser.GameObjects.Text; readonly hero: boolean }
@@ -65,6 +66,9 @@ export class SettingsScene extends BaseScene {
   private beadsShown = false;
   private resetArmed = false;
   private from: string = SceneKey.Menu;
+  private enteredAt = 0;
+  private headlineX = 0;
+  private headlineY = 0;
   /** Read per use, so a preference change applies mid-scene. */
   private get reducedMotion(): boolean { return reducedMotion(); }
 
@@ -80,6 +84,7 @@ export class SettingsScene extends BaseScene {
     this.pressedAt = -Infinity;
     this.pressed = null;
     this.calibrationMs = loadSettings().calibrationMs;
+    this.enteredAt = performance.now() / 1000;
     this.backdrop = new Backdrop(this, PALETTE.paper, LOOK.sun, { glowAt: { x: 0.3, y: 0.2 }, glowAlpha: 0.6 });
     this.plates = this.add.graphics();
     this.surfaces = [0, 1, 2].map(() => surface(this, MaterialKey.parchment, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, LOOK.card, 0.45));
@@ -116,7 +121,9 @@ export class SettingsScene extends BaseScene {
     const left = safe.centerX - 322 * s;
     const width = 644 * s;
     resize(this.headline, 66 * s, LOOK.ink);
-    this.headline.setPosition(left - 2 * s, safe.top + 58 * s);
+    this.headlineX = left - 2 * s;
+    this.headlineY = safe.top + 58 * s;
+    this.headline.setPosition(this.headlineX, this.headlineY);
     const top = safe.top + 164 * s;
     const card = PANEL.cardHeight * s;
     const gap = PANEL.cardGap * s;
@@ -175,11 +182,16 @@ export class SettingsScene extends BaseScene {
   public override update(): void {
     const now = performance.now() / 1000;
     // A press sinks the block and springs it back; the buttons redraw only while that runs.
-    const press = this.pressedAt > -Infinity ? Math.max(0, 1 - spring((now - this.pressedAt) / PANEL.pressSec, 5, 2)) : 0;
+    const press = pressAmount(now, this.pressedAt);
     if (press > 0.001 || this.pressDirty) {
       this.drawButtons(press);
       this.pressDirty = press > 0.001;
       if (!this.pressDirty) this.pressed = null;
+    }
+    const age = now - this.enteredAt;
+    if (age < 1.1) {
+      const { rise, alpha } = this.reducedMotion ? { rise: 0, alpha: 1 } : arrive(age, 0.7);
+      this.headline.setPosition(this.headlineX, this.headlineY + rise * 36 * this.uiScale).setAlpha(alpha);
     }
     this.drawBeats();
   }

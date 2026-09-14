@@ -2,32 +2,28 @@ import Phaser from 'phaser';
 import { isMuted, sharedAudio, toggleMute } from '@/audio/sharedAudio';
 import { SceneKey } from '@/config/scenes';
 import { STYLE } from '@/config/style';
+import { PALETTE, SHELL } from '@/config/theme';
 import { BaseScene } from '@/core/BaseScene';
 import { reducedMotion } from '@/core/motionPreference';
 import { TapInput, type Tap } from '@/input/TapInput';
 import { MaterialKey } from '@/textures/materials';
 import { shade } from '@/ui/colour';
+import { CHROME, drawPuck, drawRopes, pressAmount, puckSink } from '@/ui/chrome';
 import { drawGear } from '@/ui/gear';
 import { drawPlay, drawSpeaker } from '@/ui/icons';
 import { faces } from '@/ui/light';
-import { BRASS, drawDisc, drawPanel, placeSurface, surface } from '@/ui/panel';
+import { drawPanel, placeSurface, surface } from '@/ui/panel';
 import { SceneCurtain } from '@/ui/SceneCurtain';
-import { arrive, settle, spring } from '@/ui/spring';
+import { arrive, settle } from '@/ui/spring';
 import { display, resize } from '@/ui/type';
 import { HammerNailVignette } from '@/vignettes/HammerNailVignette';
 import type { Vignette } from '@/vignettes/Vignette';
 
 const MENU = {
   sign: { width: 560, height: 300, top: 118, ropeInset: 150 },
-  button: { width: 560, height: 110, fromBottom: 96 },
-  puck: 34,
   /** Beats per second of the sign's tempo beads: the game's own 120 BPM. */
   beatHz: 2, dots: 4,
-  pressSec: 0.42,
 } as const;
-
-/** The few colours the menu owns outright. Everything else is derived through `faces()`. */
-const LOOK = { sign: 0xd98a48, title: 0xfff4dc, button: 0xcf5134, puck: 0xf6ead0, icon: 0x243e35, rope: 0x6b4a2e } as const;
 
 /**
  * Title screen. Owns the first audio gesture: PLAY unlocks the shared AudioEngine and
@@ -62,18 +58,21 @@ export class MenuScene extends BaseScene {
   private beadRow = { x: 0, y: 0, gap: 0, radius: 0 };
   private pressedAt = -Infinity;
   private pressDirty = false;
+  private puckPressed: 'mute' | 'setup' | null = null;
+  private puckPressedAt = -Infinity;
+  private puckDirty = false;
   private muted = false;
   private busy = false;
   private disposed = false;
   private request = 0;
-  private readonly look = LOOK;
 
   public constructor() { super(SceneKey.Menu); }
 
   protected override build(): void {
     this.disposed = false;
     this.busy = false;
-    this.pressedAt = -Infinity;
+    this.pressedAt = this.puckPressedAt = -Infinity;
+    this.puckPressed = null;
     this.muted = isMuted(this);
     // The hammer's idle sway doubles as the title illustration; it never receives a plan.
     this.illustration = new HammerNailVignette(this, true);
@@ -81,14 +80,14 @@ export class MenuScene extends BaseScene {
     this.sign = this.add.container(0, 0);
     this.ropes = this.add.graphics();
     this.board = this.add.graphics();
-    this.boardSurface = surface(this, MaterialKey.wood, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, this.look.sign, 0.7);
+    this.boardSurface = surface(this, MaterialKey.wood, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, SHELL.wood, 0.7);
     this.beads = this.add.graphics();
-    this.headline = display(this, 'Tiny\nTempo', { size: 96, colour: this.look.title, align: 'center' }).setOrigin(0.5, 0.5);
+    this.headline = display(this, 'Tiny\nTempo', { size: 96, colour: SHELL.cream, align: 'center' }).setOrigin(0.5, 0.5);
     this.sign.add([this.ropes, this.board, this.boardSurface, this.beads, this.headline]);
 
     this.button = this.add.graphics();
-    this.buttonSurface = surface(this, MaterialKey.cloth, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, this.look.button, 0.35);
-    this.playLabel = display(this, 'Play', { size: 40, colour: 0xfff4dc, align: 'center' }).setOrigin(0.5);
+    this.buttonSurface = surface(this, MaterialKey.cloth, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, PALETTE.coral, 0.35);
+    this.playLabel = display(this, 'Play', { size: 40, colour: SHELL.cream, align: 'center' }).setOrigin(0.5);
     this.pucks = this.add.graphics();
 
     this.taps = new TapInput(this, tap => this.handleTap(tap));
@@ -111,11 +110,12 @@ export class MenuScene extends BaseScene {
     const w = MENU.sign.width * s, h = MENU.sign.height * s;
     this.boardRect.setTo(-w / 2, ropeLength, w, h);
     this.sign.setPosition(safe.centerX, this.ceilingY);
-    this.drawRopes(s, ropeLength);
+    this.ropes.clear();
+    drawRopes(this.ropes, s, ropeLength, [-MENU.sign.ropeInset * s, MENU.sign.ropeInset * s], 9);
     this.board.clear();
-    drawPanel(this.board, this.boardRect, s, { fill: this.look.sign, depth: 14, hero: true });
+    drawPanel(this.board, this.boardRect, s, { fill: SHELL.wood, depth: 14, hero: true });
     placeSurface(this.boardSurface, this.boardRect, s);
-    resize(this.headline, 96 * s, this.look.title);
+    resize(this.headline, 96 * s, SHELL.cream);
     this.headline.setLineSpacing(-22 * s).setPosition(0, this.boardRect.y + h * 0.45);
     this.beadRow = { x: -1.5 * 34 * s, y: this.boardRect.y + h * 0.82, gap: 34 * s, radius: 6 * s };
 
@@ -124,51 +124,38 @@ export class MenuScene extends BaseScene {
     // Both pucks stay right of the sign's ropes even at full swing.
     this.muteAt = { x: safe.right - 56 * s, y: safe.top + 66 * s };
     this.setupAt = { x: this.muteAt.x - Math.max(88 * s, this.controlSize + 4 * s), y: this.muteAt.y };
-    this.drawPucks(s);
+    this.drawPucks(s, 0);
+    this.puckDirty = true;
 
     // The block sits a fixed distance above the bottom edge: thumb reach is absolute, not proportional.
-    const height = Math.max(MENU.button.height * s, this.controlSize);
-    this.buttonRect.setTo(safe.centerX - MENU.button.width * s / 2, safe.bottom - MENU.button.fromBottom * s - height, MENU.button.width * s, height);
+    const height = Math.max(CHROME.block.height * s, this.controlSize);
+    this.buttonRect.setTo(safe.centerX - CHROME.block.width * s / 2, safe.bottom - CHROME.block.fromBottom * s - height, CHROME.block.width * s, height);
     this.drawButton(0, s);
-    resize(this.playLabel, 40 * s, 0xfff4dc);
+    resize(this.playLabel, 40 * s, SHELL.cream);
   }
 
-  private drawRopes(s: number, length: number): void {
-    const g = this.ropes.clear();
-    const t = STYLE.current;
-    const inset = MENU.sign.ropeInset * s;
-    for (const x of [-inset, inset]) {
-      g.lineStyle(t.outline * s * 0.55 + 9 * s, shade(this.look.rope, -0.5), 1).lineBetween(x, 0, x, length);
-      g.lineStyle(9 * s, this.look.rope, 1).lineBetween(x, 0, x, length);
-      g.lineStyle(2.5 * s, shade(this.look.rope, 0.35), 0.6).lineBetween(x - 2 * s, 0, x - 2 * s, length);
-      // The eye the rope passes through.
-      g.fillStyle(faces(BRASS).edge, 1).fillCircle(x, length + 2 * s, 9 * s);
-      g.fillStyle(BRASS, 1).fillCircle(x, length, 9 * s);
-      g.fillStyle(shade(this.look.sign, -0.6), 1).fillCircle(x, length, 3.5 * s);
-    }
-  }
-
-  private drawPucks(s: number): void {
+  private drawPucks(s: number, press: number): void {
     const g = this.pucks.clear();
-    const r = MENU.puck * s;
-    drawDisc(g, this.muteAt.x, this.muteAt.y, r, s, { fill: this.look.puck, depth: 7 });
-    drawDisc(g, this.setupAt.x, this.setupAt.y, r, s, { fill: this.look.puck, depth: 7 });
-    drawSpeaker(g, this.muteAt.x, this.muteAt.y, r * 0.5, this.look.icon, this.muted);
-    drawGear(g, this.setupAt.x, this.setupAt.y, r * 0.52, this.look.icon, 1);
+    const sinkOf = (key: 'mute' | 'setup') => (this.puckPressed === key ? press : 0);
+    drawPuck(g, this.muteAt.x, this.muteAt.y, s, sinkOf('mute'));
+    drawPuck(g, this.setupAt.x, this.setupAt.y, s, sinkOf('setup'));
+    const r = CHROME.puckRadius * s;
+    drawSpeaker(g, this.muteAt.x, this.muteAt.y + puckSink(s, sinkOf('mute')), r * 0.5, PALETTE.ink, this.muted);
+    drawGear(g, this.setupAt.x, this.setupAt.y + puckSink(s, sinkOf('setup')), r * 0.52, PALETTE.ink, 1);
   }
 
   /** The block sinks on the tap and springs back: one press, one rebound, then still. */
   private drawButton(press: number, s: number): void {
     const g = this.button.clear();
     const r = this.buttonRect;
-    drawPanel(g, r, s, { fill: this.look.button, depth: 16, press, hero: true });
-    const sink = 16 * s * press * 0.8;
+    drawPanel(g, r, s, { fill: PALETTE.coral, depth: CHROME.block.depth, press, hero: true });
+    const sink = CHROME.block.depth * s * press * 0.8;
     placeSurface(this.buttonSurface, r, s, sink);
     const labelX = r.centerX + 22 * s;
     this.playLabel.setPosition(labelX, r.centerY + sink);
     const iconX = labelX - this.playLabel.displayWidth / 2 - 34 * s;
     g.fillStyle(0x000000, 0.18).fillCircle(iconX, r.centerY + sink, 22 * s);
-    drawPlay(g, iconX + 2 * s, r.centerY + sink, 12 * s, 0xfff4dc);
+    drawPlay(g, iconX + 2 * s, r.centerY + sink, 12 * s, SHELL.cream);
   }
 
   public override update(): void {
@@ -184,11 +171,17 @@ export class MenuScene extends BaseScene {
     const swing = still ? 0 : settle(age - 0.3, 5.2, 1.6) * 0.06 * t.exaggeration + Math.sin(now * 0.7) * 0.012 * t.exaggeration;
     this.sign.setPosition(this.viewport.safe.centerX, this.ceilingY - entry.rise * 260 * s).setRotation(swing).setAlpha(entry.alpha);
 
-    const press = this.pressedAt > -Infinity ? 1 - spring((now - this.pressedAt) / MENU.pressSec, 5, 2) : 0;
+    const press = pressAmount(now, this.pressedAt);
     if (press > 0.001 || this.pressDirty) {
       this.drawButton(Math.max(0, press), s);
       // One last frame at rest, then stop: the block is otherwise static geometry.
       this.pressDirty = press > 0.001;
+    }
+    const puckPress = pressAmount(now, this.puckPressedAt);
+    if (puckPress > 0.001 || this.puckDirty) {
+      this.drawPucks(s, Math.max(0, puckPress));
+      this.puckDirty = puckPress > 0.001;
+      if (!this.puckDirty) this.puckPressed = null;
     }
 
     // Four beads on the game's own pulse: the sign says what the game is before the copy does.
@@ -198,7 +191,7 @@ export class MenuScene extends BaseScene {
     for (let i = 0; i < MENU.dots; i++) {
       const lit = still ? i === 0 : i === beat;
       const grow = lit ? 1 + (1 - phase) ** 2 * 0.7 * t.exaggeration : 1;
-      const colour = lit ? this.look.button : shade(this.look.sign, -0.25);
+      const colour = lit ? PALETTE.coral : shade(SHELL.wood, -0.25);
       const f = faces(colour);
       const x = this.beadRow.x + i * this.beadRow.gap, r = this.beadRow.radius * grow;
       g.fillStyle(f.edge, 1).fillCircle(x, this.beadRow.y + 2.5 * s, r);
@@ -212,10 +205,15 @@ export class MenuScene extends BaseScene {
     const half = this.controlSize / 2;
     if (Math.abs(tap.x - this.muteAt.x) < half && Math.abs(tap.y - this.muteAt.y) < half) {
       this.muted = toggleMute(sharedAudio(this));
-      this.drawPucks(this.uiScale);
+      this.puckPressed = 'mute';
+      this.puckPressedAt = performance.now() / 1000;
+      this.puckDirty = true;
       return;
     }
     if (Math.abs(tap.x - this.setupAt.x) < half && Math.abs(tap.y - this.setupAt.y) < half) {
+      this.puckPressed = 'setup';
+      this.puckPressedAt = performance.now() / 1000;
+      this.puckDirty = true;
       this.curtain.cover(() => this.scene.start(SceneKey.Settings, { from: SceneKey.Menu }));
       return;
     }

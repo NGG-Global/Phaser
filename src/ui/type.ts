@@ -1,6 +1,7 @@
 import type Phaser from 'phaser';
 import { STYLE, type Treatment } from '@/config/style';
-import { hex, shade } from './colour';
+import { PALETTE } from '@/config/theme';
+import { hex, relativeLuminance, shade, typeStroke } from './colour';
 
 /**
  * The type system. One display face and one body face per treatment, both bundled and
@@ -16,7 +17,8 @@ type TextStyle = Phaser.Types.GameObjects.Text.TextStyle;
 
 /** A hard drop under the letter and its outline: the printed-sticker look. Dark and close. */
 function shadowFor(colour: number, size: number): NonNullable<TextStyle['shadow']> {
-  return { offsetX: 0, offsetY: Math.max(1, size * 0.07), color: hex(shade(colour, -0.55)), blur: 0, fill: true, stroke: true };
+  const drop = relativeLuminance(colour) > 0.45 ? shade(PALETTE.ink, -0.25) : shade(colour, -0.7);
+  return { offsetX: 0, offsetY: Math.max(1, size * 0.07), color: hex(drop), blur: 0, fill: true, stroke: true };
 }
 
 /** Below this the outline is tapered; a headline at or above it carries its full weight. */
@@ -56,7 +58,7 @@ function style(t: Treatment, family: string, weight: number, spec: TypeSpec, dre
     color: hex(spec.colour),
     align: spec.align ?? 'left',
   };
-  if (strokeThickness > 0) { s.stroke = hex(spec.outline ?? shade(spec.colour, -0.6)); s.strokeThickness = strokeThickness; }
+  if (strokeThickness > 0) { s.stroke = hex(spec.outline ?? typeStroke(spec.colour)); s.strokeThickness = strokeThickness; }
   if (dress) s.shadow = shadowFor(spec.colour, spec.size);
   if (spec.wrap !== undefined) s.wordWrap = { width: spec.wrap, useAdvancedWrap: true };
   return s;
@@ -85,7 +87,7 @@ export function resize(text: Phaser.GameObjects.Text, size: number, colour: numb
   text.setFontSize(size);
   if (!dress) return;
   const stroke = strokeFor(t, size);
-  text.setStroke(hex(shade(colour, -0.6)), stroke);
+  text.setStroke(hex(typeStroke(colour)), stroke);
   const sh = shadowFor(colour, size);
   text.setShadow(sh.offsetX, sh.offsetY, sh.color, sh.blur, sh.stroke, sh.fill);
 }
