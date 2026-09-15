@@ -89,11 +89,11 @@ export function createMonetization(options: MonetizationOptions = {}): Monetizat
     },
 
     async purchase(product: ProductId): Promise<PurchaseResult> {
-      track('purchase_started', { product });
       if (!asBoolean(() => billing.available())) {
         track('purchase_failed', { product, reason: 'unavailable' });
         return { ok: false, product, reason: 'unavailable' };
       }
+      track('purchase_started', { product });
       try {
         const fallback: PurchaseResult = { ok: false, product, reason: 'failed' };
         const result = await withTimeout(

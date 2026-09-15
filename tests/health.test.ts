@@ -3,7 +3,7 @@ import { levelSpec, starsFor } from '../src/game/levels';
 import type { Progress } from '../src/game/progress';
 import {
   HEALTH, abandonAttempt, attemptCostsHeart, beginAttempt, canBeginAttempt, claimFill, claimHeart,
-  clearHealth, fillHearts, finishAttempt, formatCountdown, grantHeart, healthHud, isMastered,
+  clearHealth, createAttemptId, fillHearts, finishAttempt, formatCountdown, grantHeart, healthHud, isMastered,
   isProtectedLevel, loadHealth, practiceLevel, reconcile, saveHealth, viewHealth, type Health,
 } from '../src/game/health';
 
@@ -277,6 +277,19 @@ describe('abandoned attempts', () => {
     expect(finishAttempt(next.health, 'b', 3, T0).refunded).toBe(true);
     expect(abandonAttempt(spent, 'other', T0).spentAttempt).toBe('a');
   });
+
+  it('issues distinct attempt ids so a rebuilt scene cannot reuse a leftover spend', () => {
+    const first = createAttemptId(6);
+    const second = createAttemptId(6);
+    expect(first).not.toBe(second);
+    expect(first.startsWith('6:')).toBe(true);
+    const leftover = beginAttempt(full(), ROAD, 6, first, T0).health;
+    const left = abandonAttempt(leftover, first, T0);
+    const next = beginAttempt(left, ROAD, 6, second, T0);
+    expect(next.spent).toBe(true);
+    expect(next.health.hearts).toBe(3);
+    expect(finishAttempt(next.health, first, 3, T0).refunded).toBe(false);
+  });
 });
 
 describe('zero-health gating', () => {
@@ -388,5 +401,16 @@ describe('full heart refill', () => {
     const empty = full({ hearts: 0, refillStartedAt: T0 });
     expect(claimFill(empty, '', T0).granted).toBe(false);
     expect(claimFill(empty, '', T0).health.hearts).toBe(0);
+  });
+
+  it('remembers a fill id across a restart from persisted storage', () => {
+    const storage = memoryStorage();
+    const empty = full({ hearts: 0, refillStartedAt: T0 });
+    const first = claimFill(empty, 'persist-txn', T0, storage);
+    expect(first.granted).toBe(true);
+    clearHealth(memoryStorage());
+    const again = claimFill(empty, 'persist-txn', T0, storage);
+    expect(again.granted).toBe(false);
+    expect(again.health.hearts).toBe(0);
   });
 });

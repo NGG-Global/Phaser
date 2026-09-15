@@ -884,12 +884,12 @@ export class MapScene extends BaseScene {
     const claimId = `map:${++this.watchClaims}`;
     try {
       const result = await monetization().showRewarded();
+      if (result.ok) this.health = redeemHeart(claimId).health;
       if (this.disposed) return;
       if (!result.ok) {
         this.restNote.setText(rewardedFeedback(result.reason));
         return;
       }
-      this.health = redeemHeart(claimId).health;
       this.hideRest();
       this.drawSign(this.uiScale, 0, 0);
     } finally {
@@ -905,14 +905,13 @@ export class MapScene extends BaseScene {
     this.restPressDirty = true;
     try {
       const result = await monetization().purchase(PRODUCT.heartRefill);
+      if (result.ok) this.health = redeemFill(result.claimId).health;
       if (this.disposed) return;
       if (!result.ok) {
         this.restNote.setText(purchaseFeedback(result.reason));
         return;
       }
-      const filled = redeemFill(result.claimId);
-      this.health = filled.health;
-      if (!filled.granted && this.health.hearts <= 0) {
+      if (this.health.hearts <= 0) {
         this.restNote.setText(purchaseFeedback('failed'));
         return;
       }
@@ -967,6 +966,7 @@ export class MapScene extends BaseScene {
     // The sign drops in on its ropes and swings itself quiet, then hangs still.
     const age = now - this.enteredAt;
     this.health = reconcile(this.health, Date.now());
+    if (this.restShown && this.health.hearts > 0) this.hideRest();
     if (age < 2.4) {
       const entry = still ? { rise: 0 } : arrive(age - 0.1, 0.9);
       const swing = still ? 0 : settle(age - 0.3, 5.2, 1.6) * 0.05 * ex;

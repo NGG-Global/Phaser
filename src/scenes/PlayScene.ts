@@ -17,8 +17,8 @@ import type { Judgement } from '@/rhythm/judge';
 import { beatsPlayed, countIn, markFor, trackGeometry, type Mark } from '@/game/beatTrack';
 import { levelSpec, meanAccuracy, starsFor, type LevelSpec } from '@/game/levels';
 import {
-  beginAttempt, canBeginAttempt, finishAttempt, healthHud, loadHealth, redeemFill, redeemHeart,
-  saveHealth, viewHealth,
+  abandonAttempt, beginAttempt, canBeginAttempt, createAttemptId, finishAttempt, healthHud, loadHealth,
+  redeemFill, redeemHeart, saveHealth, viewHealth,
 } from '@/game/health';
 import { monetization, PRODUCT, purchaseFeedback, rewardedFeedback, track } from '@/monetization';
 import { loadProgress, recordResult, saveProgress, type LevelOutcome } from '@/game/progress';
@@ -436,7 +436,7 @@ export class PlayScene extends BaseScene {
         return;
       }
       // Spend only once audio is running: a failed unlock/load above never reaches here.
-      const attemptId = `${this.spec.level}:${request}`;
+      const attemptId = createAttemptId(this.spec.level);
       const begun = beginAttempt(loadHealth(), loadProgress(), this.spec.level, attemptId, Date.now(), monetization().premium());
       if (!begun.ok) {
         this.audio!.music.stop();
@@ -635,7 +635,15 @@ export class PlayScene extends BaseScene {
       this.refillRoot.setY(0).setAlpha(1);
     }
     if (this.actionCaption === 'WATCH' && !this.summaryShown) {
-      const wait = healthHud(viewHealth(loadHealth()), { premium: monetization().premium() }).wait ?? '';
+      const health = loadHealth();
+      if (
+        !this.starting && !this.commerceBusy
+        && canBeginAttempt(health, loadProgress(), this.spec.level, Date.now(), monetization().premium())
+      ) {
+        void this.startRound();
+        return;
+      }
+      const wait = healthHud(viewHealth(health), { premium: monetization().premium() }).wait ?? '';
       if (this.accuracy.text !== wait) this.accuracy.setText(wait);
     }
     // The verdict word rises and fades; one instance, so a quick double replaces rather
@@ -975,6 +983,7 @@ export class PlayScene extends BaseScene {
   }
   private leaveForMap(): void {
     if (this.curtain.active) return;
+    this.persistAbandonedAttempt();
     // Stop outgoing action voices immediately; the shared music remains the bedding.
     this.controller?.dispose();
     this.transition = null;
@@ -1011,12 +1020,12 @@ export class PlayScene extends BaseScene {
     const claimId = `play:${++this.watchClaims}`;
     try {
       const result = await monetization().showRewarded();
+      if (result.ok) redeemHeart(claimId);
       if (this.disposed) return;
       if (!result.ok) {
         this.accuracy.setText(rewardedFeedback(result.reason));
         return;
       }
-      redeemHeart(claimId);
       void this.startRound();
     } finally {
       this.commerceBusy = false;
@@ -1028,16 +1037,19 @@ export class PlayScene extends BaseScene {
     this.commerceBusy = true;
     try {
       const result = await monetization().purchase(PRODUCT.heartRefill);
-      if (this.disposed) return;
-      if (!result.ok) {
+      if (result.ok) {
+        const filled = redeemFill(result.claimId);
+        if (this.disposed) return;
+        if (!filled.granted && filled.health.hearts <= 0) {
+          this.accuracy.setText(purchaseFeedback('failed'));
+          return;
+        }
+      } else {
+        if (this.disposed) return;
         this.accuracy.setText(purchaseFeedback(result.reason));
         return;
       }
-      const filled = redeemFill(result.claimId);
-      if (!filled.granted && filled.health.hearts <= 0) {
-        this.accuracy.setText(purchaseFeedback('failed'));
-        return;
-      }
+      if (this.disposed) return;
       void this.startRound();
     } finally {
       this.commerceBusy = false;
@@ -1067,10 +1079,17 @@ export class PlayScene extends BaseScene {
     // Freezing the idle illustration would leave it stuck until the next round begins.
     if (wasRunning || wasStarting) this.vignette.pause();
   }
+  private persistAbandonedAttempt(): void {
+    if (this.attemptId === null) return;
+    saveHealth(abandonAttempt(loadHealth(), this.attemptId));
+  }
+
   private readonly visibility = (): void => {
     if (document.hidden && !this.commerceBusy) this.interrupt();
   };
-  private readonly pageHide = (): void => { this.interrupt(); };
+  private readonly pageHide = (): void => {
+    if (!this.commerceBusy) this.interrupt();
+  };
   private readonly audioState = (): void => { if (this.audio?.context.state !== 'running') this.interrupt(); };
   private checkOrientation(): void { if (this.blocked()) this.interrupt(); }
   private shutdown(): void {
@@ -1081,6 +1100,7 @@ export class PlayScene extends BaseScene {
     ++this.startRequest;
     if (this.pump !== null) clearInterval(this.pump);
     this.pump = null;
+    this.persistAbandonedAttempt();
     this.taps.dispose();
     this.replayPanel?.remove();
     this.replayPanel = null;

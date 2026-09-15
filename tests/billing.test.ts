@@ -343,4 +343,14 @@ describe('RevenueCat Premium entitlement', () => {
     });
     expect(billing.premium()).toBe(false);
   });
+
+  it('ignores a corrupt Premium cache rather than trusting it', async () => {
+    const cache = memoryStorage({ 'tiny-tempo.premium.v1': '{not json' });
+    const billing = createRevenueCatBilling(fakeClient({
+      products: [ITEM, PREMIUM_ITEM],
+      customerInfo: 'fail',
+    }), { apiKey: 'goog_test', lateMs: 5, cache });
+    await billing.boot();
+    expect(billing.premium()).toBe(false);
+  });
 });

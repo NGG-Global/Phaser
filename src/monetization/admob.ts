@@ -43,9 +43,15 @@ interface ShowSession {
  * are granted by the caller from a single `{ ok: true }` — this class only
  * settles show() once per presentation.
  */
-export function createAdMobAds(client: AdMobClient, options: { readonly adUnitId?: string; readonly showLimitMs?: number } = {}): AdMobAds {
+export function createAdMobAds(client: AdMobClient, options: {
+  readonly adUnitId?: string;
+  readonly showLimitMs?: number;
+  /** Wait this long after a dismiss/empty resolve for a late Rewarded event. */
+  readonly dismissGraceMs?: number;
+} = {}): AdMobAds {
   const adUnitId = options.adUnitId ?? ADMOB.rewardedUnitId;
   const showLimitMs = options.showLimitMs ?? 170_000;
+  const dismissGraceMs = options.dismissGraceMs ?? 400;
   let bootPromise: Promise<void> | null = null;
   let initialized = false;
   let denied = false;
@@ -55,6 +61,8 @@ export function createAdMobAds(client: AdMobClient, options: { readonly adUnitId
   let session: ShowSession | null = null;
   let nextShowId = 1;
   let listening = false;
+  /** Survives `session = null` so a Rewarded event after settle still informs dismiss. */
+  let earnedThisShow = false;
 
   async function boot(): Promise<void> {
     bootPromise ??= runBoot();
@@ -89,16 +97,26 @@ export function createAdMobAds(client: AdMobClient, options: { readonly adUnitId
   async function ensureListeners(): Promise<void> {
     if (listening) return;
     listening = true;
-    await client.addListener(REWARD_EVENTS.rewarded, () => settleShow({ ok: true }));
+    // Kept for the process: boot runs once, and a second addListener would double-settle.
+    await client.addListener(REWARD_EVENTS.rewarded, () => {
+      earnedThisShow = true;
+      settleShow({ ok: true });
+    });
     await client.addListener(REWARD_EVENTS.dismissed, () => {
-      if (session?.earned) {
+      if (earnedThisShow) {
         settleShow({ ok: true });
         return;
       }
-      settleShow({ ok: false, reason: 'cancelled' });
+      const id = session?.id;
+      const finishDismiss = (): void => {
+        if (session?.id !== id) return;
+        settleShow(earnedThisShow ? { ok: true } : { ok: false, reason: 'cancelled' });
+      };
+      if (dismissGraceMs <= 0) finishDismiss();
+      else globalThis.setTimeout(finishDismiss, dismissGraceMs);
     });
     await client.addListener(REWARD_EVENTS.failedToShow, () => {
-      if (session?.earned) return;
+      if (earnedThisShow) return;
       settleShow({ ok: false, reason: 'failed' });
     });
     await client.addListener(REWARD_EVENTS.loaded, () => { loaded = true; });
@@ -142,15 +160,30 @@ export function createAdMobAds(client: AdMobClient, options: { readonly adUnitId
         clearTimeout(limit);
         finish(result);
       };
+      earnedThisShow = false;
       session = { id, earned: false, finish: guarded };
       void client.showRewardVideoAd().then(
-        () => {
+        reward => {
           if (session?.id !== id) return;
-          settleShow({ ok: true });
+          if (reward.amount > 0) {
+            earnedThisShow = true;
+            settleShow({ ok: true });
+            return;
+          }
+          if (earnedThisShow) {
+            settleShow({ ok: true });
+            return;
+          }
+          const finishEmpty = (): void => {
+            if (session?.id !== id) return;
+            settleShow(earnedThisShow ? { ok: true } : { ok: false, reason: 'cancelled' });
+          };
+          if (dismissGraceMs <= 0) finishEmpty();
+          else globalThis.setTimeout(finishEmpty, dismissGraceMs);
         },
         () => {
           if (session?.id !== id) return;
-          if (session.earned) {
+          if (earnedThisShow) {
             settleShow({ ok: true });
             return;
           }

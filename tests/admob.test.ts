@@ -14,7 +14,7 @@ interface FakeOptions {
   readonly consent?: ConsentSnapshot;
   readonly form?: ConsentSnapshot;
   readonly prepare?: 'ok' | 'fail';
-  readonly show?: 'reward' | 'dismiss' | 'fail' | 'reward-twice' | 'hang';
+    readonly show?: 'reward' | 'dismiss' | 'fail' | 'reward-twice' | 'hang' | 'resolve-zero' | 'dismiss-then-reward';
 }
 
 function fakeClient(options: FakeOptions = {}): AdMobClient & {
@@ -44,7 +44,12 @@ function fakeClient(options: FakeOptions = {}): AdMobClient & {
     async showRewardVideoAd() {
       const mode = options.show ?? 'reward';
       if (mode === 'hang') return new Promise(() => { /* dismissed ads never resolve the call */ });
-      if (mode === 'fail') throw new Error('show failed');
+      if (mode === 'resolve-zero') return { type: 'heart', amount: 0 };
+      if (mode === 'dismiss-then-reward') {
+        client.emit(REWARD_EVENTS.dismissed);
+        queueMicrotask(() => client.emit(REWARD_EVENTS.rewarded, { type: 'heart', amount: 1 }));
+        return new Promise(() => { /* plugin leaves the call hanging when the user skips */ });
+      }
       if (mode === 'dismiss') {
         client.emit(REWARD_EVENTS.dismissed);
         return new Promise(() => { /* plugin leaves the call hanging when the user skips */ });
@@ -113,10 +118,30 @@ describe('AdMob rewarded adapter', () => {
 
   it('gives no reward when the player closes the ad early', async () => {
     const client = fakeClient({ show: 'dismiss' });
-    const ads = createAdMobAds(client);
+    const ads = createAdMobAds(client, { dismissGraceMs: 0 });
     await expect(ads.show()).resolves.toEqual({ ok: false, reason: 'cancelled' });
     const health = emptyHealth();
     expect(health.hearts).toBe(0);
+  });
+
+  it('does not treat an empty show() resolve as a completed watch', async () => {
+    const client = fakeClient({ show: 'resolve-zero' });
+    const ads = createAdMobAds(client, { dismissGraceMs: 0 });
+    await expect(ads.show()).resolves.toEqual({ ok: false, reason: 'cancelled' });
+  });
+
+  it('still grants when Rewarded arrives just after dismiss', async () => {
+    const client = fakeClient({ show: 'dismiss-then-reward' });
+    const ads = createAdMobAds(client, { dismissGraceMs: 30 });
+    await expect(ads.show()).resolves.toEqual({ ok: true });
+  });
+
+  it('refuses a second show while one presentation is in flight', async () => {
+    const client = fakeClient({ show: 'hang' });
+    const ads = createAdMobAds(client, { showLimitMs: 50, dismissGraceMs: 0 });
+    const first = ads.show();
+    await expect(ads.show()).resolves.toEqual({ ok: false, reason: 'failed' });
+    await expect(first).resolves.toEqual({ ok: false, reason: 'failed' });
   });
 
   it('leaves health alone when prepare fails, then reports unavailable', async () => {
@@ -133,6 +158,11 @@ describe('AdMob rewarded adapter', () => {
     await Promise.resolve();
     expect(client.prepares.length).toBeGreaterThanOrEqual(2);
     expect(client.prepares.every(id => id === ADMOB.rewardedUnitId)).toBe(true);
+  });
+
+  it('uses Google\'s official sample app and rewarded unit ids', () => {
+    expect(ADMOB.appId).toBe('ca-app-pub-3940256099942544~3347511713');
+    expect(ADMOB.rewardedUnitId).toBe('ca-app-pub-3940256099942544/5224354917');
   });
 });
 

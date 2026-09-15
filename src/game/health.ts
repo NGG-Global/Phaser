@@ -54,6 +54,9 @@ const claimedIds = new Set<string>();
 const filledIds = new Set<string>();
 
 const KEY = 'tiny-tempo.health.v1';
+/** Persist refill transaction ids so a replayed purchase after a restart cannot fill twice. */
+const FILLS_KEY = 'tiny-tempo.fills.v1';
+const FILLS_KEEP = 64;
 /** Written but not required on read, so a future migration has something to branch on. */
 const VERSION = 1;
 const FULL: Health = Object.freeze({ hearts: HEALTH.max, refillStartedAt: null, spentAttempt: null });
@@ -123,6 +126,15 @@ export function healthHud(
     count: `${view.hearts}/${view.maxHearts}`,
     wait: view.nextHeartInMs === null ? null : formatCountdown(view.nextHeartInMs),
   };
+}
+
+/**
+ * One id per begun run. `{level}:{request}` reused the same string after a scene
+ * rebuild, so a leftover `spentAttempt` could skip the next spend or refund an
+ * abandoned heart.
+ */
+export function createAttemptId(level: number): string {
+  return `${level}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export function isProtectedLevel(level: number): boolean {
@@ -269,12 +281,20 @@ export function fillHearts(health: Health, now: number = Date.now()): GrantHeart
 /**
  * Fills the bar for a confirmed heart-refill purchase. The same `claimId` never fills twice.
  */
-export function claimFill(health: Health, claimId: string, now: number = Date.now()): GrantHeartResult {
+export function claimFill(
+  health: Health, claimId: string, now: number = Date.now(), storage: Storage | null = safeStorage(),
+): GrantHeartResult {
   const live = reconcile(health, now);
-  if (typeof claimId !== 'string' || claimId.length === 0 || filledIds.has(claimId)) {
+  if (typeof claimId !== 'string' || claimId.length === 0) {
+    return { granted: false, health: live };
+  }
+  const persisted = readFillIds(storage);
+  if (filledIds.has(claimId) || persisted.has(claimId)) {
     return { granted: false, health: live };
   }
   filledIds.add(claimId);
+  persisted.add(claimId);
+  writeFillIds(storage, persisted);
   return fillHearts(live, now);
 }
 
@@ -322,12 +342,39 @@ export function saveHealth(health: Health, storage: Storage | null = safeStorage
 
 /** Settings reset. False means nothing was written. */
 export function clearHealth(storage: Storage | null = safeStorage()): boolean {
+  claimedIds.clear();
+  filledIds.clear();
   try {
     storage?.removeItem(KEY);
+    storage?.removeItem(FILLS_KEY);
     return storage !== null;
   } catch {
     return false;
   }
+}
+
+function readFillIds(storage: Storage | null): Set<string> {
+  if (!storage) return new Set();
+  try {
+    const raw = storage.getItem(FILLS_KEY);
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    const ids = new Set<string>();
+    for (const item of parsed) {
+      if (typeof item === 'string' && item.length > 0) ids.add(item);
+    }
+    return ids;
+  } catch {
+    return new Set();
+  }
+}
+
+function writeFillIds(storage: Storage | null, ids: Set<string>): void {
+  if (!storage) return;
+  try {
+    storage.setItem(FILLS_KEY, JSON.stringify([...ids].slice(-FILLS_KEEP)));
+  } catch { /* private windows, blocked storage */ }
 }
 
 function safeStorage(): Storage | null {

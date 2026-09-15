@@ -64,6 +64,8 @@ describe('native failure isolation', () => {
       ok: false, product: PRODUCT.premium, reason: 'unavailable',
     });
     await expect(commerce.restorePurchases()).resolves.toEqual({ ok: false, reason: 'failed' });
+    expect(events.filter(e => e.event === 'purchase_started')).toEqual([]);
+    expect(events).toContainEqual({ event: 'purchase_failed', payload: { product: PRODUCT.premium, reason: 'unavailable' } });
   });
 
   it('turns a throwing show() into a failed result after availability passed', async () => {
