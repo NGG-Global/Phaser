@@ -8,6 +8,7 @@ import { createTomatoSounds } from '../src/audio/tomatoSounds';
 import { createCucumberSounds } from '../src/audio/cucumberSounds';
 import { createBananaSounds } from '../src/audio/bananaSounds';
 import { createWindowSounds } from '../src/audio/windowSounds';
+import { createPaperSounds } from '../src/audio/paperSounds';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -128,6 +129,7 @@ it('gives every vignette a voice for a wasted tap and for a missed beat', () => 
     curl: createCurlSounds,
     cucumber: createCucumberSounds,
     banana: createBananaSounds,
+    paper: createPaperSounds,
   };
   const context = {
     sampleRate: rate,
