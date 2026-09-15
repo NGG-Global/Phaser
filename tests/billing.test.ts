@@ -304,6 +304,35 @@ describe('RevenueCat Premium entitlement', () => {
     expect(billing.premium()).toBe(true);
   });
 
+  it('does not revoke Premium when a heart refill reports no entitlements', async () => {
+    const client = fakeClient({
+      products: [ITEM, PREMIUM_ITEM],
+      history: { transactions: [], entitlements: [PRODUCT.premium] },
+      purchase: 'ok-twice',
+    });
+    const billing = createRevenueCatBilling(client, {
+      apiKey: 'goog_test', lateMs: 5, cache: memoryStorage(),
+    });
+    await billing.boot();
+    expect(billing.premium()).toBe(true);
+    await expect(billing.purchase(PRODUCT.heartRefill)).resolves.toEqual({
+      ok: true, product: PRODUCT.heartRefill, claimId: 'dup-txn',
+    });
+    expect(billing.premium()).toBe(true);
+  });
+
+  it('clears cached Premium when live customer info has no entitlement', async () => {
+    const cache = memoryStorage({
+      'tiny-tempo.premium.v1': JSON.stringify({ version: 1, entitled: true }),
+    });
+    const billing = createRevenueCatBilling(fakeClient({
+      products: [ITEM, PREMIUM_ITEM],
+      history: { transactions: [], entitlements: [] },
+    }), { apiKey: 'goog_test', lateMs: 5, cache });
+    await billing.boot();
+    expect(billing.premium()).toBe(false);
+  });
+
   it('does not unlock Premium when the player cancels', async () => {
     const billing = createRevenueCatBilling(fakeClient({
       products: [ITEM, PREMIUM_ITEM],

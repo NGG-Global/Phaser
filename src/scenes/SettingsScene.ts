@@ -23,6 +23,11 @@ import { body, display, resize } from '@/ui/type';
 
 const PANEL = {
   cardHeight: 118, cardGap: 16,
+  /**
+   * Status line plus a row of store controls. Sized so an 88-unit touch target
+   * sits below the copy instead of on it — Restore and Unlock share that row.
+   */
+  premiumHeight: 176,
 } as const;
 
 /** The few colours the scene owns; the paper is the game's clear colour. */
@@ -32,8 +37,8 @@ type Phase = 'idle' | 'counting' | 'measured' | 'failed';
 interface Button { readonly rect: Phaser.Geom.Rectangle; readonly label: Phaser.GameObjects.Text; readonly hero: boolean }
 
 /**
- * Player settings: output-latency calibration, mute, and the one control that can
- * destroy saved progress.
+ * Player settings: output-latency calibration, mute, Restore / Unlock Premium,
+ * and the one control that can destroy saved progress.
  *
  * Calibration measures a *residual* against the offset already in force, so running it
  * twice refines the first result instead of starting over. The measurement is the median
@@ -123,7 +128,7 @@ export class SettingsScene extends BaseScene {
 
   protected override layout(): void {
     const { safe } = this.viewport;
-    const s = Math.min(safe.width / 720, safe.height / 1150);
+    const s = Math.min(safe.width / 720, safe.height / 1200);
     this.uiScale = s;
     this.backdrop.layout(this.viewport);
     const left = safe.centerX - 322 * s;
@@ -151,7 +156,8 @@ export class SettingsScene extends BaseScene {
     this.beadRow = { x: left + 34 * s, y: top + card - 24 * s, gap: 26 * s, radius: 6 * s };
     place(1, this.soundValue, this.buttons.sound, 150);
     place(2, this.progressValue, this.buttons.reset, 160);
-    this.placePremium(left, top + 3 * (card + gap), width, Math.max(card, 132 * s), control, s);
+    const premium = Math.max(PANEL.premiumHeight * s, 52 * s + control + 24 * s);
+    this.placePremium(left, top + 3 * (card + gap), width, premium, control, s);
     const done = this.buttons.done;
     const doneHeight = Math.max(96 * s, control);
     done.rect.setTo(safe.centerX - 200 * s, safe.bottom - 132 * s - doneHeight, 400 * s, doneHeight);
@@ -165,11 +171,12 @@ export class SettingsScene extends BaseScene {
     drawPanel(g, rect, s, { fill: LOOK.card, depth: 8 });
     placeSurface(this.surfaces[3]!, rect, s);
     resize(this.premiumValue, 28 * s, LOOK.ink, STYLE.current, false);
-    this.premiumValue.setPosition(left + 28 * s, rect.y + 36 * s);
     const entitled = monetization().premium();
     this.buttons.unlock.label.setVisible(!entitled);
     const btnH = control;
     const btnY = rect.bottom - 16 * s - btnH;
+    // Centre the status in the band above the controls so Restore never sits on it.
+    this.premiumValue.setPosition(left + 28 * s, rect.y + (btnY - rect.y) / 2);
     const inner = width - 48 * s;
     if (entitled) {
       this.buttons.unlock.rect.setTo(0, 0, 0, 0);

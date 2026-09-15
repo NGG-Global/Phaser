@@ -163,7 +163,10 @@ export function createRevenueCatBilling(
       writePremiumCache(cache, true);
       return;
     }
-    if (mode === 'authoritative' && session?.product !== premiumId) {
+    // Restore and boot may revoke; a purchase in flight must not. A refill
+    // receipt often omits entitlements, and wiping Premium there would punish
+    // a player who already paid for the permanent unlock.
+    if (mode === 'authoritative' && session === null) {
       premiumActive = false;
       writePremiumCache(cache, false);
     }
