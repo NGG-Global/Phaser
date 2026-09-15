@@ -16,17 +16,22 @@ import { MaterialKey } from '@/textures/materials';
 import type { Judgement } from '@/rhythm/judge';
 import { beatsPlayed, countIn, markFor, trackGeometry, type Mark } from '@/game/beatTrack';
 import { levelSpec, meanAccuracy, starsFor, type LevelSpec } from '@/game/levels';
+import {
+  abandonAttempt, beginAttempt, canBeginAttempt, createAttemptId, finishAttempt, healthHud, loadHealth,
+  redeemFill, redeemHeart, saveHealth, viewHealth,
+} from '@/game/health';
+import { monetization, PRODUCT, purchaseFeedback, rewardedFeedback, track } from '@/monetization';
 import { loadProgress, recordResult, saveProgress, type LevelOutcome } from '@/game/progress';
 import { STYLE } from '@/config/style';
 import { PALETTE, SHELL } from '@/config/theme';
-import { drawMap, drawRestart, drawSpeaker } from '@/ui/icons';
+import { drawHeart, drawMap, drawRestart, drawSpeaker } from '@/ui/icons';
 import { faces } from '@/ui/light';
 import { mix, shade, starColour } from '@/ui/colour';
 import { CHROME, drawPuck, pressAmount, puckSink } from '@/ui/chrome';
 import { drawPanel, placeSurface, Rect, surface } from '@/ui/panel';
 import { Feedback } from '@/ui/feedback';
 import { arrive, settle, squash } from '@/ui/spring';
-import { body, display, resize } from '@/ui/type';
+import { body, display, label, resize } from '@/ui/type';
 import { drawStarMark, prizeColour, STAR_PRIZE } from '@/ui/star';
 import { chorusGlow, starAge, starImpactAge, starPose } from '@/ui/starReveal';
 import { SceneCurtain } from '@/ui/SceneCurtain';
@@ -68,12 +73,21 @@ export class PlayScene extends BaseScene {
   /** Computed and persisted the instant the last task resolves; the summary only displays it. */
   private outcome: LevelOutcome | null = null;
   private saveFailed = false;
+  /** Set once gameplay actually begins; refunds use the same id so a double-finish cannot restore two hearts. */
+  private attemptId: string | null = null;
+  private heartRefunded = false;
+  private emptyTracked = false;
+  private watchOfferTracked = false;
+  private purchaseOfferTracked = false;
+  private commerceBusy = false;
+  private watchClaims = 0;
   private get definition() { return VIGNETTES.find(v => v.id === this.spec.vignette) ?? VIGNETTES[0]!; }
   private stars!: Phaser.GameObjects.Graphics;
   private headline!: Phaser.GameObjects.Text;
   /** Hung behind the phase word so Watch and Your turn are different objects, not just colours. */
   private turnSign!: Phaser.GameObjects.Graphics;
   private accuracy!: Phaser.GameObjects.Text;
+  private kept!: Phaser.GameObjects.Text;
   private turn: TurnCue = 'none';
   /** Judgements that scored in the early window while the example was still on screen. */
   private heldJudgements: Judgement[] = [];
@@ -83,11 +97,21 @@ export class PlayScene extends BaseScene {
   private action!: Phaser.GameObjects.Graphics;
   private actionSurface!: Phaser.GameObjects.TileSprite;
   private actionLabel!: Phaser.GameObjects.Text;
+  private actionHint!: Phaser.GameObjects.Text;
+  private actionHeart!: Phaser.GameObjects.Graphics;
   private actionRect = new Phaser.Geom.Rectangle();
   private actionCaption = '';
   private actionPressedAt = -Infinity;
   private actionPressDirty = false;
   private actionShownAt = -Infinity;
+  private refillRoot!: Phaser.GameObjects.Container;
+  private refill!: Phaser.GameObjects.Graphics;
+  private refillLabel!: Phaser.GameObjects.Text;
+  private refillHint!: Phaser.GameObjects.Text;
+  private refillPrice!: Phaser.GameObjects.Text;
+  private refillMark!: Phaser.GameObjects.Graphics;
+  private refillRect = new Phaser.Geom.Rectangle();
+  private refillPressedAt = -Infinity;
   private mapAt = { x: 0, y: 0 };
   private restartAt = { x: 0, y: 0 };
   private muteAt = { x: 0, y: 0 };
@@ -154,12 +178,22 @@ export class PlayScene extends BaseScene {
     this.turnSign = this.add.graphics().setDepth(11);
     this.headline = display(this, this.definition.intro, { size: 88, colour: ink, align: 'center' }).setOrigin(0.5, 0).setDepth(12);
     this.accuracy = body(this, '', { size: 34, colour: ink, align: 'center' }).setOrigin(0.5).setDepth(11);
+    this.kept = label(this, '', { size: 22, colour: PALETTE.coral, align: 'center' }).setOrigin(0.5).setDepth(11).setVisible(false);
     this.chrome = this.add.graphics().setDepth(10);
     this.actionRoot = this.add.container(0, 0).setDepth(10);
     this.action = this.add.graphics();
     this.actionSurface = surface(this, MaterialKey.cloth, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, PALETTE.coral, 0.35);
     this.actionLabel = display(this, '', { size: 40, colour: SHELL.cream, align: 'center' }).setOrigin(0.5);
-    this.actionRoot.add([this.action, this.actionSurface, this.actionLabel]);
+    this.actionHint = label(this, '+1', { size: 22, colour: SHELL.cream, align: 'center' }).setOrigin(1, 0.5);
+    this.actionHeart = this.add.graphics();
+    this.actionRoot.add([this.action, this.actionSurface, this.actionLabel, this.actionHint, this.actionHeart]);
+    this.refillRoot = this.add.container(0, 0).setDepth(10);
+    this.refill = this.add.graphics();
+    this.refillLabel = label(this, 'REFILL', { size: 28, colour: PALETTE.ink, align: 'center' }).setOrigin(0.5);
+    this.refillHint = label(this, 'RESTORE 5', { size: 20, colour: PALETTE.ink, align: 'center' }).setOrigin(1, 0.5);
+    this.refillPrice = body(this, '', { size: 20, colour: PALETTE.muted, align: 'center' }).setOrigin(0.5);
+    this.refillMark = this.add.graphics();
+    this.refillRoot.add([this.refill, this.refillLabel, this.refillHint, this.refillPrice, this.refillMark]);
     this.marks = this.add.graphics().setDepth(8);
     this.verdict = display(this, '', { size: 38, colour: ink, align: 'center' }).setOrigin(0.5).setAlpha(0).setDepth(8);
     this.taskMarks = this.add.graphics().setDepth(11);
@@ -214,16 +248,25 @@ export class PlayScene extends BaseScene {
     resize(this.verdict, 38 * s, this.verdictColour());
     // Tighter than the menu's Play block, so the result plaque still fits above it.
     const blockH = Math.max(96 * s, this.controlSize);
+    const refillH = Math.max(88 * s, this.controlSize);
     this.actionRect.setTo(
       safe.centerX - CHROME.block.width * s / 2,
       safe.bottom - 72 * s - blockH,
       CHROME.block.width * s,
       blockH,
     );
+    this.refillRect.setTo(
+      this.actionRect.x,
+      this.actionRect.y - 12 * s - refillH,
+      this.actionRect.width,
+      refillH,
+    );
     this.drawAction(0);
     this.actionPressDirty = true;
     resize(this.accuracy, 34 * s, ink, STYLE.current, false);
-    this.accuracy.setPosition(safe.centerX, this.trackY + 28 * s);
+    this.placeWaitCopy();
+    resize(this.kept, 22 * s, PALETTE.coral, STYLE.current, false);
+    this.kept.setPosition(safe.centerX, this.trackY + 52 * s);
     this.drawStars();
     this.drawTaskMarks();
   }
@@ -243,21 +286,74 @@ export class PlayScene extends BaseScene {
   /**
    * The one coral block. Pause, retry and the result all used to be a faint caption
    * under the vignette; every other screen puts that action on a block the thumb
-   * already knows.
+   * already knows. At zero hearts a cream refill sits above Watch.
    */
-  private drawAction(press: number): void {
+  private drawAction(press: number, refillPress = 0): void {
     const shown = this.actionCaption !== '';
+    const watching = shown && this.actionCaption === 'WATCH';
     this.actionRoot.setVisible(shown);
-    if (!shown) return;
+    this.refillRoot.setVisible(watching);
+    if (!shown) {
+      this.refill.clear();
+      this.refillMark.clear();
+      return;
+    }
     const s = this.uiScale;
     const g = this.action.clear();
     const r = this.actionRect;
     drawPanel(g, r, s, { fill: PALETTE.coral, depth: CHROME.block.depth, press, hero: true });
     const sink = CHROME.block.depth * s * press * 0.8;
     placeSurface(this.actionSurface, r, s, sink);
+    this.actionHint.setVisible(watching);
+    this.actionHeart.setVisible(watching);
     this.actionLabel.setText(this.actionCaption);
-    resize(this.actionLabel, 40 * s, SHELL.cream);
-    this.actionLabel.setPosition(r.centerX, r.centerY + sink);
+    if (watching) {
+      resize(this.actionLabel, 32 * s, SHELL.cream);
+      this.actionLabel.setPosition(r.centerX, r.centerY - 16 * s + sink);
+      this.actionHint.setText('+1');
+      resize(this.actionHint, 22 * s, SHELL.cream);
+      this.actionHint.setPosition(r.centerX - 4 * s, r.centerY + 22 * s + sink);
+      this.actionHeart.clear();
+      drawHeart(this.actionHeart, r.centerX + 18 * s, r.centerY + 22 * s + sink, 10 * s, SHELL.cream);
+      this.drawRefill(refillPress);
+    } else {
+      this.actionHeart.clear();
+      this.refill.clear();
+      this.refillMark.clear();
+      resize(this.actionLabel, 40 * s, SHELL.cream);
+      this.actionLabel.setPosition(r.centerX, r.centerY + sink);
+    }
+    this.placeWaitCopy();
+  }
+
+  private drawRefill(press: number): void {
+    const s = this.uiScale;
+    const r = this.refillRect;
+    const refill = this.refill.clear();
+    drawPanel(refill, r, s, { fill: SHELL.bench, depth: 12, press });
+    const sink = 12 * s * press * 0.8;
+    this.refillLabel.setText('REFILL');
+    resize(this.refillLabel, 26 * s, PALETTE.ink);
+    this.refillLabel.setPosition(r.centerX, r.centerY - 14 * s + sink);
+    this.refillHint.setText('RESTORE 5');
+    resize(this.refillHint, 18 * s, PALETTE.ink, STYLE.current, false);
+    const priceText = monetization().productPrice(PRODUCT.heartRefill) ?? '';
+    const hintX = priceText.length > 0 ? r.centerX - 36 * s : r.centerX - 4 * s;
+    this.refillHint.setPosition(hintX, r.centerY + 20 * s + sink);
+    this.refillMark.clear();
+    drawHeart(this.refillMark, hintX + 16 * s, r.centerY + 20 * s + sink, 9 * s, PALETTE.coral);
+    this.refillPrice.setText(priceText);
+    resize(this.refillPrice, 18 * s, PALETTE.muted, STYLE.current, false);
+    this.refillPrice.setPosition(r.centerX + 70 * s, r.centerY + 20 * s + sink);
+    this.refillPrice.setVisible(priceText.length > 0);
+  }
+
+  private placeWaitCopy(): void {
+    const s = this.uiScale;
+    const y = this.actionCaption === 'WATCH'
+      ? this.refillRect.y - 28 * s
+      : this.trackY + 28 * s;
+    this.accuracy.setPosition(this.viewport.safe.centerX, y);
   }
 
   private setAction(caption: string): void {
@@ -271,6 +367,12 @@ export class PlayScene extends BaseScene {
   private now(): number { return this.audio?.clock.now() ?? performance.now() / 1000; }
 
   private async startRound(): Promise<void> {
+    // Gate before tearing anything down: a denied restart must not kill a paid run.
+    if (!canBeginAttempt(loadHealth(), loadProgress(), this.spec.level, Date.now(), monetization().premium())) {
+      if (this.controller?.active) return;
+      this.showNoHearts();
+      return;
+    }
     const request = ++this.startRequest;
     this.replay = null;
     this.replayOffset = null;
@@ -282,6 +384,12 @@ export class PlayScene extends BaseScene {
     this.levelCleared = false;
     this.outcome = null;
     this.saveFailed = false;
+    this.attemptId = null;
+    this.heartRefunded = false;
+    this.emptyTracked = false;
+    this.watchOfferTracked = false;
+    this.purchaseOfferTracked = false;
+    this.kept.setVisible(false);
     this.stars.clear();
     this.setTurn('none');
     this.controller?.dispose();
@@ -325,6 +433,21 @@ export class PlayScene extends BaseScene {
       this.starting = false;
       this.audio!.setSounds(this.definition.sounds(this.audio!.context));
       const origin = this.audio!.music.start(); // fresh sources: every level starts at the base tempo
+      if (this.disposed || request !== this.startRequest || this.blocked()) {
+        this.audio!.music.stop();
+        return;
+      }
+      // Spend only once audio is running: a failed unlock/load above never reaches here.
+      const attemptId = createAttemptId(this.spec.level);
+      const begun = beginAttempt(loadHealth(), loadProgress(), this.spec.level, attemptId, Date.now(), monetization().premium());
+      if (!begun.ok) {
+        this.audio!.music.stop();
+        this.showNoHearts();
+        return;
+      }
+      saveHealth(begun.health);
+      this.attemptId = attemptId;
+      this.heartRefunded = false;
       this.sequence = new TaskSequence(this.task.bpm, origin, 1);
       this.beginTask(origin);
     } catch (error) {
@@ -367,12 +490,25 @@ export class PlayScene extends BaseScene {
     }
     if (near(this.restartAt)) { this.pressPuck('restart'); void this.startRound(); return; }
     if (near(this.mapAt)) { this.pressPuck('map'); this.leaveForMap(); return; }
+    if (this.actionCaption === 'WATCH' && Phaser.Geom.Rectangle.Contains(this.refillRect, tap.x, tap.y)) {
+      this.refillPressedAt = performance.now() / 1000;
+      this.actionPressDirty = true;
+      void this.buyFill();
+      return;
+    }
     if (this.actionCaption !== '' && Phaser.Geom.Rectangle.Contains(this.actionRect, tap.x, tap.y)) {
       this.actionPressedAt = performance.now() / 1000;
       this.actionPressDirty = true;
+      if (this.actionCaption === 'WATCH') { void this.watchAd(); return; }
+      if (this.actionCaption === 'Map') { this.leaveForMap(); return; }
     }
     const phase = this.controller?.phase ?? 'idle';
-    if (phase === 'idle' || phase === 'paused') { if (!this.starting) void this.startRound(); return; }
+    if (phase === 'idle' || phase === 'paused') {
+      if (this.actionCaption === 'WATCH') return;
+      if (this.actionCaption === 'Map') { this.leaveForMap(); return; }
+      if (!this.starting) void this.startRound();
+      return;
+    }
     if (phase === 'result') {
       // Cleared: back to the road, centred on what just opened. Failed: straight into another go.
       if (this.summaryShown) { if (this.levelCleared) this.leaveForMap(); else void this.startRound(); }
@@ -487,15 +623,30 @@ export class PlayScene extends BaseScene {
       if (!this.puckDirty) this.puckPressed = null;
     }
     const actionPress = pressAmount(wall, this.actionPressedAt);
-    if (actionPress > 0.001 || this.actionPressDirty) {
-      this.drawAction(Math.max(0, actionPress));
-      this.actionPressDirty = actionPress > 0.001;
+    const refillPress = pressAmount(wall, this.refillPressedAt);
+    if (actionPress > 0.001 || refillPress > 0.001 || this.actionPressDirty) {
+      this.drawAction(Math.max(0, actionPress), Math.max(0, refillPress));
+      this.actionPressDirty = actionPress > 0.001 || refillPress > 0.001;
     }
     if (this.actionCaption !== '') {
       const { rise, alpha } = this.reducedMotion ? { rise: 0, alpha: 1 } : arrive(wall - this.actionShownAt, 0.5);
       this.actionRoot.setY(rise * 24 * this.uiScale).setAlpha(alpha);
+      this.refillRoot.setY(rise * 24 * this.uiScale).setAlpha(alpha);
     } else {
       this.actionRoot.setY(0).setAlpha(1);
+      this.refillRoot.setY(0).setAlpha(1);
+    }
+    if (this.actionCaption === 'WATCH' && !this.summaryShown) {
+      const health = loadHealth();
+      if (
+        !this.starting && !this.commerceBusy
+        && canBeginAttempt(health, loadProgress(), this.spec.level, Date.now(), monetization().premium())
+      ) {
+        void this.startRound();
+        return;
+      }
+      const wait = healthHud(viewHealth(health), { premium: monetization().premium() }).wait ?? '';
+      if (this.accuracy.text !== wait) this.accuracy.setText(wait);
     }
     // The verdict word rises and fades; one instance, so a quick double replaces rather
     // than stacks.
@@ -745,6 +896,11 @@ export class PlayScene extends BaseScene {
     this.outcome = outcome;
     this.levelCleared = outcome.cleared;
     this.saveFailed = outcome.cleared && !saveProgress(outcome.progress);
+    if (this.attemptId !== null) {
+      const finished = finishAttempt(loadHealth(), this.attemptId, outcome.stars);
+      this.heartRefunded = finished.refunded;
+      saveHealth(finished.health);
+    }
   }
   private showSummary(): void {
     this.summaryShown = true;
@@ -757,6 +913,7 @@ export class PlayScene extends BaseScene {
     this.setTurn('none');
     this.changeHeadline(this.saveFailed ? 'Couldn’t save' : outcome.cleared ? 'Cleared' : 'Again?');
     this.accuracy.setText(`${Math.round(accuracy)}%`);
+    this.kept.setText('HEART KEPT').setVisible(this.heartRefunded);
     this.setAction(outcome.cleared ? 'Continue' : 'Try again');
     this.drawStars();
     this.drawTaskMarks();
@@ -783,14 +940,18 @@ export class PlayScene extends BaseScene {
   }
   private drawStars(): void {
     this.stars.clear();
-    if (!this.summaryShown) return;
+    if (!this.summaryShown) {
+      this.kept.setVisible(false);
+      return;
+    }
     const s = this.uiScale;
     const { safe } = this.viewport;
     // One cream plaque: stars above, the percentage below. They used to float on the
     // timber of the bench, which is why empty outlines vanished and the score looked
     // like a caption from another screen.
-    const plateW = 268 * s, plateH = 100 * s;
-    drawPanel(this.stars, new Rect(safe.centerX - plateW / 2, this.trackY - plateH / 2, plateW, plateH), s, {
+    const plateW = 268 * s, plateH = (this.heartRefunded ? 128 : 100) * s;
+    const plateY = this.heartRefunded ? this.trackY - 50 * s : this.trackY - plateH / 2;
+    drawPanel(this.stars, new Rect(safe.centerX - plateW / 2, plateY, plateW, plateH), s, {
       fill: SHELL.puck, depth: 6, radius: 22,
     });
     const now = this.now();
@@ -833,6 +994,7 @@ export class PlayScene extends BaseScene {
   }
   private leaveForMap(): void {
     if (this.curtain.active) return;
+    this.persistAbandonedAttempt();
     // Stop outgoing action voices immediately; the shared music remains the bedding.
     this.controller?.dispose();
     this.transition = null;
@@ -841,6 +1003,70 @@ export class PlayScene extends BaseScene {
     this.audio?.music.setRate(1, this.audio.context.currentTime);
     this.curtain.cover(() => this.scene.start(SceneKey.Map, { focus: this.levelCleared ? this.spec.level + 1 : this.spec.level }));
   }
+  private showNoHearts(): void {
+    this.starting = false;
+    if (monetization().premium()) return;
+    this.setTurn('none');
+    this.changeHeadline('No hearts');
+    const wait = healthHud(viewHealth(loadHealth()), { premium: monetization().premium() }).wait;
+    if (!this.summaryShown) this.accuracy.setText(wait === null ? '' : wait);
+    this.setAction('WATCH');
+    if (!this.emptyTracked) {
+      this.emptyTracked = true;
+      track('health_empty', { level: this.spec.level });
+    }
+    if (!this.watchOfferTracked) {
+      this.watchOfferTracked = true;
+      track('rewarded_offer_shown', { placement: 'play' });
+    }
+    if (!this.purchaseOfferTracked) {
+      this.purchaseOfferTracked = true;
+      track('purchase_offer_shown', { product: PRODUCT.heartRefill });
+    }
+  }
+
+  private async watchAd(): Promise<void> {
+    if (this.commerceBusy || this.curtain.active) return;
+    this.commerceBusy = true;
+    const claimId = `play:${++this.watchClaims}`;
+    try {
+      const result = await monetization().showRewarded();
+      if (result.ok) redeemHeart(claimId);
+      if (this.disposed) return;
+      if (!result.ok) {
+        this.accuracy.setText(rewardedFeedback(result.reason));
+        return;
+      }
+      void this.startRound();
+    } finally {
+      this.commerceBusy = false;
+    }
+  }
+
+  private async buyFill(): Promise<void> {
+    if (this.commerceBusy || this.curtain.active) return;
+    this.commerceBusy = true;
+    try {
+      const result = await monetization().purchase(PRODUCT.heartRefill);
+      if (result.ok) {
+        const filled = redeemFill(result.claimId);
+        if (this.disposed) return;
+        if (!filled.granted && filled.health.hearts <= 0) {
+          this.accuracy.setText(purchaseFeedback('failed'));
+          return;
+        }
+      } else {
+        if (this.disposed) return;
+        this.accuracy.setText(purchaseFeedback(result.reason));
+        return;
+      }
+      if (this.disposed) return;
+      void this.startRound();
+    } finally {
+      this.commerceBusy = false;
+    }
+  }
+
   private showPause(): void {
     this.vignette.pause();
     this.setTurn('none');
@@ -864,8 +1090,17 @@ export class PlayScene extends BaseScene {
     // Freezing the idle illustration would leave it stuck until the next round begins.
     if (wasRunning || wasStarting) this.vignette.pause();
   }
-  private readonly visibility = (): void => { if (document.hidden) this.interrupt(); };
-  private readonly pageHide = (): void => { this.interrupt(); };
+  private persistAbandonedAttempt(): void {
+    if (this.attemptId === null) return;
+    saveHealth(abandonAttempt(loadHealth(), this.attemptId));
+  }
+
+  private readonly visibility = (): void => {
+    if (document.hidden && !this.commerceBusy) this.interrupt();
+  };
+  private readonly pageHide = (): void => {
+    if (!this.commerceBusy) this.interrupt();
+  };
   private readonly audioState = (): void => { if (this.audio?.context.state !== 'running') this.interrupt(); };
   private checkOrientation(): void { if (this.blocked()) this.interrupt(); }
   private shutdown(): void {
@@ -876,6 +1111,7 @@ export class PlayScene extends BaseScene {
     ++this.startRequest;
     if (this.pump !== null) clearInterval(this.pump);
     this.pump = null;
+    this.persistAbandonedAttempt();
     this.taps.dispose();
     this.replayPanel?.remove();
     this.replayPanel = null;

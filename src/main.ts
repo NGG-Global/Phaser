@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 
 import { createGameConfig } from '@/config/game';
 import { showBootError } from '@/core/shell';
+import { bootMonetization } from '@/monetization/boot';
 
 declare global {
   interface Window {
@@ -23,6 +24,7 @@ declare global {
  */
 function start(): void {
   try {
+    void bootMonetization();
     const game = new Phaser.Game(createGameConfig());
 
     if (import.meta.env.DEV) {
