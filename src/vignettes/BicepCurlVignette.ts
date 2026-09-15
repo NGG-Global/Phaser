@@ -36,9 +36,9 @@ const HIP_Y = -320;
 const SHOULDER = { x: 48, y: -250 } as const;
 const ELBOW = { x: 62, y: -72 } as const;
 const HEAD = { x: 40, y: -384, r: 60 } as const;
-const DELTOID_R = 56;
-const UPPER_ARM_W = 84;
-const FOREARM_W = 62;
+const DELTOID_R = 50;
+const UPPER_ARM_W = 76;
+const FOREARM_W = 56;
 /** Side-on plates either side of the grip, and the grip itself. */
 const PLATE = { reach: 66, w: 40, h: 118 } as const;
 const GRIP_R = 31;
@@ -169,10 +169,10 @@ export class BicepCurlVignette implements Vignette {
     g.fillStyle(ink.lit, 0.8).fillRoundedRect(6, -35, 100, 10, 5);
     g.fillStyle(GYM.chalk).fillRoundedRect(0, -14, 136, 12, 5);
     // Shorts over the top of both legs, tucked under the tank.
-    if (line > 0) g.lineStyle(line, ink.edge).strokeRoundedRect(-104, HIP_Y - 40, 214, 160, 34);
-    g.fillStyle(ink.shade).fillRoundedRect(-104, HIP_Y - 40, 214, 160, 34);
-    g.fillStyle(ink.face).fillRoundedRect(-104, HIP_Y - 40, 214, 134, 34);
-    g.fillStyle(GYM.tank, 0.9).fillRoundedRect(76, HIP_Y - 16, 14, 108, 6);
+    if (line > 0) g.lineStyle(line, ink.edge).strokeRoundedRect(-78, HIP_Y - 28, 168, 148, 36);
+    g.fillStyle(ink.shade).fillRoundedRect(-78, HIP_Y - 28, 168, 148, 36);
+    g.fillStyle(ink.face).fillRoundedRect(-78, HIP_Y - 28, 168, 124, 36);
+    g.fillStyle(GYM.tank, 0.95).fillRoundedRect(68, HIP_Y - 8, 12, 96, 6);
   }
 
   private drawBody(g: Phaser.GameObjects.Graphics): void {
@@ -181,38 +181,37 @@ export class BicepCurlVignette implements Vignette {
     const skin = faces(GYM.skin);
     const tank = faces(GYM.tank);
     // The far arm hangs behind the torso in shade: the one that is not working.
-    // It is thinner and lower than the working arm, so it reads as behind, not as a pack.
     for (const pass of line > 0 ? [line, 0] : [0]) {
       const tone = pass > 0 ? ink.edge : skin.shade;
-      g.fillStyle(tone).fillCircle(-58, -210, 32 + pass);
-      this.limb(g, -58, -210, -78, -70, 48, tone, pass);
-      g.fillStyle(tone).fillCircle(-78, -52, 24 + pass);
+      g.fillStyle(tone).fillCircle(-40, -214, 28 + pass);
+      this.limb(g, -40, -214, -52, -86, 40, tone, pass);
+      g.fillStyle(tone).fillCircle(-52, -68, 22 + pass);
     }
     // Torso, neck and head as one silhouette: broad through the shoulders and the
-    // traps, narrowing to the waist.
-    const torso = [-110, -250, 108, -276, 132, -150, 92, -8, -70, -8, -122, -130];
+    // traps, narrowing to the waist. The back edge stays close to the spine so a
+    // side-on vest cannot read as a pack hanging off it.
+    const torso = [-48, -248, 112, -272, 128, -150, 88, -8, -36, -8, -58, -140];
     if (line > 0) {
       g.lineStyle(line * 2, ink.edge); outline(g, torso);
-      this.limb(g, 4, -254, 34, -328, 72, ink.edge, line);
+      this.limb(g, 8, -254, 34, -328, 72, ink.edge, line);
       g.fillStyle(ink.edge).fillCircle(HEAD.x, HEAD.y, HEAD.r + line);
     }
     g.fillStyle(skin.face); fan(g, torso);
-    this.limb(g, 4, -254, 34, -328, 72, skin.face);
-    g.fillStyle(skin.shade, 0.4); fan(g, [-110, -250, -40, -250, -40, -8, -70, -8, -122, -130]);
-    // A chest plane under the tank, so the vest has a body rather than hanging in air.
-    g.fillStyle(skin.face).fillEllipse(70, -170, 92, 110);
-    g.fillStyle(skin.lit, 0.55).fillEllipse(88, -186, 48, 54);
+    this.limb(g, 8, -254, 34, -328, 72, skin.face);
+    g.fillStyle(skin.shade, 0.35); fan(g, [-48, -248, -8, -248, -8, -8, -36, -8, -58, -140]);
+    g.fillStyle(skin.face).fillEllipse(78, -168, 88, 108);
+    g.fillStyle(skin.lit, 0.55).fillEllipse(96, -184, 44, 50);
     g.fillStyle(skin.face).fillCircle(HEAD.x, HEAD.y, HEAD.r);
     g.fillStyle(skin.lit, 0.7).fillCircle(HEAD.x - 14, HEAD.y - 16, 30);
-    // Tank top: the one saturated colour in the room. Side-on, so a lit front and a
-    // shaded back, with the armholes cut as the straps.
-    const vest = [-96, -188, 86, -200, 128, -138, 92, -8, -70, -8, -114, -118];
+    // Singlet, side-on: a lit chest panel, a thin shaded back, two straps. No mass
+    // behind the spine, which is what made the last vest read as luggage.
+    const vest = [-18, -186, 96, -198, 122, -138, 86, -10, -22, -10, -36, -128];
     if (line > 0) { g.lineStyle(line, tank.edge); outline(g, vest); }
     g.fillStyle(tank.face); fan(g, vest);
-    g.fillStyle(tank.shade, 0.88); fan(g, [-114, -118, -70, -140, -46, -8, -70, -8]);
-    g.fillStyle(tank.lit, 0.85); fan(g, [-20, -180, 84, -192, 118, -140, 80, -118, -10, -118]);
-    if (line > 0) g.lineStyle(22 + line * 2, tank.edge).lineBetween(-72, -196, -62, -248).lineBetween(64, -204, 56, -258);
-    g.lineStyle(22, tank.face).lineBetween(-72, -196, -62, -248).lineBetween(64, -204, 56, -258);
+    g.fillStyle(tank.shade, 0.9); fan(g, [-36, -128, -8, -140, -4, -10, -22, -10]);
+    g.fillStyle(tank.lit, 0.88); fan(g, [8, -176, 94, -188, 116, -138, 82, -114, 16, -114]);
+    if (line > 0) g.lineStyle(18 + line * 2, tank.edge).lineBetween(-8, -186, 4, -250).lineBetween(70, -200, 58, -262);
+    g.lineStyle(18, tank.face).lineBetween(-8, -186, 4, -250).lineBetween(70, -200, 58, -262);
     // A close crop, a sweatband and an ear.
     g.fillStyle(ink.face).slice(HEAD.x, HEAD.y, HEAD.r + 1, Math.PI * 0.94, Math.PI * 1.72, false).fillPath();
     g.fillStyle(GYM.chalk).fillRoundedRect(HEAD.x - 56, HEAD.y - 44, 114, 22, 10);
@@ -446,11 +445,11 @@ export class BicepCurlVignette implements Vignette {
     const hand = this.handAt(flex + tremble);
     // The bicep sits on the front of the upper arm and swells with the flexion; the pump
     // grows its resting size as the set goes on.
-    const grow = 1 + this.pump * 0.5;
-    const bx = 82 + 22 * bulge;
-    const by = -168 + 10 * bulge;
-    const rx = (38 + 36 * bulge) * grow + pop * 4;
-    const ry = (64 + 14 * bulge) * grow;
+    const grow = 1 + this.pump * 0.2;
+    const bx = 72 + 10 * bulge;
+    const by = -166 + 6 * bulge;
+    const rx = (28 + 16 * bulge) * grow + pop * 2;
+    const ry = (50 + 8 * bulge) * grow;
     // Deltoid, upper arm, bicep, elbow and forearm as one silhouette: the edge pass first.
     for (const pass of line > 0 ? [line, 0] : [0]) {
       const tone = pass > 0 ? ink.edge : skin.face;

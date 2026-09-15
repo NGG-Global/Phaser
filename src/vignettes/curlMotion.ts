@@ -13,11 +13,11 @@ export const CURL_MOTION = {
   /** How far a wasted tap gets the weight before the arm gives: a half rep, never a rep. */
   halfRep: 0.45,
   /** Elbow to the centre of the grip, in figure units. */
-  forearm: 200,
+  forearm: 176,
   /** The forearm hanging straight down, as a screen-space angle. */
   hangRad: Math.PI / 2,
-  /** The sweep from hanging to the squeeze. Past vertical, so the weight ends in front of the shoulder. */
-  sweepRad: 2.7,
+  /** The sweep from hanging to the squeeze. Past vertical, so the weight ends in front of the chest. */
+  sweepRad: 2.48,
   /** A flawless response leaves one rep in the set; the unscored coda takes it. */
   pumpAtFullResponse: 0.86,
 } as const;
