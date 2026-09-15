@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { levelSpec, starsFor } from '../src/game/levels';
 import type { Progress } from '../src/game/progress';
 import {
-  HEALTH, abandonAttempt, attemptCostsHeart, beginAttempt, canBeginAttempt, claimHeart,
-  clearHealth, finishAttempt, formatCountdown, grantHeart, healthHud, isMastered,
+  HEALTH, abandonAttempt, attemptCostsHeart, beginAttempt, canBeginAttempt, claimFill, claimHeart,
+  clearHealth, fillHearts, finishAttempt, formatCountdown, grantHeart, healthHud, isMastered,
   isProtectedLevel, loadHealth, practiceLevel, reconcile, saveHealth, viewHealth, type Health,
 } from '../src/game/health';
 
@@ -336,5 +336,43 @@ describe('rewarded heart grants', () => {
     const second = claimHeart(first.health, 'ad-b', T0);
     expect(second.granted).toBe(true);
     expect(second.health.hearts).toBe(2);
+  });
+});
+
+describe('full heart refill', () => {
+  it('restores the bar to the maximum and clears the regen clock', () => {
+    const empty = full({ hearts: 0, refillStartedAt: T0, spentAttempt: 'run' });
+    const filled = fillHearts(empty, T0);
+    expect(filled.granted).toBe(true);
+    expect(filled.health.hearts).toBe(HEALTH.max);
+    expect(filled.health.refillStartedAt).toBeNull();
+    expect(filled.health.spentAttempt).toBe('run');
+    expect(fillHearts(full(), T0).granted).toBe(false);
+  });
+
+  it('fills only once for the same purchase claim id', () => {
+    const empty = full({ hearts: 1, refillStartedAt: T0 });
+    const first = claimFill(empty, 'txn-1', T0);
+    const again = claimFill(first.health, 'txn-1', T0);
+    expect(first.granted).toBe(true);
+    expect(first.health.hearts).toBe(HEALTH.max);
+    expect(again.granted).toBe(false);
+    expect(again.health.hearts).toBe(HEALTH.max);
+  });
+
+  it('lets a later purchase refill after hearts are spent again', () => {
+    const empty = full({ hearts: 0, refillStartedAt: T0 });
+    const first = claimFill(empty, 'txn-a', T0);
+    const spent = beginAttempt(first.health, ROAD, 6, 'run', T0).health;
+    expect(spent.hearts).toBe(HEALTH.max - 1);
+    const second = claimFill(spent, 'txn-b', T0);
+    expect(second.granted).toBe(true);
+    expect(second.health.hearts).toBe(HEALTH.max);
+  });
+
+  it('ignores an empty claim id', () => {
+    const empty = full({ hearts: 0, refillStartedAt: T0 });
+    expect(claimFill(empty, '', T0).granted).toBe(false);
+    expect(claimFill(empty, '', T0).health.hearts).toBe(0);
   });
 });

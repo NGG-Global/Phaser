@@ -29,7 +29,7 @@ export interface AnalyticsPayloads {
   readonly purchase_started: { readonly product: string };
   readonly purchase_completed: { readonly product: string };
   readonly purchase_cancelled: { readonly product: string };
-  readonly purchase_failed: { readonly product: string; readonly reason: 'unavailable' | 'cancelled' | 'failed' };
+  readonly purchase_failed: { readonly product: string; readonly reason: 'unavailable' | 'cancelled' | 'failed' | 'pending' };
 }
 
 export type AnalyticsSink = <K extends AnalyticsEvent>(event: K, payload: AnalyticsPayloads[K]) => void;

@@ -50,6 +50,8 @@ export interface GrantHeartResult {
 
 /** Claim ids already granted this session, so a double Rewarded callback cannot add two hearts. */
 const claimedIds = new Set<string>();
+/** Transaction ids already filled this session, so a double purchase callback cannot refill twice. */
+const filledIds = new Set<string>();
 
 const KEY = 'tiny-tempo.health.v1';
 /** Written but not required on read, so a future migration has something to branch on. */
@@ -236,6 +238,42 @@ export function claimHeart(health: Health, claimId: string, now: number = Date.n
 /** Load, claim, persist. Scenes call this after a rewarded ad reports completion. */
 export function redeemHeart(claimId: string, now: number = Date.now()): GrantHeartResult {
   const result = claimHeart(loadHealth(undefined, now), claimId, now);
+  if (result.granted) saveHealth(result.health);
+  return result;
+}
+
+/**
+ * Restores the bar to `HEALTH.max` and clears the regen clock. Already-full health is a no-op.
+ * A spent attempt is left alone so a 3-star refund still has an id to match.
+ */
+export function fillHearts(health: Health, now: number = Date.now()): GrantHeartResult {
+  const live = reconcile(health, now);
+  if (live.hearts >= HEALTH.max) return { granted: false, health: live };
+  return {
+    granted: true,
+    health: freeze({
+      hearts: HEALTH.max,
+      refillStartedAt: null,
+      spentAttempt: live.spentAttempt,
+    }),
+  };
+}
+
+/**
+ * Fills the bar for a confirmed heart-refill purchase. The same `claimId` never fills twice.
+ */
+export function claimFill(health: Health, claimId: string, now: number = Date.now()): GrantHeartResult {
+  const live = reconcile(health, now);
+  if (typeof claimId !== 'string' || claimId.length === 0 || filledIds.has(claimId)) {
+    return { granted: false, health: live };
+  }
+  filledIds.add(claimId);
+  return fillHearts(live, now);
+}
+
+/** Load, fill, persist. Scenes call this after a purchase reports success. */
+export function redeemFill(claimId: string, now: number = Date.now()): GrantHeartResult {
+  const result = claimFill(loadHealth(undefined, now), claimId, now);
   if (result.granted) saveHealth(result.health);
   return result;
 }

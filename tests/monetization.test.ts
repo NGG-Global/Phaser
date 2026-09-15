@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   ANALYTICS_EVENTS, PRODUCT, createMonetization, installAnalytics, installMonetization,
-  monetization, rewardedFeedback, stubAds, stubBilling, track,
+  monetization, purchaseFeedback, rewardedFeedback, stubAds, stubBilling, track,
   type AnalyticsEvent, type Billing, type RewardedAds,
 } from '../src/monetization';
 
@@ -22,6 +22,8 @@ describe('monetization stubs', () => {
     expect(commerce.rewardedAvailable()).toBe(false);
     expect(commerce.purchasesAvailable()).toBe(false);
     expect(commerce.premium()).toBe(false);
+    expect(commerce.productPrice(PRODUCT.heartRefill)).toBeNull();
+    expect(commerce.productPrice(PRODUCT.premium)).toBeNull();
   });
 
   it('resolves show/purchase/restore to result objects rather than throwing', async () => {
@@ -48,6 +50,7 @@ describe('native failure isolation', () => {
     const billing: Billing = {
       available: () => { throw new Error('billing missing'); },
       premium: () => { throw new Error('entitlement'); },
+      price: () => { throw new Error('price'); },
       purchase: async () => { throw new Error('purchase exploded'); },
       restore: async () => { throw new Error('restore exploded'); },
     };
@@ -55,6 +58,7 @@ describe('native failure isolation', () => {
     expect(commerce.rewardedAvailable()).toBe(false);
     expect(commerce.purchasesAvailable()).toBe(false);
     expect(commerce.premium()).toBe(false);
+    expect(commerce.productPrice(PRODUCT.heartRefill)).toBeNull();
     await expect(commerce.showRewarded()).resolves.toEqual({ ok: false, reason: 'unavailable' });
     await expect(commerce.purchase(PRODUCT.premium)).resolves.toEqual({
       ok: false, product: PRODUCT.premium, reason: 'unavailable',
@@ -79,6 +83,18 @@ describe('native failure isolation', () => {
     };
     const commerce = createMonetization({ ads, timeoutMs: 20 });
     await expect(commerce.showRewarded()).resolves.toEqual({ ok: false, reason: 'failed' });
+  });
+
+  it('fails a hung purchase instead of blocking the game', async () => {
+    const billing: Billing = {
+      ...stubBilling,
+      available: () => true,
+      purchase: () => new Promise(() => { /* never settles */ }),
+    };
+    const commerce = createMonetization({ billing, timeoutMs: 20 });
+    await expect(commerce.purchase(PRODUCT.heartRefill)).resolves.toEqual({
+      ok: false, product: PRODUCT.heartRefill, reason: 'failed',
+    });
   });
 });
 
@@ -111,14 +127,31 @@ describe('successful adapters still report through the facade', () => {
     const billing: Billing = {
       available: () => true,
       premium: () => true,
-      purchase: async product => ({ ok: true, product }),
+      price: () => '€1.99',
+      purchase: async product => ({ ok: true, product, claimId: 'paid' }),
       restore: async () => ({ ok: true, premium: true }),
     };
     const commerce = createMonetization({ billing });
     expect(commerce.premium()).toBe(true);
-    await expect(commerce.purchase(PRODUCT.premium)).resolves.toEqual({ ok: true, product: PRODUCT.premium });
+    await expect(commerce.purchase(PRODUCT.premium)).resolves.toEqual({
+      ok: true, product: PRODUCT.premium, claimId: 'paid',
+    });
     await expect(commerce.restorePurchases()).resolves.toEqual({ ok: true, premium: true });
     expect(events.map(e => e.event)).toEqual(['purchase_started', 'purchase_completed']);
+  });
+
+  it('records a pending purchase as a failure without a completion', async () => {
+    const billing: Billing = {
+      ...stubBilling,
+      available: () => true,
+      purchase: async product => ({ ok: false, product, reason: 'pending' }),
+    };
+    const commerce = createMonetization({ billing });
+    await expect(commerce.purchase(PRODUCT.heartRefill)).resolves.toEqual({
+      ok: false, product: PRODUCT.heartRefill, reason: 'pending',
+    });
+    expect(events.map(e => e.event)).toEqual(['purchase_started', 'purchase_failed']);
+    expect(events[1]?.payload).toEqual({ product: PRODUCT.heartRefill, reason: 'pending' });
   });
 });
 
@@ -169,5 +202,14 @@ describe('rewarded watch copy', () => {
     expect(rewardedFeedback('unavailable')).toBe('No ad just now.');
     expect(rewardedFeedback('cancelled')).toBe('The ad closed before a heart.');
     expect(rewardedFeedback('failed')).toBe("The ad didn't finish.");
+  });
+});
+
+describe('heart refill copy', () => {
+  it('explains a cancelled, pending or failed purchase without restoring hearts', () => {
+    expect(purchaseFeedback('unavailable')).toBe("The store isn't available.");
+    expect(purchaseFeedback('cancelled')).toBe('Purchase cancelled.');
+    expect(purchaseFeedback('failed')).toBe("The purchase didn't finish.");
+    expect(purchaseFeedback('pending')).toBe('The store is still checking.');
   });
 });

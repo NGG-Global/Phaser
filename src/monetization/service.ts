@@ -8,12 +8,15 @@ import type {
 const DEFAULT_TIMEOUT_MS = 45_000;
 /** A rewarded video plus the close card can run well past the commerce timeout. */
 const DEFAULT_SHOW_TIMEOUT_MS = 180_000;
+/** Play Billing can send the player to a bank app; the purchase sheet is not a 45s action. */
+const DEFAULT_PURCHASE_TIMEOUT_MS = 180_000;
 
 export interface MonetizationOptions {
   readonly ads?: RewardedAds;
   readonly billing?: Billing;
   readonly timeoutMs?: number;
   readonly showTimeoutMs?: number;
+  readonly purchaseTimeoutMs?: number;
 }
 
 function asBoolean(read: () => boolean): boolean {
@@ -43,6 +46,7 @@ export function createMonetization(options: MonetizationOptions = {}): Monetizat
   const billing = options.billing ?? stubBilling;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const showTimeoutMs = options.showTimeoutMs ?? options.timeoutMs ?? DEFAULT_SHOW_TIMEOUT_MS;
+  const purchaseTimeoutMs = options.purchaseTimeoutMs ?? options.timeoutMs ?? DEFAULT_PURCHASE_TIMEOUT_MS;
 
   return {
     rewardedAvailable: () => asBoolean(() => ads.available()),
@@ -72,6 +76,15 @@ export function createMonetization(options: MonetizationOptions = {}): Monetizat
 
     premium: () => asBoolean(() => billing.premium()),
 
+    productPrice: (product: ProductId): string | null => {
+      try {
+        const value = billing.price(product);
+        return typeof value === 'string' && value.length > 0 ? value : null;
+      } catch {
+        return null;
+      }
+    },
+
     async purchase(product: ProductId): Promise<PurchaseResult> {
       track('purchase_started', { product });
       if (!asBoolean(() => billing.available())) {
@@ -80,7 +93,11 @@ export function createMonetization(options: MonetizationOptions = {}): Monetizat
       }
       try {
         const fallback: PurchaseResult = { ok: false, product, reason: 'failed' };
-        const result = await withTimeout(Promise.resolve().then(() => billing.purchase(product)), timeoutMs, fallback);
+        const result = await withTimeout(
+          Promise.resolve().then(() => billing.purchase(product)),
+          purchaseTimeoutMs,
+          fallback,
+        );
         if (result.ok) track('purchase_completed', { product: result.product });
         else if (result.reason === 'cancelled') track('purchase_cancelled', { product });
         else track('purchase_failed', { product, reason: result.reason });

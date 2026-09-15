@@ -25,6 +25,7 @@
     "@capacitor-community/admob": "^8.1.0",
     "@capacitor/android": "^8.5.1",
     "@capacitor/core": "^8.5.1",
+    "@revenuecat/purchases-capacitor": "^13.5.1",
     "phaser": "^4.2.1"
   },
   "devDependencies": {

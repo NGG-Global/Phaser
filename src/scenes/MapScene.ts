@@ -8,10 +8,10 @@ import { PALETTE, SHELL } from '@/config/theme';
 import { BaseScene } from '@/core/BaseScene';
 import { areaOf, levelSpec, starsFor, type Area } from '@/game/levels';
 import {
-  canBeginAttempt, formatCountdown, healthHud, loadHealth, practiceLevel, reconcile, redeemHeart,
-  viewHealth, type Health,
+  canBeginAttempt, formatCountdown, healthHud, loadHealth, practiceLevel, reconcile, redeemFill,
+  redeemHeart, viewHealth, type Health,
 } from '@/game/health';
-import { monetization, rewardedFeedback, track } from '@/monetization';
+import { monetization, PRODUCT, purchaseFeedback, rewardedFeedback, track } from '@/monetization';
 import { loadProgress, type Progress } from '@/game/progress';
 import { MaterialKey } from '@/textures/materials';
 import { mix, shade, starColour } from '@/ui/colour';
@@ -89,18 +89,24 @@ export class MapScene extends BaseScene {
   private restWatchLabel!: Phaser.GameObjects.Text;
   private restWatchHint!: Phaser.GameObjects.Text;
   private restWatchMark!: Phaser.GameObjects.Graphics;
+  private restRefill!: Phaser.GameObjects.Graphics;
+  private restRefillLabel!: Phaser.GameObjects.Text;
+  private restRefillHint!: Phaser.GameObjects.Text;
+  private restRefillPrice!: Phaser.GameObjects.Text;
+  private restRefillMark!: Phaser.GameObjects.Graphics;
   private restAction!: Phaser.GameObjects.Graphics;
   private restActionLabel!: Phaser.GameObjects.Text;
   private restRect = new Phaser.Geom.Rectangle();
   private restWatchRect = new Phaser.Geom.Rectangle();
+  private restRefillRect = new Phaser.Geom.Rectangle();
   private restActionRect = new Phaser.Geom.Rectangle();
   private restShown = false;
   private restPractice: number | null = null;
   private restAt = -Infinity;
   private restPressDirty = false;
   private restPressedAt = -Infinity;
-  private restPressed: 'watch' | 'practice' | null = null;
-  private restWatching = false;
+  private restPressed: 'watch' | 'refill' | 'practice' | null = null;
+  private restBusy = false;
   private watchClaims = 0;
   private curtain!: SceneCurtain;
   private footerTop = 0;
@@ -158,7 +164,7 @@ export class MapScene extends BaseScene {
     this.restPractice = null;
     this.restAt = this.restPressedAt = -Infinity;
     this.restPressed = null;
-    this.restWatching = false;
+    this.restBusy = false;
     const data = this.sys.settings.data as { focus?: number } | undefined;
     this.focus = Math.max(1, Math.min(this.progress.unlocked, data?.focus ?? this.progress.unlocked));
     const top = this.progress.unlocked + PROGRESSION.mapLookahead;
@@ -195,6 +201,11 @@ export class MapScene extends BaseScene {
     this.restWatchLabel = label(this, 'Watch', { size: 30, colour: SHELL.cream, align: 'center' }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
     this.restWatchHint = label(this, '+1', { size: 22, colour: SHELL.cream, align: 'center' }).setOrigin(1, 0.5).setScrollFactor(0).setDepth(21);
     this.restWatchMark = this.add.graphics().setScrollFactor(0).setDepth(21);
+    this.restRefill = this.add.graphics().setScrollFactor(0).setDepth(20);
+    this.restRefillLabel = label(this, 'Refill', { size: 28, colour: PALETTE.ink, align: 'center' }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
+    this.restRefillHint = label(this, 'restore 5', { size: 20, colour: PALETTE.ink, align: 'center' }).setOrigin(1, 0.5).setScrollFactor(0).setDepth(21);
+    this.restRefillPrice = body(this, '', { size: 20, colour: PALETTE.muted, align: 'center' }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
+    this.restRefillMark = this.add.graphics().setScrollFactor(0).setDepth(21);
     this.restAction = this.add.graphics().setScrollFactor(0).setDepth(20);
     this.restActionLabel = label(this, 'Practice', { size: 26, colour: PALETTE.ink, align: 'center' }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
     this.enteredAt = performance.now() / 1000;
@@ -735,8 +746,8 @@ export class MapScene extends BaseScene {
   }
 
   /**
-   * Empty hearts, when the next one lands, a rewarded watch, and a way back into a
-   * 3-starred level. The watch is the one coral action; practice stays a cream block.
+   * Empty hearts, the natural wait, a rewarded watch, a store refill, and a way back
+   * into a 3-starred level. WATCH is the coral action; refill and practice stay cream.
    */
   private drawRest(s: number, press: number): void {
     const shown = this.restShown;
@@ -750,43 +761,55 @@ export class MapScene extends BaseScene {
     this.restWatchLabel.setVisible(shown);
     this.restWatchHint.setVisible(shown);
     this.restWatchMark.setVisible(shown);
+    this.restRefill.setVisible(shown);
+    this.restRefillLabel.setVisible(shown);
+    this.restRefillHint.setVisible(shown);
+    this.restRefillPrice.setVisible(shown);
+    this.restRefillMark.setVisible(shown);
     this.restAction.setVisible(hasPractice);
     this.restActionLabel.setVisible(hasPractice);
     if (!shown) {
       this.restPlate.clear();
       this.restWatch.clear();
       this.restWatchMark.clear();
+      this.restRefill.clear();
+      this.restRefillMark.clear();
       this.restAction.clear();
       return;
     }
     const { safe } = this.viewport;
     const view = viewHealth(this.health);
     const wait = view.nextHeartInMs === null ? null : formatCountdown(view.nextHeartInMs);
+    const price = monetization().productPrice(PRODUCT.heartRefill);
     const control = Math.max(88 * s, 48 * this.viewport.unitScale);
     const watchH = Math.max(110 * s, control);
+    const refillH = Math.max(96 * s, control);
     const practiceH = hasPractice ? Math.max(88 * s, control) : 0;
-    const gap = hasPractice ? 14 * s : 0;
+    const gap = 12 * s;
     const width = Math.min(560 * s, safe.width - 48 * s);
-    const height = 188 * s + watchH + gap + practiceH + 24 * s;
+    const buttons = watchH + gap + refillH + (hasPractice ? gap + practiceH : 0);
+    const height = 176 * s + buttons + 24 * s;
     const y = (this.hudHeight + this.footerTop) / 2 - height / 2;
     this.restRect.setTo(safe.centerX - width / 2, y, width, height);
     const g = this.restPlate.clear();
     drawPanel(g, this.restRect, s, { fill: SHELL.puck, depth: 12, hero: true, radius: 28 });
     placeSurface(this.restSurface, this.restRect, s);
-    resize(this.restTitle, 44 * s, PALETTE.ink);
-    this.restTitle.setPosition(this.restRect.centerX, this.restRect.y + 48 * s);
+    resize(this.restTitle, 40 * s, PALETTE.ink);
+    this.restTitle.setPosition(this.restRect.centerX, this.restRect.y + 44 * s);
     this.restWait.setText(wait === null ? 'Hearts are full.' : `Next heart ${wait}`);
-    resize(this.restWait, 28 * s, PALETTE.ink, STYLE.current, false);
-    this.restWait.setPosition(this.restRect.centerX, this.restRect.y + 104 * s);
-    resize(this.restNote, 24 * s, PALETTE.muted, STYLE.current, false);
-    this.restNote.setPosition(this.restRect.centerX, this.restRect.y + 148 * s);
+    resize(this.restWait, 26 * s, PALETTE.ink, STYLE.current, false);
+    this.restWait.setPosition(this.restRect.centerX, this.restRect.y + 96 * s);
+    resize(this.restNote, 22 * s, PALETTE.muted, STYLE.current, false);
+    this.restNote.setPosition(this.restRect.centerX, this.restRect.y + 136 * s);
     const bottom = this.restRect.bottom - 24 * s;
+    let cursor = bottom;
     if (hasPractice) {
-      this.restActionRect.setTo(this.restRect.centerX - 180 * s, bottom - practiceH, 360 * s, practiceH);
-      this.restWatchRect.setTo(this.restRect.centerX - 180 * s, bottom - practiceH - gap - watchH, 360 * s, watchH);
-    } else {
-      this.restWatchRect.setTo(this.restRect.centerX - 180 * s, bottom - watchH, 360 * s, watchH);
+      this.restActionRect.setTo(this.restRect.centerX - 180 * s, cursor - practiceH, 360 * s, practiceH);
+      cursor -= practiceH + gap;
     }
+    this.restRefillRect.setTo(this.restRect.centerX - 180 * s, cursor - refillH, 360 * s, refillH);
+    cursor -= refillH + gap;
+    this.restWatchRect.setTo(this.restRect.centerX - 180 * s, cursor - watchH, 360 * s, watchH);
     const watchPress = this.restPressed === 'watch' ? press : 0;
     const watch = this.restWatch.clear();
     drawPanel(watch, this.restWatchRect, s, { fill: PALETTE.coral, depth: CHROME.block.depth, press: watchPress, hero: true });
@@ -797,8 +820,26 @@ export class MapScene extends BaseScene {
     this.restWatchHint.setText('+1');
     resize(this.restWatchHint, 22 * s, SHELL.cream);
     this.restWatchHint.setPosition(this.restWatchRect.centerX - 4 * s, this.restWatchRect.centerY + 22 * s + watchSink);
-    const heart = this.restWatchMark.clear();
-    drawHeart(heart, this.restWatchRect.centerX + 18 * s, this.restWatchRect.centerY + 22 * s + watchSink, 10 * s, SHELL.cream);
+    this.restWatchMark.clear();
+    drawHeart(this.restWatchMark, this.restWatchRect.centerX + 18 * s, this.restWatchRect.centerY + 22 * s + watchSink, 10 * s, SHELL.cream);
+    const refillPress = this.restPressed === 'refill' ? press : 0;
+    const refill = this.restRefill.clear();
+    drawPanel(refill, this.restRefillRect, s, { fill: SHELL.bench, depth: 12, press: refillPress });
+    const refillSink = 12 * s * refillPress * 0.8;
+    this.restRefillLabel.setText('REFILL');
+    resize(this.restRefillLabel, 26 * s, PALETTE.ink);
+    this.restRefillLabel.setPosition(this.restRefillRect.centerX, this.restRefillRect.centerY - 14 * s + refillSink);
+    this.restRefillHint.setText('RESTORE 5');
+    resize(this.restRefillHint, 18 * s, PALETTE.ink, STYLE.current, false);
+    const priceText = price ?? '';
+    const hintX = priceText.length > 0 ? this.restRefillRect.centerX - 36 * s : this.restRefillRect.centerX - 4 * s;
+    this.restRefillHint.setPosition(hintX, this.restRefillRect.centerY + 20 * s + refillSink);
+    this.restRefillMark.clear();
+    drawHeart(this.restRefillMark, hintX + 16 * s, this.restRefillRect.centerY + 20 * s + refillSink, 9 * s, PALETTE.coral);
+    this.restRefillPrice.setText(priceText);
+    resize(this.restRefillPrice, 18 * s, PALETTE.muted, STYLE.current, false);
+    this.restRefillPrice.setPosition(this.restRefillRect.centerX + 70 * s, this.restRefillRect.centerY + 20 * s + refillSink);
+    this.restRefillPrice.setVisible(priceText.length > 0);
     const action = this.restAction.clear();
     if (!hasPractice) return;
     const practicePress = this.restPressed === 'practice' ? press : 0;
@@ -821,6 +862,7 @@ export class MapScene extends BaseScene {
     if (first) {
       track('health_empty', { level });
       track('rewarded_offer_shown', { placement: 'map' });
+      track('purchase_offer_shown', { product: PRODUCT.heartRefill });
     }
   }
 
@@ -833,8 +875,8 @@ export class MapScene extends BaseScene {
   }
 
   private async watchAd(): Promise<void> {
-    if (this.restWatching || this.curtain.active) return;
-    this.restWatching = true;
+    if (this.restBusy || this.curtain.active) return;
+    this.restBusy = true;
     this.restPressed = 'watch';
     this.restPressedAt = performance.now() / 1000;
     this.restPressDirty = true;
@@ -850,7 +892,33 @@ export class MapScene extends BaseScene {
       this.hideRest();
       this.drawSign(this.uiScale, 0, 0);
     } finally {
-      this.restWatching = false;
+      this.restBusy = false;
+    }
+  }
+
+  private async buyFill(): Promise<void> {
+    if (this.restBusy || this.curtain.active) return;
+    this.restBusy = true;
+    this.restPressed = 'refill';
+    this.restPressedAt = performance.now() / 1000;
+    this.restPressDirty = true;
+    try {
+      const result = await monetization().purchase(PRODUCT.heartRefill);
+      if (this.disposed) return;
+      if (!result.ok) {
+        this.restNote.setText(purchaseFeedback(result.reason));
+        return;
+      }
+      const filled = redeemFill(result.claimId);
+      this.health = filled.health;
+      if (!filled.granted && this.health.hearts <= 0) {
+        this.restNote.setText(purchaseFeedback('failed'));
+        return;
+      }
+      this.hideRest();
+      this.drawSign(this.uiScale, 0, 0);
+    } finally {
+      this.restBusy = false;
     }
   }
 
@@ -961,6 +1029,11 @@ export class MapScene extends BaseScene {
       this.restWatchLabel.setAlpha(alpha);
       this.restWatchHint.setAlpha(alpha);
       this.restWatchMark.setAlpha(alpha);
+      this.restRefill.setAlpha(alpha);
+      this.restRefillLabel.setAlpha(alpha);
+      this.restRefillHint.setAlpha(alpha);
+      this.restRefillPrice.setAlpha(alpha);
+      this.restRefillMark.setAlpha(alpha);
       this.restAction.setAlpha(alpha);
       this.restActionLabel.setAlpha(alpha);
     }
@@ -1016,9 +1089,13 @@ export class MapScene extends BaseScene {
     }
     if (near(this.backAt)) { this.pressPuck('back'); this.curtain.cover(() => this.scene.start(SceneKey.Menu)); return; }
     if (this.restShown) {
-      if (this.restWatching) return;
+      if (this.restBusy) return;
       if (this.restWatchRect.contains(x, y)) {
         void this.watchAd();
+        return;
+      }
+      if (this.restRefillRect.contains(x, y)) {
+        void this.buyFill();
         return;
       }
       if (this.restPractice !== null && this.restActionRect.contains(x, y)) {

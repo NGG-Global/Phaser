@@ -1,17 +1,18 @@
 /**
  * Commerce ports. Scenes talk to these types, never to AdMob or RevenueCat.
- * Native SDKs will implement the same contracts; until then the stub keeps the
- * browser and every failed native call on the safe path.
+ * Native SDKs implement the same contracts; the stub keeps the browser and
+ * every failed native call on the safe path.
  */
 
 export const PRODUCT = {
   premium: 'premium',
+  heartRefill: 'heart_refill_full',
 } as const;
 
 export type ProductId = typeof PRODUCT[keyof typeof PRODUCT];
 
 export type RewardedReason = 'unavailable' | 'cancelled' | 'failed';
-export type PurchaseReason = 'unavailable' | 'cancelled' | 'failed';
+export type PurchaseReason = 'unavailable' | 'cancelled' | 'failed' | 'pending';
 export type RestoreReason = 'unavailable' | 'failed';
 
 export type RewardedResult =
@@ -19,7 +20,7 @@ export type RewardedResult =
   | { readonly ok: false; readonly reason: RewardedReason };
 
 export type PurchaseResult =
-  | { readonly ok: true; readonly product: ProductId }
+  | { readonly ok: true; readonly product: ProductId; readonly claimId: string }
   | { readonly ok: false; readonly product: ProductId; readonly reason: PurchaseReason };
 
 export type RestoreResult =
@@ -32,10 +33,12 @@ export interface RewardedAds {
   show(): Promise<RewardedResult>;
 }
 
-/** What a future RevenueCat / Play Billing adapter implements. */
+/** RevenueCat implements this on native. Restore must never refill consumable hearts. */
 export interface Billing {
   available(): boolean;
   premium(): boolean;
+  /** Localized store price, or null when the catalogue has not loaded. Never a guessed amount. */
+  price(product: ProductId): string | null;
   purchase(product: ProductId): Promise<PurchaseResult>;
   restore(): Promise<RestoreResult>;
 }
@@ -48,6 +51,7 @@ export interface Monetization {
   rewardedAvailable(): boolean;
   showRewarded(): Promise<RewardedResult>;
   purchasesAvailable(): boolean;
+  productPrice(product: ProductId): string | null;
   purchase(product: ProductId): Promise<PurchaseResult>;
   restorePurchases(): Promise<RestoreResult>;
   premium(): boolean;

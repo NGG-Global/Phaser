@@ -13,6 +13,7 @@ export const stubAds: RewardedAds = {
 export const stubBilling: Billing = {
   available: () => false,
   premium: () => false,
+  price: () => null,
   purchase: async (product: ProductId): Promise<PurchaseResult> => ({ ok: false, product, reason: 'unavailable' }),
   restore: async (): Promise<RestoreResult> => ({ ok: true, premium: false }),
 };
