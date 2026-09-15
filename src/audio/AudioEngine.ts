@@ -35,9 +35,13 @@ export class AudioEngine implements SoundSink {
   private sounds: VignetteSounds | null = null;
   private disposed = false;
   public muted = false;
+  private readonly onSink = (): void => { this.clock.reset(); };
 
   public constructor() {
     this.master.connect(this.context.destination);
+    // A Bluetooth route reports a new sink rather than a new context. The last speaker
+    // timestamp would keep mapping taps onto a stream that is no longer playing.
+    this.context.addEventListener?.('sinkchange', this.onSink);
   }
   public setSounds(sounds: VignetteSounds): void { this.cancel(); this.sounds = sounds; }
   public async unlock(): Promise<void> {
@@ -110,6 +114,7 @@ export class AudioEngine implements SoundSink {
     this.cancel();
     this.music.dispose();
     this.disposed = true;
+    this.context.removeEventListener?.('sinkchange', this.onSink);
     this.master.disconnect();
     void this.context.close();
   }

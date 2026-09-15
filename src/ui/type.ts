@@ -38,6 +38,13 @@ function strokeFor(t: Treatment, size: number): number {
   return Math.max(1.5, size * 0.02 * t.outline * taper);
 }
 
+/** Room for the outline and the drop shadow, so a dressed glyph is not clipped on one side. */
+function dressPad(size: number, stroke: number): { left: number; right: number; top: number; bottom: number } {
+  const inset = Math.ceil(stroke + 1);
+  const drop = Math.max(1, Math.ceil(size * 0.07));
+  return { left: inset, right: inset, top: inset, bottom: inset + drop };
+}
+
 export interface TypeSpec {
   readonly size: number;
   readonly colour: number;
@@ -59,7 +66,10 @@ function style(t: Treatment, family: string, weight: number, spec: TypeSpec, dre
     align: spec.align ?? 'left',
   };
   if (strokeThickness > 0) { s.stroke = hex(spec.outline ?? typeStroke(spec.colour)); s.strokeThickness = strokeThickness; }
-  if (dress) s.shadow = shadowFor(spec.colour, spec.size);
+  if (dress) {
+    s.shadow = shadowFor(spec.colour, spec.size);
+    s.padding = dressPad(spec.size, strokeThickness);
+  }
   if (spec.wrap !== undefined) s.wordWrap = { width: spec.wrap, useAdvancedWrap: true };
   return s;
 }
@@ -92,10 +102,12 @@ export function resize(text: Phaser.GameObjects.Text, size: number, colour: numb
     // A previous dressed size would otherwise leave a headline stroke on a caption.
     text.setStroke('#000000', 0);
     text.setShadow(0, 0, '#000000', 0, false, false);
+    text.setPadding(0);
     return;
   }
   const stroke = strokeFor(t, size);
   text.setStroke(hex(typeStroke(colour)), stroke);
   const sh = shadowFor(colour, size);
   text.setShadow(sh.offsetX, sh.offsetY, sh.color, sh.blur, sh.stroke, sh.fill);
+  text.setPadding(dressPad(size, stroke));
 }

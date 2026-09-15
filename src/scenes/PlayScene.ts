@@ -142,7 +142,7 @@ export class PlayScene extends BaseScene {
     this.stars = this.add.graphics().setDepth(9);
     this.fx = new Feedback(this, 5);
     this.headline = display(this, this.definition.intro, { size: 88, colour: ink, align: 'center' }).setOrigin(0.5, 0).setDepth(12);
-    this.accuracy = body(this, '', { size: 34, colour: ink }).setOrigin(0.5).setDepth(11);
+    this.accuracy = body(this, '', { size: 34, colour: ink, align: 'center' }).setOrigin(0.5).setDepth(11);
     this.chrome = this.add.graphics().setDepth(10);
     this.actionRoot = this.add.container(0, 0).setDepth(10);
     this.action = this.add.graphics();
