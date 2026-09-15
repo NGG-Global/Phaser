@@ -44,6 +44,14 @@ export class PreloadScene extends Phaser.Scene {
     // slow first paint never shows a blank canvas.
     hideBootOverlay();
 
+    if (import.meta.env.DEV) {
+      const params = new URLSearchParams(location.search);
+      const level = Number(params.get('level'));
+      if (params.has('debug') && Number.isInteger(level) && level >= 1 && level <= 100_000) {
+        this.scene.start(SceneKey.Play, { level });
+        return;
+      }
+    }
     this.scene.start(SceneKey.Menu);
   }
 }
