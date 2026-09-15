@@ -4,12 +4,13 @@ import { sharedAudio, isMuted, toggleMute } from '@/audio/sharedAudio';
 import { PROGRESSION } from '@/config/progression';
 import { SceneKey } from '@/config/scenes';
 import { STYLE } from '@/config/style';
-import { PALETTE } from '@/config/theme';
+import { PALETTE, SHELL } from '@/config/theme';
 import { BaseScene } from '@/core/BaseScene';
 import { areaOf, levelSpec, starsFor, type Area } from '@/game/levels';
 import { loadProgress, type Progress } from '@/game/progress';
 import { MaterialKey } from '@/textures/materials';
-import { mix, shade } from '@/ui/colour';
+import { mix, shade, starColour } from '@/ui/colour';
+import { CHROME, drawPuck, drawRopes, pressAmount, puckSink } from '@/ui/chrome';
 import { FxKey } from '@/ui/feedback';
 import { dashes, smoothPath, type Point } from '@/ui/path';
 import { drawGear } from '@/ui/gear';
@@ -38,14 +39,8 @@ const MAP = {
    */
   window: 48, history: 20,
   /** The frontier puck hops once a bar at the game's own tempo. */
-  hopSec: 1.6, pressSec: 0.42,
+  hopSec: 1.6,
   sign: { width: 340, height: 92, top: 26, ropeInset: 40 },
-} as const;
-
-/** The few colours the map owns outright; every area tone derives from `AREAS`. */
-const LOOK = {
-  sign: 0xd98a48, puck: 0xf6ead0, ink: PALETTE.ink, coral: PALETTE.coral,
-  bench: 0xe6dcc4, block: 0xf6ead0, cream: 0xfff4dc, rope: 0x6b4a2e, shadow: 0x1a1410,
 } as const;
 
 /**
@@ -138,19 +133,19 @@ export class MapScene extends BaseScene {
     // The frontier puck lives here, under the numbers, so it can hop without a baked copy beneath.
     this.pulse = this.add.graphics().setDepth(3);
     this.touch = this.add.graphics().setDepth(5);
-    this.numbers = Array.from({ length: this.shown }, (_, i) => display(this, String(this.first + i), { size: 32, colour: LOOK.cream }).setOrigin(0.5).setDepth(4));
+    this.numbers = Array.from({ length: this.shown }, (_, i) => display(this, String(this.first + i), { size: 32, colour: SHELL.cream, align: 'center' }).setOrigin(0.5).setDepth(4));
     const areas = Math.floor((this.first + this.shown - 2) / PROGRESSION.areaSize) - this.firstBand + 1;
-    this.areaTitles = Array.from({ length: areas }, () => display(this, '', { size: 30, colour: LOOK.cream }).setOrigin(0, 0.5).setDepth(2));
+    this.areaTitles = Array.from({ length: areas }, () => display(this, '', { size: 30, colour: SHELL.cream }).setOrigin(0, 0.5).setDepth(2));
     // The pool of light stays put while the ground scrolls under it: a lamp over a table.
     this.glow = this.add.image(0, 0, FxKey.glow).setScrollFactor(0).setDepth(6).setAlpha(0.22);
     this.fibre = this.add.tileSprite(0, 0, 1, 1, MaterialKey.paper).setOrigin(0).setScrollFactor(0).setDepth(6).setAlpha(0.32 * STYLE.current.grain);
     this.signBack = this.add.graphics().setScrollFactor(0).setDepth(10);
-    this.signSurface = surface(this, MaterialKey.wood, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, LOOK.sign, 0.7).setScrollFactor(0).setDepth(10);
-    this.status = display(this, '', { size: 40, colour: LOOK.cream }).setScrollFactor(0).setDepth(11);
+    this.signSurface = surface(this, MaterialKey.wood, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, SHELL.wood, 0.7).setScrollFactor(0).setDepth(10);
+    this.status = display(this, '', { size: 40, colour: SHELL.cream, align: 'center' }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(11);
     this.pucks = this.add.graphics().setScrollFactor(0).setDepth(10);
     this.dock = this.add.graphics().setScrollFactor(0).setDepth(10);
-    this.dockSurface = surface(this, MaterialKey.parchment, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, LOOK.block, 0.5).setScrollFactor(0).setDepth(10);
-    this.dockTitle = display(this, '', { size: 30, colour: LOOK.ink }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(11);
+    this.dockSurface = surface(this, MaterialKey.parchment, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, SHELL.puck, 0.5).setScrollFactor(0).setDepth(10);
+    this.dockTitle = display(this, '', { size: 30, colour: PALETTE.ink }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(11);
     this.enteredAt = performance.now() / 1000;
     this.curtain = new SceneCurtain(this);
     this.events.once(Phaser.Scenes.Events.CREATE, () => this.curtain.reveal());
@@ -339,13 +334,13 @@ export class MapScene extends BaseScene {
     const h = 64 * s;
     // Size the sign to its own text: area names are authored, and a long one overflowed.
     const title = this.areaTitles[index]!.setText(name);
-    resize(title, 30 * s, LOOK.cream);
+    resize(title, 30 * s, SHELL.cream);
     const pad = 52 * s;
     const w = Math.min(safe.width - 36 * s, Math.max(206 * s, title.width + pad));
     // Repeat areas gain a numeral (Grass VIII), so shrink rather than overflow the sign.
-    if (title.width > w - pad) resize(title, 30 * s * (w - pad) / title.width, LOOK.cream);
+    if (title.width > w - pad) resize(title, 30 * s * (w - pad) / title.width, SHELL.cream);
     const x = onLeft ? safe.left + 18 * s : safe.right - 18 * s - w;
-    const fill = mix(LOOK.sign, area.road, 0.35);
+    const fill = mix(SHELL.wood, area.road, 0.35);
     drawPanel(g, new Phaser.Geom.Rectangle(x, y - h / 2, w, h), s, { fill, depth: 8 });
     // Painted grain, keyed on the band so no two signs match, and two screw heads.
     g.lineStyle(1.5 * s, shade(fill, -0.1), 0.5);
@@ -372,7 +367,7 @@ export class MapScene extends BaseScene {
       g.strokePath();
     };
     const shadow = castShadow(6);
-    stroke(this.road, width + 10 * s, LOOK.shadow, shadow.alpha, shadow.dy * s);
+    stroke(this.road, width + 10 * s, 0x1a1410, shadow.alpha, shadow.dy * s);
     // One stretch per level. A span that crosses an area boundary is split at its
     // midpoint, which is exactly where the ground changes, so surface and terrain
     // change on the same line instead of a node apart.
@@ -438,7 +433,7 @@ export class MapScene extends BaseScene {
       g.fillTriangle(ax, ay, cx, cy, dx, dy);
     };
     const shadow = castShadow(6);
-    g.fillStyle(LOOK.shadow, shadow.alpha).fillEllipse(x + shadow.dx * k, y + shadow.dy * k, (variant ? 62 : 74) * k, 19 * k, 10);
+    g.fillStyle(0x1a1410, shadow.alpha).fillEllipse(x + shadow.dx * k, y + shadow.dy * k, (variant ? 62 : 74) * k, 19 * k, 10);
     if (kind === 0 && variant === 0) {
       // Pine: stacked canopy, each tier hazed a little further toward the sky.
       g.fillStyle(shade(0x4a6b3a, -0.15)).fillRect(x - 5 * k, y - 26 * k, 10 * k, 28 * k);
@@ -522,13 +517,13 @@ export class MapScene extends BaseScene {
     const level = this.first + i;
     const { area } = areaOf(level);
     const s = this.uiScale;
-    if (level === this.progress.unlocked) return { r: MAP.nodeRadius * 1.1 * s, depth: 10, fill: LOOK.coral, number: LOOK.cream, size: 34 * s, state: 'frontier' };
+    if (level === this.progress.unlocked) return { r: MAP.nodeRadius * 1.1 * s, depth: 10, fill: PALETTE.coral, number: SHELL.cream, size: 34 * s, state: 'frontier' };
     if (level < this.progress.unlocked) return { r: MAP.nodeRadius * s, depth: 8, fill: area.ink, number: area.paper, size: 30 * s, state: 'cleared' };
-    return { r: MAP.nodeRadius * 0.84 * s, depth: 5, fill: mix(area.paper, area.ground, 0.35), number: mix(area.ink, area.ground, 0.4), size: 26 * s, state: 'locked' };
+    return { r: MAP.nodeRadius * 0.84 * s, depth: 5, fill: mix(area.paper, area.ground, 0.42), number: mix(area.ink, area.ground, 0.12), size: 26 * s, state: 'locked' };
   }
 
   /** One puck, drawn where it stands or lifted by a hop. */
-  private drawPuck(g: Phaser.GameObjects.Graphics, i: number, lift: number): void {
+  private drawLevelPuck(g: Phaser.GameObjects.Graphics, i: number, lift: number): void {
     const node = this.nodes[i]!;
     const p = this.puckOf(i);
     const t = p.state === 'locked' ? { ...STYLE.current, outline: STYLE.current.outline * 0.7 } : STYLE.current;
@@ -544,14 +539,13 @@ export class MapScene extends BaseScene {
       const node = this.nodes[i]!;
       const p = this.puckOf(i);
       const text = this.numbers[i]!.setPosition(node.x, node.y).setScale(1);
-      resize(text, p.size, p.number);
-      text.setColor(`#${p.number.toString(16).padStart(6, '0')}`);
+      resize(text, p.size, p.number, STYLE.current, p.state !== 'locked');
       const plateY = node.y + p.r + (p.depth + 24) * s;
       if (p.state === 'frontier') {
         this.frontierIndex = i;
         continue;
       }
-      this.drawPuck(g, i, 0);
+      this.drawLevelPuck(g, i, 0);
       if (p.state === 'cleared') {
         this.drawStars(g, node.x, plateY, starsFor(this.progress.best[level] ?? 0, levelSpec(level)), area, s);
       } else {
@@ -571,9 +565,10 @@ export class MapScene extends BaseScene {
 
   /** Stars on their own small slab, so they never sit directly on the road surface. */
   private drawStars(g: Phaser.GameObjects.Graphics, x: number, y: number, stars: number, area: Area, s: number): void {
-    drawPanel(g, new Phaser.Geom.Rectangle(x - 46 * s, y - 17 * s, 92 * s, 34 * s), s, { fill: shade(area.paper, -0.03), depth: 4, radius: 17 });
+    const plate = shade(area.paper, -0.03);
+    drawPanel(g, new Phaser.Geom.Rectangle(x - 46 * s, y - 17 * s, 92 * s, 34 * s), s, { fill: plate, depth: 4, radius: 17 });
     for (let k = 0; k < 3; k++) {
-      drawStar(g, x + (k - 1) * 24 * s, y, 9 * s, k < stars ? shade(area.ink, 0.1) : area.ink, k < stars, k < stars ? 1 : 0.28);
+      drawStar(g, x + (k - 1) * 24 * s, y, 9 * s, starColour(k < stars, shade(area.ink, 0.1), plate));
     }
   }
 
@@ -593,15 +588,8 @@ export class MapScene extends BaseScene {
     this.signRect.setTo(-w / 2, ropeLength, w, h);
     const g = this.signBack.clear();
     const inset = w / 2 - MAP.sign.ropeInset * s;
-    for (const x of [-inset, inset]) {
-      g.lineStyle(STYLE.current.outline * s * 0.55 + 8 * s, shade(LOOK.rope, -0.5), 1).lineBetween(x, 0, x, ropeLength);
-      g.lineStyle(8 * s, LOOK.rope, 1).lineBetween(x, 0, x, ropeLength);
-      g.lineStyle(2 * s, shade(LOOK.rope, 0.35), 0.6).lineBetween(x - 2 * s, 0, x - 2 * s, ropeLength);
-      g.fillStyle(faces(BRASS).edge, 1).fillCircle(x, ropeLength + 2 * s, 8 * s);
-      g.fillStyle(BRASS, 1).fillCircle(x, ropeLength, 8 * s);
-      g.fillStyle(shade(LOOK.sign, -0.6), 1).fillCircle(x, ropeLength, 3 * s);
-    }
-    drawPanel(g, this.signRect, s, { fill: LOOK.sign, depth: 10, hero: true });
+    drawRopes(g, s, ropeLength, [-inset, inset], 8);
+    drawPanel(g, this.signRect, s, { fill: SHELL.wood, depth: 10, hero: true });
     this.hang(this.signBack, 0, 0, angle, drop);
     placeSurface(this.signSurface, this.signRect, s);
     // The surface tile and the texts are separate objects: each is hung from the same anchor.
@@ -609,16 +597,15 @@ export class MapScene extends BaseScene {
     this.hang(this.signSurface, this.signRect.x + inner, this.signRect.y + inner, angle, drop);
     const current = areaOf(this.progress.unlocked);
     this.status.setText(current.name);
-    resize(this.status, 40 * s, LOOK.cream);
+    resize(this.status, 40 * s, SHELL.cream);
     // Repeat areas ("Pavement VIII") are long; shrink to the sign, never below 28 units.
-    if (this.status.width > w - 44 * s) resize(this.status, Math.max(28 * s, 40 * s * (w - 44 * s) / this.status.width), LOOK.cream);
+    if (this.status.width > w - 44 * s) resize(this.status, Math.max(28 * s, 40 * s * (w - 44 * s) / this.status.width), SHELL.cream);
     this.hang(this.status, this.signRect.x + 20 * s, this.signRect.y + h * 0.5, angle, drop);
   }
 
   /** Back, settings and mute as pucks at the top right, clear of the sign's swing. */
   private drawPucks(s: number, press: number): void {
     const { safe } = this.viewport;
-    const r = 34 * s;
     const gap = Math.max(88 * s, this.controlSize + 4 * s);
     this.muteAt = { x: safe.right - 56 * s, y: safe.top + 66 * s };
     this.setupAt = { x: this.muteAt.x - gap, y: this.muteAt.y };
@@ -626,12 +613,11 @@ export class MapScene extends BaseScene {
     const g = this.pucks.clear();
     const sinkOf = (key: 'back' | 'setup' | 'mute') => (this.puckPressed === key ? press : 0);
     for (const [key, at] of [['back', this.backAt], ['setup', this.setupAt], ['mute', this.muteAt]] as const) {
-      drawDisc(g, at.x, at.y, r, s, { fill: LOOK.puck, depth: 7, press: sinkOf(key) });
+      drawPuck(g, at.x, at.y, s, sinkOf(key));
     }
-    const sink = (key: 'back' | 'setup' | 'mute') => 7 * s * sinkOf(key) * 0.8;
-    drawBack(g, this.backAt.x, this.backAt.y + sink('back'), r * 0.42, LOOK.ink);
-    drawGear(g, this.setupAt.x, this.setupAt.y + sink('setup'), r * 0.52, LOOK.ink, 1);
-    drawSpeaker(g, this.muteAt.x, this.muteAt.y + sink('mute'), r * 0.5, LOOK.ink, this.muted);
+    drawBack(g, this.backAt.x, this.backAt.y + puckSink(s, sinkOf('back')), CHROME.puckRadius * s * 0.42, PALETTE.ink);
+    drawGear(g, this.setupAt.x, this.setupAt.y + puckSink(s, sinkOf('setup')), CHROME.puckRadius * s * 0.52, PALETTE.ink, 1);
+    drawSpeaker(g, this.muteAt.x, this.muteAt.y + puckSink(s, sinkOf('mute')), CHROME.puckRadius * s * 0.5, PALETTE.ink, this.muted);
   }
 
   /** The footer: a bench across the frame, the next level's block on it, the area's ten beads. */
@@ -641,32 +627,34 @@ export class MapScene extends BaseScene {
     const g = this.dock.clear();
     // The bench: only its top face and edge are on screen, so it is three flat strips rather
     // than a slab whose shadow and side wall would be drawn under the frame every frame.
-    const bench = faces(LOOK.bench);
+    const bench = faces(SHELL.bench);
     g.fillStyle(bench.face).fillRect(full.x, y, full.width, full.bottom - y);
     g.fillStyle(bench.rim, 0.6).fillRect(full.x, y + 2 * s, full.width, 3 * s);
-    g.fillStyle(shade(LOOK.bench, -0.6)).fillRect(full.x, y - STYLE.current.outline * s * 0.55, full.width, STYLE.current.outline * s * 0.55);
+    g.fillStyle(shade(SHELL.bench, -0.6)).fillRect(full.x, y - STYLE.current.outline * s * 0.55, full.width, STYLE.current.outline * s * 0.55);
     const height = Math.max(112 * s, this.controlSize + 16 * s);
     this.blockRect.setTo(safe.centerX - 310 * s, y + 20 * s, 620 * s, height);
-    drawPanel(g, this.blockRect, s, { fill: LOOK.block, depth: 12, press, hero: true });
+    drawPanel(g, this.blockRect, s, { fill: SHELL.puck, depth: 12, press, hero: true });
     const sink = 12 * s * press * 0.8;
     placeSurface(this.dockSurface, this.blockRect, s, sink);
     const level = this.progress.unlocked;
     const definition = VIGNETTES.find(v => v.id === levelSpec(level).vignette)!;
     const bx = this.blockRect.x, by = this.blockRect.y + sink;
     this.dockTitle.setText(definition.title);
-    resize(this.dockTitle, 30 * s, LOOK.ink);
+    // Caption size on cream: the same undressed Fredoka the locked numbers use, so the
+    // outline does not close the counters on a 30-unit word.
+    resize(this.dockTitle, 30 * s, PALETTE.ink, STYLE.current, false);
     this.dockTitle.setPosition(bx + 24 * s, by + height * 0.5);
     const r = Math.max(40 * s, this.controlSize / 2);
     const cx = this.blockRect.right - 24 * s - r, cy = this.blockRect.centerY + sink;
-    drawDisc(g, cx, cy, r, s, { fill: LOOK.coral, depth: 9, press });
-    drawPlay(g, cx + 2 * s, cy + 9 * s * press * 0.8, r * 0.42, LOOK.cream);
+    drawDisc(g, cx, cy, r, s, { fill: PALETTE.coral, depth: 9, press });
+    drawPlay(g, cx + 2 * s, cy + 9 * s * press * 0.8, r * 0.42, SHELL.cream);
     this.dockRect.setTo(this.blockRect.x - 8 * s, this.blockRect.y - 8 * s, this.blockRect.width + 16 * s, this.blockRect.height + 16 * s);
     // Ten beads for the ten stops in the current area.
     const beadY = this.blockRect.bottom + 12 * s + 26 * s;
     const at = (level - 1) % PROGRESSION.areaSize;
     for (let i = 0; i < PROGRESSION.areaSize; i++) {
       const x = this.blockRect.x + 12 * s + i * 28 * s;
-      const colour = i === at ? LOOK.coral : i < at ? LOOK.ink : shade(LOOK.bench, -0.25);
+      const colour = i === at ? PALETTE.coral : i < at ? PALETTE.ink : shade(SHELL.bench, -0.25);
       const f = faces(colour);
       const rr = (i === at ? 7 : 6) * s;
       g.fillStyle(f.edge, 1).fillCircle(x, beadY + 2.5 * s, rr);
@@ -715,11 +703,11 @@ export class MapScene extends BaseScene {
       const lift = still || beat >= 0.32 ? 0 : Math.sin(Math.PI * beat / 0.32) * 10 * s * ex;
       const { area } = areaOf(this.first + this.frontierIndex);
       this.drawStars(g, frontier.x, frontier.y - lift + p.r + (p.depth + 24) * s, 0, area, s);
-      this.drawPuck(g, this.frontierIndex, lift);
+      this.drawLevelPuck(g, this.frontierIndex, lift);
       this.numbers[this.frontierIndex]!.setY(frontier.y - lift);
       if (!still) {
         const ring = spring(beat / 0.6, 4.5, 2.2);
-        g.lineStyle(STYLE.current.outline * s * 0.55, LOOK.coral, Math.max(0, 1 - beat / 1.1) * 0.55).strokeCircle(frontier.x, frontier.y - lift, p.r + 4 * s + ring * 22 * s);
+        g.lineStyle(STYLE.current.outline * s * 0.55, PALETTE.coral, Math.max(0, 1 - beat / 1.1) * 0.55).strokeCircle(frontier.x, frontier.y - lift, p.r + 4 * s + ring * 22 * s);
       }
     }
     // A tapped locked puck: its number squashes and a ring says "not yet".
@@ -729,19 +717,19 @@ export class MapScene extends BaseScene {
       const q = still ? 0 : squash(feedbackAge, 0.36, 0.16 * ex);
       this.numbers[this.lockedIndex]!.setScale(1 + q, 1 - q * 0.6);
       const ring = spring(feedbackAge / 0.36, 5, 1.6);
-      g.lineStyle(STYLE.current.outline * s * 0.55, LOOK.coral, (1 - feedbackAge / 0.36) * 0.7).strokeCircle(locked.x, locked.y, MAP.nodeRadius * 0.84 * s + 5 * s + ring * 10 * s);
+      g.lineStyle(STYLE.current.outline * s * 0.55, PALETTE.coral, (1 - feedbackAge / 0.36) * 0.7).strokeCircle(locked.x, locked.y, MAP.nodeRadius * 0.84 * s + 5 * s + ring * 10 * s);
     } else if (locked) { this.numbers[this.lockedIndex]!.setScale(1); this.lockedIndex = -1; }
     // The tap acknowledgement.
     this.touch.clear();
     const touchAge = now - this.touchAt;
     if (touchAge < 0.35) {
       const ring = spring(touchAge / 0.35, 5, 1.6);
-      this.touch.lineStyle(STYLE.current.outline * s * 0.55, LOOK.ink, (1 - touchAge / 0.35) * 0.6).strokeCircle(this.touchPoint.x, this.touchPoint.y + this.scrollY, 12 * s + ring * 30 * s);
+      this.touch.lineStyle(STYLE.current.outline * s * 0.55, PALETTE.ink, (1 - touchAge / 0.35) * 0.6).strokeCircle(this.touchPoint.x, this.touchPoint.y + this.scrollY, 12 * s + ring * 30 * s);
     }
     // Presses redraw only while live, then one frame at rest.
-    const press = this.pressedAt > -Infinity ? 1 - spring((now - this.pressedAt) / MAP.pressSec, 5, 2) : 0;
+    const press = pressAmount(now, this.pressedAt);
     if (press > 0.001 || this.pressDirty) { this.drawDock(s, Math.max(0, press)); this.pressDirty = press > 0.001; }
-    const puckPress = this.puckPressedAt > -Infinity ? 1 - spring((now - this.puckPressedAt) / MAP.pressSec, 5, 2) : 0;
+    const puckPress = pressAmount(now, this.puckPressedAt);
     if (puckPress > 0.001 || this.puckDirty) { this.drawPucks(s, Math.max(0, puckPress)); this.puckDirty = puckPress > 0.001; }
   }
 

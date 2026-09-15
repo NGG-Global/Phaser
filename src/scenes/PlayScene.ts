@@ -5,30 +5,36 @@ import { sharedAudio, toggleMute } from '@/audio/sharedAudio';
 import { MUSIC } from '@/config/music';
 import { TaskSequence } from '@/game/TaskSequence';
 import { SceneKey } from '@/config/scenes';
+import { LAYOUT } from '@/config/design';
 import { RHYTHM } from '@/config/rhythm';
 import { BaseScene } from '@/core/BaseScene';
 import { isTouchPrimary } from '@/core/shell';
 import { RoundController, type Phase } from '@/game/RoundController';
 import type { RoundResult } from '@/game/scoring';
 import { TapInput, type Tap } from '@/input/TapInput';
+import { MaterialKey } from '@/textures/materials';
 import type { Judgement } from '@/rhythm/judge';
 import { beatsPlayed, countIn, markFor, trackGeometry, type Mark } from '@/game/beatTrack';
 import { levelSpec, meanAccuracy, starsFor, type LevelSpec } from '@/game/levels';
 import { loadProgress, recordResult, saveProgress, type LevelOutcome } from '@/game/progress';
 import { STYLE } from '@/config/style';
-import { PALETTE } from '@/config/theme';
+import { PALETTE, SHELL } from '@/config/theme';
 import { drawMap, drawRestart, drawSpeaker } from '@/ui/icons';
 import { faces } from '@/ui/light';
-import { hex, mix, shade } from '@/ui/colour';
-import { drawDisc, drawPanel, Rect } from '@/ui/panel';
+import { mix, shade, starColour } from '@/ui/colour';
+import { CHROME, drawPuck, pressAmount, puckSink } from '@/ui/chrome';
+import { drawPanel, placeSurface, Rect, surface } from '@/ui/panel';
 import { Feedback } from '@/ui/feedback';
 import { arrive, overshoot, settle, squash, stagger } from '@/ui/spring';
-import { display, resize } from '@/ui/type';
+import { body, display, resize } from '@/ui/type';
 import { drawStar } from '@/ui/star';
 import { SceneCurtain } from '@/ui/SceneCurtain';
 import { VIGNETTES } from '@/vignettes/registry';
 import type { Vignette } from '@/vignettes/Vignette';
 import { clamp01, easeOut } from '@/vignettes/motion';
+
+/** Watch is a timber plaque; Your turn is the coral block the thumb already knows. */
+type TurnCue = 'none' | 'watch' | 'play';
 
 /**
  * The beat track's metrics, in design units at scale 1. The beads are deliberately larger
@@ -64,14 +70,30 @@ export class PlayScene extends BaseScene {
   private get definition() { return VIGNETTES.find(v => v.id === this.spec.vignette) ?? VIGNETTES[0]!; }
   private stars!: Phaser.GameObjects.Graphics;
   private headline!: Phaser.GameObjects.Text;
-  private invitation!: Phaser.GameObjects.Text;
+  /** Hung behind the phase word so Watch and Your turn are different objects, not just colours. */
+  private turnSign!: Phaser.GameObjects.Graphics;
   private accuracy!: Phaser.GameObjects.Text;
+  private turn: TurnCue = 'none';
+  /** Judgements that scored in the early window while the example was still on screen. */
+  private heldJudgements: Judgement[] = [];
   /** The three pucks — map, restart, mute — drawn as one baked graphic. */
   private chrome!: Phaser.GameObjects.Graphics;
+  private actionRoot!: Phaser.GameObjects.Container;
+  private action!: Phaser.GameObjects.Graphics;
+  private actionSurface!: Phaser.GameObjects.TileSprite;
+  private actionLabel!: Phaser.GameObjects.Text;
+  private actionRect = new Phaser.Geom.Rectangle();
+  private actionCaption = '';
+  private actionPressedAt = -Infinity;
+  private actionPressDirty = false;
+  private actionShownAt = -Infinity;
   private mapAt = { x: 0, y: 0 };
   private restartAt = { x: 0, y: 0 };
   private muteAt = { x: 0, y: 0 };
   private muted = false;
+  private puckPressed: 'map' | 'restart' | 'mute' | null = null;
+  private puckPressedAt = -Infinity;
+  private puckDirty = false;
   private fx!: Feedback;
   private starsLanded = 0;
   private starsSettled = false;
@@ -95,6 +117,7 @@ export class PlayScene extends BaseScene {
   private struckIndex = -1;
   private struckAt = -Infinity;
   private extraAt = -Infinity;
+  private turnAt = -Infinity;
   private verdict!: Phaser.GameObjects.Text;
   private verdictAt = -Infinity;
   private headlineColour = 0x243e35;
@@ -124,17 +147,20 @@ export class PlayScene extends BaseScene {
     this.spec = levelSpec(Number.isInteger(requested) && requested >= 1 ? requested : 1);
     this.vignette = this.definition.create(this);
     const ink = this.definition.ink;
-    this.stars = this.add.graphics();
+    this.stars = this.add.graphics().setDepth(9);
     this.fx = new Feedback(this, 5);
-    this.headline = display(this, this.definition.intro, { size: 88, colour: ink, align: 'center' }).setOrigin(0.5, 0);
-    // Map entry starts automatically. This line is reserved for a result, pause or error,
-    // rather than repeating instructions throughout normal play.
-    this.invitation = display(this, '', { size: 30, colour: ink }).setOrigin(0.5).setAlpha(0.82);
-    this.accuracy = display(this, '', { size: 46, colour: ink }).setOrigin(0.5);
-    this.chrome = this.add.graphics();
-    this.marks = this.add.graphics();
-    this.verdict = display(this, '', { size: 38, colour: ink, align: 'center' }).setOrigin(0.5).setAlpha(0).setDepth(6);
-    this.taskMarks = this.add.graphics();
+    this.turnSign = this.add.graphics().setDepth(11);
+    this.headline = display(this, this.definition.intro, { size: 88, colour: ink, align: 'center' }).setOrigin(0.5, 0).setDepth(12);
+    this.accuracy = body(this, '', { size: 34, colour: ink, align: 'center' }).setOrigin(0.5).setDepth(11);
+    this.chrome = this.add.graphics().setDepth(10);
+    this.actionRoot = this.add.container(0, 0).setDepth(10);
+    this.action = this.add.graphics();
+    this.actionSurface = surface(this, MaterialKey.cloth, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, PALETTE.coral, 0.35);
+    this.actionLabel = display(this, '', { size: 40, colour: SHELL.cream, align: 'center' }).setOrigin(0.5);
+    this.actionRoot.add([this.action, this.actionSurface, this.actionLabel]);
+    this.marks = this.add.graphics().setDepth(8);
+    this.verdict = display(this, '', { size: 38, colour: ink, align: 'center' }).setOrigin(0.5).setAlpha(0).setDepth(8);
+    this.taskMarks = this.add.graphics().setDepth(11);
     this.curtain = new SceneCurtain(this);
     this.debug = this.text('', 16, 'monospace').setVisible(this.debugMode);
     if (this.debugMode) this.installReplayPanel();
@@ -166,42 +192,78 @@ export class PlayScene extends BaseScene {
     // The phase cue and task beads are the whole HUD. Level metadata lives on the map.
     this.headlineY = top + 84 * s;
     this.headlineSize = (this.controller?.active ? 48 : 88) * s;
-    resize(this.headline, this.headlineSize, ink);
+    resize(this.headline, this.headlineSize, this.headlineColour);
     this.headline.setPosition(safe.centerX, this.headlineY).setLineSpacing(-12 * s);
+    this.drawTurnSign();
     this.controlSize = Math.max(88 * s, 48 * this.viewport.unitScale);
     const gap = Math.max(88 * s, this.controlSize + 4 * s);
     this.muteAt = { x: safe.right - 56 * s, y: top + 66 * s };
     this.restartAt = { x: this.muteAt.x - gap, y: this.muteAt.y };
     this.mapAt = { x: safe.left + 56 * s, y: this.muteAt.y };
-    this.drawChrome(s);
-    resize(this.invitation, 30 * s, ink);
-    this.invitation.setPosition(safe.centerX, safe.bottom - 68 * s);
-    resize(this.accuracy, 46 * s, ink);
-    this.accuracy.setPosition(safe.centerX, safe.bottom - 122 * s);
+    this.drawChrome(s, 0);
+    this.puckDirty = true;
     this.debug.setPosition(left, top + 360 * s).setFontSize(16 * s);
-    // The beat track sits in the band the stars take at the summary; the two never show
-    // at once, so they share it rather than competing for the frame.
-    // High enough that the plate and its shadow clear the caption line: the two do coexist,
-    // because the line left over from one task is still fading while the next is answered.
-    this.trackY = safe.bottom - 248 * s;
+    // Same offset as the old drag track: an absolute distance from the thumb, so a tall
+    // handset does not leave the beads floating in the middle of the frame.
+    this.trackY = safe.bottom - LAYOUT.trackOffsetFromBottom * s;
     this.trackWidth = Math.min(620 * s, safe.width - 80 * s);
-    // The plate is sized to its own phrase in `drawBeatTrack`; only the band it occupies
-    // is fixed here, because the word above it must not move when the phrase gets longer.
     this.verdictY = this.trackY - TRACK.plateHeight * s / 2 - 34 * s;
     this.verdict.setPosition(safe.centerX, this.verdictY);
     resize(this.verdict, 38 * s, this.verdictColour());
+    // Tighter than the menu's Play block, so the result plaque still fits above it.
+    const blockH = Math.max(96 * s, this.controlSize);
+    this.actionRect.setTo(
+      safe.centerX - CHROME.block.width * s / 2,
+      safe.bottom - 72 * s - blockH,
+      CHROME.block.width * s,
+      blockH,
+    );
+    this.drawAction(0);
+    this.actionPressDirty = true;
+    resize(this.accuracy, 34 * s, ink, STYLE.current, false);
+    this.accuracy.setPosition(safe.centerX, this.trackY + 28 * s);
     this.drawStars();
     this.drawTaskMarks();
   }
-  private drawChrome(s: number): void {
+  private drawChrome(s: number, press: number): void {
     const g = this.chrome.clear();
-    const r = 34 * s;
-    const puck = 0xf6ead0;
+    const sinkOf = (key: 'map' | 'restart' | 'mute') => (this.puckPressed === key ? press : 0);
+    for (const [key, at] of [['map', this.mapAt], ['restart', this.restartAt], ['mute', this.muteAt]] as const) {
+      drawPuck(g, at.x, at.y, s, sinkOf(key));
+    }
     const ink = this.definition.ink;
-    for (const at of [this.mapAt, this.restartAt, this.muteAt]) drawDisc(g, at.x, at.y, r, s, { fill: puck, depth: 7 });
-    drawMap(g, this.mapAt.x, this.mapAt.y, r * 0.42, ink);
-    drawRestart(g, this.restartAt.x, this.restartAt.y, r * 0.44, ink);
-    drawSpeaker(g, this.muteAt.x, this.muteAt.y, r * 0.5, ink, this.muted);
+    const r = CHROME.puckRadius * s;
+    drawMap(g, this.mapAt.x, this.mapAt.y + puckSink(s, sinkOf('map')), r * 0.42, ink);
+    drawRestart(g, this.restartAt.x, this.restartAt.y + puckSink(s, sinkOf('restart')), r * 0.44, ink);
+    drawSpeaker(g, this.muteAt.x, this.muteAt.y + puckSink(s, sinkOf('mute')), r * 0.5, ink, this.muted);
+  }
+
+  /**
+   * The one coral block. Pause, retry and the result all used to be a faint caption
+   * under the vignette; every other screen puts that action on a block the thumb
+   * already knows.
+   */
+  private drawAction(press: number): void {
+    const shown = this.actionCaption !== '';
+    this.actionRoot.setVisible(shown);
+    if (!shown) return;
+    const s = this.uiScale;
+    const g = this.action.clear();
+    const r = this.actionRect;
+    drawPanel(g, r, s, { fill: PALETTE.coral, depth: CHROME.block.depth, press, hero: true });
+    const sink = CHROME.block.depth * s * press * 0.8;
+    placeSurface(this.actionSurface, r, s, sink);
+    this.actionLabel.setText(this.actionCaption);
+    resize(this.actionLabel, 40 * s, SHELL.cream);
+    this.actionLabel.setPosition(r.centerX, r.centerY + sink);
+  }
+
+  private setAction(caption: string): void {
+    if (this.actionCaption === caption) return;
+    if (caption !== '' && this.actionCaption === '') this.actionShownAt = performance.now() / 1000;
+    this.actionCaption = caption;
+    this.drawAction(0);
+    this.actionPressDirty = true;
   }
   private blocked(): boolean { return document.hidden || (isTouchPrimary() && this.scale.isLandscape); }
   private now(): number { return this.audio?.clock.now() ?? performance.now() / 1000; }
@@ -219,23 +281,24 @@ export class PlayScene extends BaseScene {
     this.outcome = null;
     this.saveFailed = false;
     this.stars.clear();
+    this.setTurn('none');
     this.controller?.dispose();
     this.audio?.cancel();
     this.audio?.music.stop();
     this.vignette.pause();
     this.accuracy.setText('');
+    this.setAction('');
     this.finishUnlock = Infinity;
     this.demoCount = 0;
     if (this.blocked()) return;
     this.starting = true;
-    this.invitation.setText('…');
     try {
       if (!this.controller) {
         this.audio = sharedAudio(this);
         this.audio.setSounds(this.definition.sounds(this.audio.context));
         this.audio.context.addEventListener('statechange', this.audioState);
         this.muted = this.audio.muted;
-        this.drawChrome(this.uiScale);
+        this.drawChrome(this.uiScale, 0);
         this.controller = new RoundController(this.audio, {
           phase: phase => this.showPhase(phase),
           cue: cue => {
@@ -244,7 +307,10 @@ export class PlayScene extends BaseScene {
               this.demoCount++;
             }
           },
-          tap: () => this.vignette.onPlayerHit(this.now()),
+          tap: () => {
+            this.vignette.onPlayerHit(this.now());
+            this.releaseHeldJudgements();
+          },
           judgement: result => this.showJudgement(result),
           complete: result => this.showResult(result),
           interrupted: () => this.showPause(),
@@ -252,7 +318,6 @@ export class PlayScene extends BaseScene {
       }
       await this.audio!.unlock();
       if (this.disposed || request !== this.startRequest || this.blocked()) return;
-      this.invitation.setText('…');
       await this.audio!.music.load();
       if (this.disposed || request !== this.startRequest || this.blocked()) return;
       this.starting = false;
@@ -267,8 +332,9 @@ export class PlayScene extends BaseScene {
       this.audio?.cancel();
       this.audio?.music.stop();
       console.error('Unable to start round', error);
+      this.setTurn('none');
       this.changeHeadline('No sound');
-      this.invitation.setText('Retry');
+      this.setAction('Retry');
     }
   }
   private beginTask(startAt: number): void {
@@ -277,6 +343,7 @@ export class PlayScene extends BaseScene {
     this.finishUnlock = Infinity;
     this.accuracy.setText('');
     this.outcomes = this.task.pattern.hits.map(() => 'pending');
+    this.heldJudgements = [];
     this.struckIndex = -1;
     this.struckAt = this.extraAt = this.verdictAt = -Infinity;
     this.verdict.setAlpha(0);
@@ -292,11 +359,16 @@ export class PlayScene extends BaseScene {
     if (this.blocked() || this.curtain.active) return;
     const near = (at: { x: number; y: number }) => Math.abs(tap.x - at.x) < this.controlSize / 2 && Math.abs(tap.y - at.y) < this.controlSize / 2;
     if (near(this.muteAt)) {
-      if (this.audio) { this.muted = toggleMute(this.audio); this.drawChrome(this.uiScale); }
+      this.pressPuck('mute');
+      if (this.audio) this.muted = toggleMute(this.audio);
       return;
     }
-    if (near(this.restartAt)) { void this.startRound(); return; }
-    if (near(this.mapAt)) { this.leaveForMap(); return; }
+    if (near(this.restartAt)) { this.pressPuck('restart'); void this.startRound(); return; }
+    if (near(this.mapAt)) { this.pressPuck('map'); this.leaveForMap(); return; }
+    if (this.actionCaption !== '' && Phaser.Geom.Rectangle.Contains(this.actionRect, tap.x, tap.y)) {
+      this.actionPressedAt = performance.now() / 1000;
+      this.actionPressDirty = true;
+    }
     const phase = this.controller?.phase ?? 'idle';
     if (phase === 'idle' || phase === 'paused') { if (!this.starting) void this.startRound(); return; }
     if (phase === 'result') {
@@ -307,6 +379,11 @@ export class PlayScene extends BaseScene {
     if (!this.audio || !this.controller?.active) return;
     this.audio.clock.refresh();
     this.controller.tap(this.audio.clock.input(tap.timestamp), this.audio.context.currentTime, performance.now());
+  }
+  private pressPuck(key: 'map' | 'restart' | 'mute'): void {
+    this.puckPressed = key;
+    this.puckPressedAt = performance.now() / 1000;
+    this.puckDirty = true;
   }
   private tick(): void {
     if (!this.audio || this.blocked()) return;
@@ -330,8 +407,7 @@ export class PlayScene extends BaseScene {
   /** Development-only integration exercise: actual DOM mouse events go through TapInput. */
   private installReplayPanel(): void {
     const panel = document.createElement('div');
-    panel.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:20;display:flex;gap:6px;';
-    panel.style.flexWrap = 'wrap';
+    panel.style.cssText = 'position:fixed;left:8px;top:108px;z-index:20;display:flex;flex-direction:column;gap:6px;max-width:118px;';
     for (const mode of ['Accurate replay', 'Good replay', 'Rough replay', 'Spam replay'] as const) {
       const button = document.createElement('button');
       button.textContent = mode;
@@ -386,19 +462,39 @@ export class PlayScene extends BaseScene {
       const p = slide.swapped ? (now - slide.swap) / (slide.next - slide.swap) : (now - slide.slide) / (slide.swap - slide.slide);
       this.vignette.translate(this.viewport.full.width * (slide.swapped ? 1 - easeOut(p) : -(Math.min(1, Math.max(0, p)) ** 3)));
     }
-    const reveal = easeOut((now - this.headlineAt) / 0.21);
+    const still = this.reducedMotion;
+    const entry = still || this.headlineAt < 0 ? { rise: 0, alpha: 1 } : arrive(now - this.headlineAt, 0.4);
     const playing = this.controller?.active;
     const endReveal = this.controller?.phase === 'result'
       ? easeOut((now - (this.finishUnlock - this.definition.endingSec) - 0.28) / 0.3) : 1;
     // setFontSize re-measures and re-rasterises the text canvas; only pay for it on change.
     const headlineSize = (playing ? 48 : 88) * this.uiScale;
     if (headlineSize !== this.headlineSize) { this.headlineSize = headlineSize; resize(this.headline, headlineSize, this.headlineColour); }
-    this.headline.setAlpha(reveal * endReveal).setY(this.headlineY + (1 - reveal * endReveal) * 12 * this.uiScale);
+    this.headline.setAlpha(entry.alpha * endReveal).setY(this.headlineY + entry.rise * 16 * this.uiScale);
+    this.drawTurnSign();
     if (this.summaryShown) {
-      this.accuracy.setAlpha(this.reducedMotion ? 1 : easeOut((now - this.summaryAt) / 0.45));
+      this.accuracy.setAlpha(still ? 1 : easeOut((now - this.summaryAt) / 0.45));
       this.animateStars(now);
     } else { this.accuracy.setAlpha(1); }
     this.drawBeatTrack(now);
+    const wall = performance.now() / 1000;
+    const puckPress = pressAmount(wall, this.puckPressedAt);
+    if (puckPress > 0.001 || this.puckDirty) {
+      this.drawChrome(this.uiScale, Math.max(0, puckPress));
+      this.puckDirty = puckPress > 0.001;
+      if (!this.puckDirty) this.puckPressed = null;
+    }
+    const actionPress = pressAmount(wall, this.actionPressedAt);
+    if (actionPress > 0.001 || this.actionPressDirty) {
+      this.drawAction(Math.max(0, actionPress));
+      this.actionPressDirty = actionPress > 0.001;
+    }
+    if (this.actionCaption !== '') {
+      const { rise, alpha } = this.reducedMotion ? { rise: 0, alpha: 1 } : arrive(wall - this.actionShownAt, 0.5);
+      this.actionRoot.setY(rise * 24 * this.uiScale).setAlpha(alpha);
+    } else {
+      this.actionRoot.setY(0).setAlpha(1);
+    }
     // The verdict word rises and fades; one instance, so a quick double replaces rather
     // than stacks.
     const said = now - this.verdictAt;
@@ -417,22 +513,57 @@ export class PlayScene extends BaseScene {
     if (this.headline.text === text && this.headlineColour === colour) return;
     this.headlineAt = this.now();
     this.headlineColour = colour;
-    this.headline.setText(text).setAlpha(0).setY(this.headlineY + 12 * this.uiScale);
+    this.headline.setText(text).setAlpha(0).setY(this.headlineY + 16 * this.uiScale);
     resize(this.headline, this.headlineSize, colour);
+    this.drawTurnSign();
+  }
+  private setTurn(turn: TurnCue): void {
+    this.turn = turn;
+    this.drawTurnSign();
+  }
+  private drawTurnSign(): void {
+    const g = this.turnSign.clear();
+    if (this.turn === 'none' || this.headline.text === '') {
+      this.turnSign.setAlpha(0);
+      return;
+    }
+    const s = this.uiScale;
+    const padX = 26 * s;
+    const padY = 10 * s;
+    const w = Math.max(this.headline.displayWidth + padX * 2, 168 * s);
+    const h = Math.max(this.headline.displayHeight + padY * 2, 52 * s);
+    const x = this.viewport.safe.centerX - w / 2;
+    const y = this.headline.y - padY;
+    drawPanel(g, new Rect(x, y, w, h), s, {
+      fill: this.turn === 'play' ? PALETTE.coral : SHELL.wood,
+      depth: 8,
+      radius: 22,
+      hero: this.turn === 'play',
+    });
+    this.turnSign.setAlpha(1);
   }
   private showPhase(phase: Phase): void {
     this.vignette.onPhase(phase, this.now());
     // A lead-in longer than the level's opening bar is the breather, and it is the only
     // place in a level where nothing is being asked of the player.
     const resting = this.task.leadBeats > RHYTHM.leadInBeats;
-    if (phase === 'prepare') { this.changeHeadline(resting ? 'Breathe' : 'Watch'); this.invitation.setText(''); }
-    if (phase === 'demonstrate') this.changeHeadline('Watch');
+    if (phase === 'prepare') {
+      this.setTurn('watch');
+      this.changeHeadline(resting ? 'Breathe' : 'Watch', SHELL.cream);
+      this.setAction('');
+    }
+    if (phase === 'demonstrate') {
+      this.setTurn('watch');
+      this.changeHeadline('Watch', SHELL.cream);
+    }
     // The demonstration runs straight into the response, so this flip is the only thing
     // that tells the player their turn has started. It cannot be deferred a frame. The
-    // word, its colour and the beat track's beads all turn over together.
+    // plaque, the word and the beat track's beads all turn over together.
     if (phase === 'respond') {
-      this.changeHeadline('Your turn', PALETTE.coral);
-      this.invitation.setText('');
+      this.turnAt = this.now();
+      this.setTurn('play');
+      this.changeHeadline('Your turn', SHELL.cream);
+      this.setAction('');
       this.demoCount = 0;
       this.struckIndex = -1;
       this.struckAt = this.extraAt = -Infinity;
@@ -440,17 +571,30 @@ export class PlayScene extends BaseScene {
   }
   private showJudgement(result: Judgement): void {
     this.lastJudgement = `${result.kind} ${result.grade} ${result.deltaMs?.toFixed(0) ?? '—'} ms`;
+    if (result.index !== null) this.outcomes[result.index] = markFor(result);
+    // An extra tap belongs to no beat, so it shakes the whole row rather than marking one.
+    // Held until respond: sinking the nail or flashing Perfect during Watch is the glitch.
+    if (this.controller?.phase !== 'respond') {
+      this.heldJudgements.push(result);
+      return;
+    }
+    this.presentJudgement(result);
+  }
+  private presentJudgement(result: Judgement): void {
     this.vignette.onAccuracy(result, this.now());
     // The action sound is scheduled before the tap is graded, so a reaction to the
     // grade needs its own voice. Sound sets that declare neither accent stay silent.
     const now = this.now();
     if (result.kind === 'extra') this.audio?.playAccent(now, 'scrape');
     else if (result.kind === 'omission') this.audio?.playAccent(now, 'judder');
-    if (result.index !== null) this.outcomes[result.index] = markFor(result);
-    // An extra tap belongs to no beat, so it shakes the whole row rather than marking one.
     if (result.kind === 'extra') this.extraAt = now;
     else if (result.kind === 'hit' && result.index !== null) { this.struckIndex = result.index; this.struckAt = now; }
     this.sayVerdict(result, now);
+  }
+  private releaseHeldJudgements(): void {
+    const pending = this.heldJudgements;
+    this.heldJudgements = [];
+    for (const result of pending) this.presentJudgement(result);
   }
 
   /**
@@ -461,21 +605,19 @@ export class PlayScene extends BaseScene {
     const word = result.kind === 'extra' ? 'Miss' : result.grade;
     const colour = this.verdictColour(result);
     this.verdictAt = now;
-    // setColor as well as resize: resize re-dresses the stroke and the drop for the new
-    // size, but the fill is the text's own and would otherwise stay on the vignette's ink.
-    this.verdict.setText(word).setColor(hex(colour));
+    this.verdict.setText(word);
     resize(this.verdict, 38 * this.uiScale, colour);
     if (result.grade === 'Perfect' && result.kind === 'hit' && !this.reducedMotion) {
       const { centres } = this.beads();
       const x = this.viewport.safe.centerX + (centres[result.index ?? 0] ?? 0);
-      this.fx.burst('sparks', x, this.trackY, [PALETTE.coral, 0xfff4dc], 8);
+      this.fx.burst('sparks', x, this.trackY, [PALETTE.coral, SHELL.cream], 8);
     }
   }
   private verdictColour(result?: Judgement): number {
     if (!result) return this.definition.ink;
     // A darker grey than the track's, because the word is read against whatever the
     // vignette has behind it — on the pale stages the palette's muted all but disappears.
-    return result.grade === 'Perfect' ? PALETTE.coral : result.grade === 'Good' ? this.definition.ink : shade(PALETTE.muted, -0.3);
+    return result.grade === 'Perfect' ? PALETTE.coral : result.grade === 'Good' ? this.definition.ink : PALETTE.muted;
   }
   /** The bead centres the track is drawn at, so a burst lands on the bead it belongs to. */
   private beads(): { readonly centres: readonly number[]; readonly radius: number } {
@@ -514,7 +656,10 @@ export class PlayScene extends BaseScene {
     const width = Math.min(Math.max(span * 2, 220 * s), safe.width - 48 * s);
     const height = TRACK.plateHeight * s;
     const plate = new Rect(safe.centerX - width / 2 + rattle, y - height / 2, width, height);
-    const face = answering ? mix(PALETTE.paper, PALETTE.coral, 0.22) : shade(PALETTE.paper, -0.06);
+    const heat = answering ? (still ? 1 : clamp01((now - this.turnAt) / 0.12)) : 0;
+    const rest = mix(PALETTE.paper, SHELL.wood, 0.34);
+    const hot = mix(PALETTE.paper, PALETTE.coral, 0.42);
+    const face = mix(rest, hot, easeOut(heat));
     drawPanel(g, plate, s, { fill: face, depth: TRACK.plateDepth, radius: TRACK.plateRadius });
     if (answering) {
       // A painted line inside the face, the same device the menu's one action carries.
@@ -585,9 +730,10 @@ export class PlayScene extends BaseScene {
       this.recordOutcome();
     }
     const copy = strong ? this.definition.success : this.definition.rough;
+    this.setTurn('none');
     this.changeHeadline(copy[0]);
     this.accuracy.setText(this.debugMode ? `${Math.round(result.accuracy)}%` : '');
-    this.invitation.setText('');
+    this.setAction('');
   }
   /** Idempotent: the level is scored and saved once, however often this is reached. */
   private recordOutcome(): void {
@@ -606,9 +752,10 @@ export class PlayScene extends BaseScene {
     const accuracy = meanAccuracy(this.results);
     this.recordOutcome();
     const outcome = this.outcome!;
+    this.setTurn('none');
     this.changeHeadline(this.saveFailed ? 'Couldn’t save' : outcome.cleared ? 'Cleared' : 'Again?');
     this.accuracy.setText(`${Math.round(accuracy)}%`);
-    this.invitation.setText(outcome.cleared ? 'Continue' : 'Try again');
+    this.setAction(outcome.cleared ? 'Continue' : 'Try again');
     this.drawStars();
     this.drawTaskMarks();
   }
@@ -616,7 +763,7 @@ export class PlayScene extends BaseScene {
   private drawTaskMarks(): void {
     const s = this.uiScale, { safe } = this.viewport;
     const count = this.spec.tasks.length;
-    const gap = 20 * s, y = safe.top + 74 * s;
+    const gap = 20 * s, y = safe.top + 58 * s;
     const g = this.taskMarks.clear();
     const f = faces(this.definition.ink);
     for (let i = 0; i < count; i++) {
@@ -625,24 +772,32 @@ export class PlayScene extends BaseScene {
       const current = i === this.taskIndex && !this.summaryShown;
       const r = (current ? 5.5 : 4.5) * s;
       g.fillStyle(f.edge, done || current ? 1 : 0.25).fillCircle(x, y + 1.5 * s, r);
-      g.fillStyle(done ? f.face : current ? f.lit : 0xf6ead0, done || current ? 1 : 0.6).fillCircle(x, y, r);
+      g.fillStyle(done ? f.face : current ? f.lit : SHELL.puck, done || current ? 1 : 0.6).fillCircle(x, y, r);
       if (done || current) g.fillStyle(f.rim, 0.8).fillCircle(x - r * 0.3, y - r * 0.35, r * 0.28);
     }
   }
   private starAt(k: number): { x: number; y: number } {
-    const { safe } = this.viewport;
-    return { x: safe.centerX + (k - 1) * 64 * this.uiScale, y: safe.bottom - 232 * this.uiScale };
+    return { x: this.viewport.safe.centerX + (k - 1) * 64 * this.uiScale, y: this.trackY - 14 * this.uiScale };
   }
   private drawStars(scales: readonly number[] = [1, 1, 1]): void {
     this.stars.clear();
     if (!this.summaryShown) return;
     const s = this.uiScale;
+    const { safe } = this.viewport;
+    // One cream plaque: stars above, the percentage below. They used to float on the
+    // timber of the bench, which is why empty outlines vanished and the score looked
+    // like a caption from another screen.
+    const plateW = 268 * s, plateH = 100 * s;
+    drawPanel(this.stars, new Rect(safe.centerX - plateW / 2, this.trackY - plateH / 2, plateW, plateH), s, {
+      fill: SHELL.puck, depth: 6, radius: 22,
+    });
     const earned = starsFor(meanAccuracy(this.results), this.spec);
+    const ink = this.definition.ink;
     for (let k = 0; k < 3; k++) {
       const scale = scales[k] ?? 1;
       if (scale <= 0) continue;
       const at = this.starAt(k);
-      drawStar(this.stars, at.x, at.y, 22 * s * scale, this.definition.ink, k < earned, k < earned ? 1 : 0.35);
+      drawStar(this.stars, at.x, at.y, 20 * s * scale, starColour(k < earned, ink, SHELL.puck));
     }
   }
   /** The stars land one after another, each overshooting its size, and an earned one throws confetti as it lands. */
@@ -659,7 +814,7 @@ export class PlayScene extends BaseScene {
       if (p >= 1 && k >= this.starsLanded) {
         this.starsLanded = k + 1;
         const at = this.starAt(k);
-        if (k < earned && !this.reducedMotion) this.fx.burst('confetti', at.x, at.y - 10 * this.uiScale, [0xcf5134, 0xdfc37f, 0xfff9e8, this.definition.ink], 14);
+        if (k < earned && !this.reducedMotion) this.fx.burst('confetti', at.x, at.y - 10 * this.uiScale, [PALETTE.coral, SHELL.sun, SHELL.cream, this.definition.ink], 14);
       }
     }
     this.drawStars(scales);
@@ -677,8 +832,9 @@ export class PlayScene extends BaseScene {
   }
   private showPause(): void {
     this.vignette.pause();
+    this.setTurn('none');
     this.changeHeadline('Paused');
-    this.invitation.setText('Resume');
+    this.setAction('Resume');
   }
   private interrupt(): void {
     ++this.startRequest;

@@ -10,7 +10,7 @@ import { shade } from '@/ui/colour';
 import { Feedback } from '@/ui/feedback';
 import { castShadow, faces } from '@/ui/light';
 import type { Vignette } from './Vignette';
-import { easeOut } from './motion';
+import { easeOut, isPlayerTurn, TURN_OPEN_SEC } from './motion';
 
 export const GLASS = { paper: 0xe5dfe8, ink: 0x49394e, frame: 0x756278, blue: 0xa8ced4, light: 0xf9f1df, glove: 0xdc9775, sill: 0xc6b8c6 };
 export const strokeProgress = (age: number): number => easeOut(age / 0.23);
@@ -179,7 +179,10 @@ export class WindowCleaningVignette implements Vignette {
     // Water flicked off the blade. Decorative, so it may skip under reduced motion.
     if (!this.reducedMotion) this.bursts.burst('water', this.tool.x - 10, this.tool.y + 40, [GLASS.light, 0xd3e1db], 5);
   }
-  public onPlayerHit(now: number): void { this.stroke(now); }
+  public onPlayerHit(now: number): void {
+    if (!isPlayerTurn(this.phase)) return;
+    this.stroke(now);
+  }
   public onAccuracy(result: Judgement, now: number): void {
     if (result.kind === 'hit' && result.index !== null) {
       this.lane = result.index;
@@ -209,7 +212,7 @@ export class WindowCleaningVignette implements Vignette {
    */
   private openStage(now: number): void {
     const offered = this.phase === 'respond' || this.phase === 'result';
-    this.backdrop.open(offered ? easeOut((now - this.respondAt) / 0.7) : 0);
+    this.backdrop.open(offered ? easeOut((now - this.respondAt) / TURN_OPEN_SEC) : 0);
   }
   public update(now: number): void {
     if (this.phase === 'paused') now = this.lastNow; else this.lastNow = now;

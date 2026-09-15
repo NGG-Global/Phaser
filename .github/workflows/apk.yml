@@ -1,0 +1,60 @@
+name: Debug APK
+
+# The web gate does not assemble Android. This wraps the same `npm run android:apk`
+# a developer runs locally, then hangs the debug APK on the run as an artifact.
+# It is a separate workflow so a missed SDK download cannot fail typecheck, and
+# so it can be triggered by hand without waiting for a push.
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v4
+        with:
+          # Do not request `tools`: that package was retired and sdkmanager 20
+          # fails the job with "Failed to find package 'tools'". Platform 36 is
+          # compileSdk; AGP 8.13 still pulls build-tools 35 as well.
+          log-accepted-android-sdk-licenses: false
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0 build-tools;35.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: npm ci
+
+      - name: Point Gradle at the SDK
+        # Untracked locally as android/local.properties. CI has none, and Gradle
+        # will not guess ANDROID_HOME unless sdk.dir is written.
+        run: echo "sdk.dir=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" > android/local.properties
+
+      - run: npm run android:apk
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiny-tempo-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

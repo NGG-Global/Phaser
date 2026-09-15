@@ -1,6 +1,7 @@
 import type Phaser from 'phaser';
 import { STYLE, type Treatment } from '@/config/style';
-import { hex, shade } from './colour';
+import { PALETTE } from '@/config/theme';
+import { hex, relativeLuminance, shade, typeStroke } from './colour';
 
 /**
  * The type system. One display face and one body face per treatment, both bundled and
@@ -16,7 +17,8 @@ type TextStyle = Phaser.Types.GameObjects.Text.TextStyle;
 
 /** A hard drop under the letter and its outline: the printed-sticker look. Dark and close. */
 function shadowFor(colour: number, size: number): NonNullable<TextStyle['shadow']> {
-  return { offsetX: 0, offsetY: Math.max(1, size * 0.07), color: hex(shade(colour, -0.55)), blur: 0, fill: true, stroke: true };
+  const drop = relativeLuminance(colour) > 0.45 ? shade(PALETTE.ink, -0.25) : shade(colour, -0.7);
+  return { offsetX: 0, offsetY: Math.max(1, size * 0.07), color: hex(drop), blur: 0, fill: true, stroke: true };
 }
 
 /** Below this the outline is tapered; a headline at or above it carries its full weight. */
@@ -34,6 +36,15 @@ function strokeFor(t: Treatment, size: number): number {
   // again, and Fredoka's counters close up. A headline keeps every bit of its outline.
   const taper = Math.min(1, size / FULL_WEIGHT_SIZE) ** 2;
   return Math.max(1.5, size * 0.02 * t.outline * taper);
+}
+
+/** Room for the outline and the drop shadow, so a dressed glyph is not clipped on one side. */
+function dressPad(size: number, stroke: number): { left: number; right: number; top: number; bottom: number } {
+  const inset = Math.ceil(stroke + 1);
+  const drop = Math.max(1, Math.ceil(size * 0.07));
+  // Equal on opposite sides so origin 0.5 is the letter, not a point shifted by the drop.
+  const y = inset + drop;
+  return { left: inset, right: inset, top: y, bottom: y };
 }
 
 export interface TypeSpec {
@@ -56,8 +67,11 @@ function style(t: Treatment, family: string, weight: number, spec: TypeSpec, dre
     color: hex(spec.colour),
     align: spec.align ?? 'left',
   };
-  if (strokeThickness > 0) { s.stroke = hex(spec.outline ?? shade(spec.colour, -0.6)); s.strokeThickness = strokeThickness; }
-  if (dress) s.shadow = shadowFor(spec.colour, spec.size);
+  if (strokeThickness > 0) { s.stroke = hex(spec.outline ?? typeStroke(spec.colour)); s.strokeThickness = strokeThickness; }
+  if (dress) {
+    s.shadow = shadowFor(spec.colour, spec.size);
+    s.padding = dressPad(spec.size, strokeThickness);
+  }
   if (spec.wrap !== undefined) s.wordWrap = { width: spec.wrap, useAdvancedWrap: true };
   return s;
 }
@@ -83,9 +97,19 @@ export function label(scene: Phaser.Scene, text: string, spec: TypeSpec, t = STY
  */
 export function resize(text: Phaser.GameObjects.Text, size: number, colour: number, t = STYLE.current, dress = true): void {
   text.setFontSize(size);
-  if (!dress) return;
+  // Fill used to stay on whatever the text was created with, so "Your turn" kept the
+  // vignette ink while only its outline shifted — the colour argument was a no-op.
+  text.setColor(hex(colour));
+  if (!dress) {
+    // A previous dressed size would otherwise leave a headline stroke on a caption.
+    text.setStroke('#000000', 0);
+    text.setShadow(0, 0, '#000000', 0, false, false);
+    text.setPadding(0);
+    return;
+  }
   const stroke = strokeFor(t, size);
-  text.setStroke(hex(shade(colour, -0.6)), stroke);
+  text.setStroke(hex(typeStroke(colour)), stroke);
   const sh = shadowFor(colour, size);
   text.setShadow(sh.offsetX, sh.offsetY, sh.color, sh.blur, sh.stroke, sh.fill);
+  text.setPadding(dressPad(size, stroke));
 }

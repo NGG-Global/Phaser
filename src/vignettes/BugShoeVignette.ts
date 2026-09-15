@@ -11,7 +11,7 @@ import { shade } from '@/ui/colour';
 import { Feedback } from '@/ui/feedback';
 import { castShadow, faces } from '@/ui/light';
 import type { Vignette } from './Vignette';
-import { clamp01, easeOut } from './motion';
+import { clamp01, easeOut, isPlayerTurn, TURN_OPEN_SEC } from './motion';
 
 export const GARDEN = { paper: 0xe4e7ce, ink: 0x303f43, tile: 0xb8c2a0, plum: 0x8b6085, cream: 0xfff5dc, coral: 0xd87d62 };
 export function shoeLift(age: number): number { return 245 * easeOut((age - 0.035) / 0.28); }
@@ -150,7 +150,10 @@ export class BugShoeVignette implements Vignette {
     if (this.reducedMotion) return;
     this.bursts.burst('dust', this.contactX, -4, [GARDEN.cream, GARDEN.tile, shade(GARDEN.tile, -0.25)], 7);
   }
-  public onPlayerHit(now: number): void { this.strike(now); }
+  public onPlayerHit(now: number): void {
+    if (!isPlayerTurn(this.phase)) return;
+    this.strike(now);
+  }
   public onAccuracy(result: Judgement, _now: number): void { if (result.kind === 'hit') this.hit = true; }
   public finish(successful: boolean, time: number): void { this.successful = successful; this.finishAt = time; }
   public pause(): void { this.phase = 'paused'; this.finishAt = null; }
@@ -161,7 +164,7 @@ export class BugShoeVignette implements Vignette {
    */
   private openStage(now: number): void {
     const offered = this.phase === 'respond' || this.phase === 'result';
-    this.backdrop.open(offered ? easeOut((now - this.respondAt) / 0.7) : 0);
+    this.backdrop.open(offered ? easeOut((now - this.respondAt) / TURN_OPEN_SEC) : 0);
   }
   public update(now: number): void {
     if (this.phase === 'paused') now = this.lastNow; else this.lastNow = now;
