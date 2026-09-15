@@ -13,7 +13,7 @@ export interface Vignette {
   onPlayerHit(now: number): void;
   /** Includes successful hits, omissions, and extra taps. */
   onAccuracy(result: Judgement, now: number): void;
-  finish(successful: boolean, contactSec: number): void;
+  finish(successful: boolean, contactSec: number, accuracy?: number): void;
   pause(): void;
   update(now: number): void;
   translate(offset: number): void;
@@ -26,6 +26,10 @@ export interface VignetteDefinition {
   readonly ink: number;
   readonly success: readonly [string, string];
   readonly rough: readonly [string, string];
+  /** Optional middle ending, based on the authoritative round accuracy. */
+  readonly partial?: { readonly minAccuracy: number; readonly copy: readonly [string, string] };
+  /** Beats to show the ending before the table slides; defaults to one. */
+  readonly endingHoldBeats?: number;
   readonly endingSec: number;
   readonly successAccuracy: number;
   create(scene: Phaser.Scene): Vignette;

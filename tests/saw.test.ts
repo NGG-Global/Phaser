@@ -92,12 +92,12 @@ describe('saw presentation curves', () => {
   it('cycles by registry order alone', () => {
     // levelSpec picks VIGNETTES[(level - 1) % VIGNETTES.length], so registry order is the
     // rotation. Reordering or inserting an entry silently reassigns every level's vignette;
-    // cucumber and banana were appended so the first six levels kept theirs.
+    // cucumber, banana and paper were each appended so the earlier levels kept theirs.
     expect(VIGNETTES.map(v => v.id)).toEqual([
-      'hammer', 'window', 'bug', 'saw', 'tomato', 'curl', 'cucumber', 'banana',
+      'hammer', 'window', 'bug', 'saw', 'tomato', 'curl', 'cucumber', 'banana', 'paper',
     ]);
-    expect([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16].map(level => levelSpec(level).vignette))
-      .toEqual(['hammer', 'window', 'bug', 'saw', 'tomato', 'curl', 'cucumber', 'banana', 'hammer', 'window', 'banana']);
+    expect([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 18].map(level => levelSpec(level).vignette))
+      .toEqual(['hammer', 'window', 'bug', 'saw', 'tomato', 'curl', 'cucumber', 'banana', 'paper', 'hammer', 'paper']);
   });
   it.each(['action', 'success', 'rough', 'scrape', 'judder'] as const)('synthesizes a bounded deterministic %s buffer', kind => {
     const samples = synthesizeSaw(48000, kind);
