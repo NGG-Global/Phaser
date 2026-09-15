@@ -25,9 +25,10 @@ import { mix, shade, starColour } from '@/ui/colour';
 import { CHROME, drawPuck, pressAmount, puckSink } from '@/ui/chrome';
 import { drawPanel, placeSurface, Rect, surface } from '@/ui/panel';
 import { Feedback } from '@/ui/feedback';
-import { arrive, overshoot, settle, squash, stagger } from '@/ui/spring';
+import { arrive, settle, squash } from '@/ui/spring';
 import { body, display, resize } from '@/ui/type';
-import { drawStar } from '@/ui/star';
+import { drawStarMark, prizeColour, STAR_PRIZE } from '@/ui/star';
+import { chorusGlow, starAge, starImpactAge, starPose } from '@/ui/starReveal';
 import { SceneCurtain } from '@/ui/SceneCurtain';
 import { VIGNETTES } from '@/vignettes/registry';
 import type { Vignette } from '@/vignettes/Vignette';
@@ -95,8 +96,8 @@ export class PlayScene extends BaseScene {
   private puckPressedAt = -Infinity;
   private puckDirty = false;
   private fx!: Feedback;
+  private starFx!: Feedback;
   private starsLanded = 0;
-  private starsSettled = false;
   private marks!: Phaser.GameObjects.Graphics;
   private taskMarks!: Phaser.GameObjects.Graphics;
   private curtain!: SceneCurtain;
@@ -149,6 +150,7 @@ export class PlayScene extends BaseScene {
     const ink = this.definition.ink;
     this.stars = this.add.graphics().setDepth(9);
     this.fx = new Feedback(this, 5);
+    this.starFx = new Feedback(this, 12);
     this.turnSign = this.add.graphics().setDepth(11);
     this.headline = display(this, this.definition.intro, { size: 88, colour: ink, align: 'center' }).setOrigin(0.5, 0).setDepth(12);
     this.accuracy = body(this, '', { size: 34, colour: ink, align: 'center' }).setOrigin(0.5).setDepth(11);
@@ -748,7 +750,6 @@ export class PlayScene extends BaseScene {
     this.summaryShown = true;
     this.summaryAt = this.now();
     this.starsLanded = 0;
-    this.starsSettled = false;
     this.replay = null;
     const accuracy = meanAccuracy(this.results);
     this.recordOutcome();
@@ -780,7 +781,7 @@ export class PlayScene extends BaseScene {
   private starAt(k: number): { x: number; y: number } {
     return { x: this.viewport.safe.centerX + (k - 1) * 64 * this.uiScale, y: this.trackY - 14 * this.uiScale };
   }
-  private drawStars(scales: readonly number[] = [1, 1, 1]): void {
+  private drawStars(): void {
     this.stars.clear();
     if (!this.summaryShown) return;
     const s = this.uiScale;
@@ -792,34 +793,43 @@ export class PlayScene extends BaseScene {
     drawPanel(this.stars, new Rect(safe.centerX - plateW / 2, this.trackY - plateH / 2, plateW, plateH), s, {
       fill: SHELL.puck, depth: 6, radius: 22,
     });
+    const now = this.now();
     const earned = starsFor(meanAccuracy(this.results), this.spec);
-    const ink = this.definition.ink;
+    const empty = starColour(false, this.definition.ink, SHELL.puck);
+    const exaggeration = STYLE.current.exaggeration;
+    const still = this.reducedMotion;
+    const chorus = still ? 0 : chorusGlow(now - this.summaryAt, earned);
+    const radius = 20 * s;
     for (let k = 0; k < 3; k++) {
-      const scale = scales[k] ?? 1;
-      if (scale <= 0) continue;
       const at = this.starAt(k);
-      drawStar(this.stars, at.x, at.y, 20 * s * scale, starColour(k < earned, ink, SHELL.puck));
+      drawStarMark(this.stars, { x: at.x, y: at.y, radius, color: empty, pose: starPose(8, false, exaggeration) });
+      if (k >= earned) continue;
+      const age = starAge(now - this.summaryAt, k, still);
+      if (age <= 0) continue;
+      const pose = starPose(age, true, exaggeration);
+      drawStarMark(this.stars, {
+        x: at.x, y: at.y, radius, color: prizeColour(empty, pose.fill), pose,
+        impactAge: starImpactAge(age, true), chorus,
+      });
     }
   }
-  /** The stars land one after another, each overshooting its size, and an earned one throws confetti as it lands. */
+  /** Medals stamp left to right; an earned one throws confetti and sparks as it lands. */
   private animateStars(now: number): void {
-    if (this.starsSettled) return;
-    const t = STYLE.current;
     const earned = starsFor(meanAccuracy(this.results), this.spec);
-    const scales: number[] = [];
-    let landed = 0;
+    const still = this.reducedMotion;
     for (let k = 0; k < 3; k++) {
-      const p = this.reducedMotion ? 1 : clamp01((now - this.summaryAt - 0.25 - stagger(k, 3, 0.5)) / 0.42);
-      scales.push(overshoot(p, 0.35 * t.exaggeration));
-      if (p >= 1) landed++;
-      if (p >= 1 && k >= this.starsLanded) {
+      const age = starAge(now - this.summaryAt, k, still);
+      const pose = starPose(age, k < earned, STYLE.current.exaggeration);
+      if (pose.landed && k >= this.starsLanded) {
         this.starsLanded = k + 1;
         const at = this.starAt(k);
-        if (k < earned && !this.reducedMotion) this.fx.burst('confetti', at.x, at.y - 10 * this.uiScale, [PALETTE.coral, SHELL.sun, SHELL.cream, this.definition.ink], 14);
+        if (k < earned && !still) {
+          this.starFx.burst('confetti', at.x, at.y - 8 * this.uiScale, [PALETTE.coral, SHELL.sun, SHELL.cream, STAR_PRIZE], 16);
+          this.starFx.burst('sparks', at.x, at.y, [SHELL.sun, 0xffe7a0, PALETTE.coral], 10);
+        }
       }
     }
-    this.drawStars(scales);
-    if (landed === 3) this.starsSettled = true;
+    this.drawStars();
   }
   private leaveForMap(): void {
     if (this.curtain.active) return;
@@ -872,6 +882,7 @@ export class PlayScene extends BaseScene {
     this.controller?.dispose();
     this.vignette.destroy();
     this.fx.destroy();
+    this.starFx.destroy();
     document.removeEventListener('visibilitychange', this.visibility);
     window.removeEventListener('pagehide', this.pageHide);
     this.scale.off(Phaser.Scale.Events.RESIZE, this.checkOrientation, this);
