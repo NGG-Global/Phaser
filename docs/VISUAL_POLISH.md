@@ -19,9 +19,11 @@ before Phaser has loaded.
   an ink edge ahead of it, both weighted by the treatment's outline. A completed
   outgoing sweep remains opaque until scene shutdown, avoiding a flash when Phaser
   queues the scene change. Reduced-motion users get an immediate cut.
-- Gameplay replaces the task-number string with quiet progress marks and gently
-  reveals the result stars. Essential navigation targets are separated by at
-  least 56 CSS pixels, with at least 48 CSS pixel hit areas.
+- Gameplay replaces the task-number string with quiet progress marks and reveals
+  the result stars as a stamp: empty seats first, then brass medals dropping
+  left to right, each throwing a bloom, sparks and confetti as it lands.
+  Essential navigation targets are separated by at least 56 CSS pixels, with at
+  least 48 CSS pixel hit areas.
 - Copy is deliberately sparse. The scene carries meaning through composition,
   motion and object state; text is reserved for the current area, vignette name,
   phase handoff, result, and actionable settings. Uppercase eyebrows, level labels,
