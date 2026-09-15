@@ -7,11 +7,17 @@ levels 1 to 6 keep the vignettes they had and the cucumber is every eighth level
 ## Visual direction and controls
 
 A cool tiled kitchen: mint-white paper `#f1f5f3` with grey-green grout `#b7c9c4`, a pale
-board `#ddd0a8`, a cooler counter wash below. The cucumber skin `#3f8a38` is the only
+board `#ddd0a8`, a cooler counter wash below. The cucumber skin `#4c8848` is the only
 saturated green in frame, which makes it the subject at a glance — away from Window's
 glass, Bug's sage and Curl's teal. Its cut face shows pale flesh `#eef6d4`, a gel
-`#c5d86a` and seeds `#6a7a32`. The knife is the same cool steel as the tomato, with no
-brass.
+`#c5d86a` and pale almond seeds. The cool steel knife has a deep teal handle and a
+warm metal collar, matching the banana's chef-knife construction.
+
+Long tonal ridges and restrained pores replace the flat stripes and oval highlight.
+The cut face has a rind sidewall and three translucent seed chambers. The finite
+end-grain board and knife are shared through `kitchenArt.ts`, with dense slice piles
+kept on the board. Knife clearance and the phone-safe stage framing are visual only;
+all contacts still land on the original audio-clock beats.
 
 Side view, board horizontal, the cucumber a long stadium left of centre. One tap is one
 rocking chop: the tip stays near the board and is the rotation pivot, the heel lifts
@@ -21,7 +27,7 @@ demonstration rocks the knife without slicing, so the player starts on the cucum
 watched. Reduced-motion preference suppresses board press, impact shake and the idle bob.
 
 The coda is an unscored finishing chop that takes the standing heel; it never changes the
-result. Strong lays the last coin on an even pile and lets one seed drop late. Rough
+result. Strong lays the last coin on an even pile. Rough
 squashes the final disc flat.
 
 Chop phases are fractions of a beat (`cucumberTiming(beat)`): the rise back up is 0.36

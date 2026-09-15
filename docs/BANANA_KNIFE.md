@@ -7,11 +7,18 @@ levels 1 to 7 keep the vignettes they had and the banana is every eighth level f
 ## Visual direction and controls
 
 A warm cream kitchen: paper `#f7f3e8` with beige grout `#e0d4bc`, a pale board
-`#e6d3a4`, a warmer counter wash below. The banana peel `#f0c22e` is the only saturated
+`#e6d3a4`, a warmer counter wash below. The banana peel `#f3c849` is the only saturated
 yellow in frame, which makes it the subject at a glance — away from Hammer's vermilion,
 Saw's brass and the tomato's red. Its cut face shows cream flesh `#fff4c4`, pith
-`#e8c870` and three locule seeds `#5a4020`. The knife is the same cool steel as the
-tomato, with no brass.
+`#e8c870` and three locule seed groups `#5a4020`. The cool steel knife has a walnut
+handle, a warm metal collar and small inset rivets.
+
+The refined silhouette has a pronounced crescent and continuous peel bands. Concave
+contours use Phaser's path triangulation, not a triangle fan across the hollow. The
+remaining curved heel settles onto the board, and cut coins have thickness, subtle
+fibres and a three-part core. The finite end-grain board and knife are shared with the
+cucumber through `kitchenArt.ts`; pile spacing compresses for dense phrases to stay
+inside the board. The higher resting knife clears the fruit without changing beat timing.
 
 Side view, board horizontal, the banana a tapered curve with its belly on the board and
 the ends lifted. One tap is one rocking chop: the tip stays near the board and is the

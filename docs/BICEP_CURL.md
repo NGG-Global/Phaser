@@ -15,7 +15,15 @@ on, and the dumbbell is cool iron `#3b3e47` with a chrome bar — no brass, so i
 borrow Saw's one warm accent. Teal sits well away from Hammer's vermilion and the
 tomato's red; the framing is a standing figure rather than a tool on a bench.
 
-Side view, floor at the bottom of the frame, the figure facing right of centre. One tap
+The refined coach has a swept quiff, curled moustache, expressive eyes, a lightning
+singlet badge, ribbed socks and tailored trainers. Bézier silhouettes and connected
+shadow planes replace the stacked ellipses and isolated highlight patches. The arm's
+contour still swells on the squeeze. A rounded far cheek and an inset, foreshortened
+nose keep the face consistently three-quarter rather than mixing in a profile silhouette.
+The figure and chalkboard fit above the verdict,
+including on a 320px-wide phone; the original workshop palette is preserved.
+
+Three-quarter view, floor at the bottom of the frame, the figure facing right of centre. One tap
 is one curl: the elbow stays planted, the forearm sweeps from hanging to a squeeze in
 front of the shoulder, and the squeeze at the top carries the timing. The lift before it
 is anticipation; the controlled lower after it is follow-through. Accurate reps chalk a

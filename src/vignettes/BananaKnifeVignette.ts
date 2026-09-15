@@ -7,13 +7,26 @@ import type { RoundPlan } from '@/rhythm/RhythmScheduler';
 import type { Judgement } from '@/rhythm/judge';
 import { MaterialKey } from '@/textures/materials';
 import { Backdrop } from '@/ui/backdrop';
-import { shade } from '@/ui/colour';
 import { Feedback } from '@/ui/feedback';
-import { castShadow, faces } from '@/ui/light';
+import { cubicContour, fillContour, paintedContour, traceContour } from '@/ui/illustration';
+import { kitchenKnife, kitchenBoard, KITCHEN_BOARD } from './kitchenArt';
 import type { Vignette } from './Vignette';
 import {
-  acceptDemoBeat, advanceSlice, bananaAt, bananaCutT, bananaOutline, BANANA_MOTION, bananaTiming,
-  clamp01, cutFraction, easeOut, juiceFall, knifeLift, knifeWindup, REFERENCE_BEAT, sliceTumble,
+  acceptDemoBeat,
+  advanceSlice,
+  bananaAt,
+  bananaCutT,
+  bananaOutline,
+  BANANA_MOTION,
+  bananaTiming,
+  clamp01,
+  cutFraction,
+  easeOut,
+  juiceFall,
+  knifeLift,
+  knifeWindup,
+  REFERENCE_BEAT,
+  sliceTumble,
 } from './bananaMotion';
 import { isPlayerTurn, TURN_OPEN_SEC } from './motion';
 
@@ -22,39 +35,49 @@ import { isPlayerTurn, TURN_OPEN_SEC } from './motion';
  * subject — away from Hammer's vermilion, Saw's brass and the tomato's red.
  */
 export const BREAKFAST = {
-  paper: 0xf7f3e8, ink: 0x3d3428, grout: 0xe0d4bc, counter: 0xc2b090,
-  board: 0xe6d3a4, boardEdge: 0xb08a52, boardLine: 0xd0b67c,
-  peel: 0xf0c22e, peelLit: 0xf8dc62, peelDark: 0xd49a16, speckle: 0x6b4a18,
-  flesh: 0xfff4c4, fleshRing: 0xf5e09a, pith: 0xe8c870, seed: 0x5a4020,
-  stem: 0x5a6b28, stemLit: 0x7a8c40,
-  steel: 0xd3dadd, steelLit: 0xf4f7f8, steelDark: 0x9aa5aa, handle: 0x2b2b30, rivet: 0xb9c2c6,
+  paper: 0xf7f3e8,
+  ink: 0x3d3428,
+  grout: 0xe0d4bc,
+  counter: 0xc2b090,
+  board: 0xe6d3a4,
+  boardEdge: 0xb08a52,
+  boardLine: 0xd0b67c,
+  peel: 0xf3c849,
+  peelLit: 0xffe88a,
+  peelDark: 0xdba331,
+  speckle: 0x6b4a18,
+  flesh: 0xfff4c4,
+  fleshRing: 0xf5e09a,
+  pith: 0xe8c870,
+  seed: 0x5a4020,
+  stem: 0x5a6b28,
+  stemLit: 0x7a8c40,
+  steel: 0xd3dadd,
+  steelLit: 0xf4f7f8,
+  steelDark: 0x9aa5aa,
+  handle: 0x2b2b30,
+  rivet: 0xb9c2c6,
 } as const;
 
-const BOARD_LEFT = -620;
-const BOARD_RIGHT = 620;
-const BOARD_THICK = 42;
+const BOARD_LEFT = KITCHEN_BOARD.left;
+const BOARD_RIGHT = KITCHEN_BOARD.right;
+const BOARD_THICK = KITCHEN_BOARD.thickness;
 const PILE_X = 168;
 const PILE_STEP = 28;
 const SLICE_RX = 46;
 const SLICE_RY = 68;
 const LEAN = 0.55;
-const BLADE_LEN = 300;
-const HANDLE_LEN = 168;
 const ARC_STEPS = 28;
 const JUICE_DROPS = 4;
 
-function fan(g: Phaser.GameObjects.Graphics, pts: readonly number[]): void {
-  for (let i = 2; i + 1 < pts.length; i += 2) {
-    g.fillTriangle(pts[0]!, pts[1]!, pts[i]!, pts[i + 1]!, pts[i + 2] ?? pts[0]!, pts[i + 3] ?? pts[1]!);
-  }
-}
+const fan = fillContour;
 
 function disc(cx: number, cy: number, a: number, b: number, tilt: number): number[] {
   const pts: number[] = [];
   const c = Math.cos(tilt);
   const s = Math.sin(tilt);
   for (let i = 0; i < ARC_STEPS; i++) {
-    const t = i / ARC_STEPS * Math.PI * 2;
+    const t = (i / ARC_STEPS) * Math.PI * 2;
     const x = a * Math.cos(t);
     const y = b * Math.sin(t);
     pts.push(cx + x * c - y * s, cy + x * s + y * c);
@@ -93,6 +116,7 @@ export class BananaKnifeVignette implements Vignette {
   private slices = 0;
   private sliceAt: number[] = [];
   private sliceFrom: number[] = [];
+  private sliceFromY: number[] = [];
   private sliceWobble: number[] = [];
   private cutT = 1;
   private cutFrom = 1;
@@ -108,15 +132,23 @@ export class BananaKnifeVignette implements Vignette {
   private baseX = 0;
   private baseY = 0;
   private scale = 1;
-  private get reducedMotion(): boolean { return reducedMotion(); }
+  private get reducedMotion(): boolean {
+    return reducedMotion();
+  }
 
   public constructor(scene: Phaser.Scene) {
-    this.backdrop = new Backdrop(scene, BREAKFAST.paper, BREAKFAST.board, { glowAt: { x: 0.42, y: 0.42 }, glowAlpha: 0.5 });
+    this.backdrop = new Backdrop(scene, BREAKFAST.paper, BREAKFAST.board, {
+      glowAt: { x: 0.42, y: 0.42 },
+      glowAlpha: 0.5,
+    });
     this.wall = scene.add.graphics().setDepth(-20);
     this.stage = scene.add.container(0, 0).setDepth(-10);
     this.boardG = scene.add.graphics();
-    this.boardSurface = scene.add.tileSprite(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, MaterialKey.wood)
-      .setOrigin(0).setTint(BREAKFAST.board).setAlpha(0.5 * STYLE.current.grain);
+    this.boardSurface = scene.add
+      .tileSprite(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, MaterialKey.wood)
+      .setOrigin(0)
+      .setTint(BREAKFAST.board)
+      .setAlpha(0.18 * STYLE.current.grain);
     this.boardSurface.setTileScale(0.3, 0.3);
     this.produce = scene.add.container(0, 0);
     this.bananaG = scene.add.graphics();
@@ -133,37 +165,17 @@ export class BananaKnifeVignette implements Vignette {
   }
 
   private drawKnife(scene: Phaser.Scene): Phaser.GameObjects.Graphics {
-    const g = scene.add.graphics();
-    const line = STYLE.current.outline * 1.4;
-    const blade = [0, 0, BLADE_LEN, 0, BLADE_LEN, -72, 210, -74, 120, -62, 40, -34, 8, -8];
-    const drop = castShadow(8);
-    g.fillStyle(BREAKFAST.ink, drop.alpha);
-    fan(g, blade.map((v, i) => v + (i % 2 ? drop.dy : drop.dx)));
-    if (line > 0) {
-      g.lineStyle(line, shade(BREAKFAST.steel, -0.55), 1).beginPath();
-      for (let i = 0; i < blade.length; i += 2) g[i === 0 ? 'moveTo' : 'lineTo'](blade[i]!, blade[i + 1]!);
-      g.closePath().strokePath();
-    }
-    g.fillStyle(BREAKFAST.steel);
-    fan(g, blade);
-    g.lineStyle(3, BREAKFAST.steelLit, 0.9).lineBetween(6, -3, BLADE_LEN - 4, -3);
-    g.lineStyle(2, BREAKFAST.steelDark, 0.6).lineBetween(40, -33, BLADE_LEN - 2, -71);
-    g.fillStyle(BREAKFAST.steelDark).fillRoundedRect(BLADE_LEN - 8, -76, 22, 82, 5);
-    const handle = faces(BREAKFAST.handle);
-    if (line > 0) g.lineStyle(line, handle.edge, 1).strokeRoundedRect(BLADE_LEN + 8, -64, HANDLE_LEN, 58, 16);
-    g.fillStyle(handle.shade).fillRoundedRect(BLADE_LEN + 8, -64, HANDLE_LEN, 58, 16);
-    g.fillStyle(handle.face).fillRoundedRect(BLADE_LEN + 8, -64, HANDLE_LEN, 46, 16);
-    g.fillStyle(BREAKFAST.paper, 0.12).fillRoundedRect(BLADE_LEN + 22, -56, HANDLE_LEN - 40, 14, 7);
-    g.fillStyle(BREAKFAST.rivet);
-    for (const x of [BLADE_LEN + 46, BLADE_LEN + 92, BLADE_LEN + 138]) g.fillCircle(x, -35, 6);
-    return g;
+    return kitchenKnife(scene, 0x745544);
   }
 
   public layout(viewport: Viewport): void {
     const { full, safe } = viewport;
-    this.scale = Math.min(safe.width / 900, safe.height / 1300);
-    this.baseX = safe.centerX - 40 * this.scale;
-    this.baseY = safe.top + safe.height * 0.62;
+    const uiScale = Math.min(safe.width / 720, safe.height / 1150);
+    const top = safe.top + 320 * uiScale;
+    const bottom = safe.bottom - 410 * uiScale;
+    this.scale = Math.min(safe.width / 980, (bottom - top) / 460);
+    this.baseX = safe.centerX;
+    this.baseY = top + (bottom - top + 250 * this.scale) / 2;
     this.stage.setPosition(this.baseX, this.baseY).setScale(this.scale);
     this.backdrop.layout(viewport);
     const bg = this.wall.clear();
@@ -174,18 +186,7 @@ export class BananaKnifeVignette implements Vignette {
     for (let x = this.baseX % tile; x < full.right + tile; x += tile) bg.lineBetween(x, full.y, x, counterY);
     bg.fillStyle(BREAKFAST.counter, 0.38).fillRect(full.x, counterY, full.width, full.bottom - counterY);
     bg.fillStyle(BREAKFAST.ink, 0.08).fillRect(full.x, counterY, full.width, 6 * this.scale);
-    const b = this.boardG.clear();
-    const board = faces(BREAKFAST.board);
-    const line = STYLE.current.outline * 1.4;
-    const boardDrop = castShadow(10);
-    b.fillStyle(BREAKFAST.ink, boardDrop.alpha).fillRect(BOARD_LEFT + 10 + boardDrop.dx, BOARD_THICK + boardDrop.dy, BOARD_RIGHT - BOARD_LEFT - 20, 14);
-    if (line > 0) b.lineStyle(line, shade(BREAKFAST.board, -0.6), 1).strokeRoundedRect(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, 6);
-    b.fillStyle(board.face).fillRoundedRect(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, 6);
-    b.fillStyle(shade(BREAKFAST.boardEdge, -0.1)).fillRect(BOARD_LEFT, BOARD_THICK - 16, BOARD_RIGHT - BOARD_LEFT, 16);
-    b.fillStyle(board.lit).fillRect(BOARD_LEFT + 4, 0, BOARD_RIGHT - BOARD_LEFT - 8, 7);
-    b.fillStyle(board.rim, 0.7).fillRect(BOARD_LEFT + 4, 0, BOARD_RIGHT - BOARD_LEFT - 8, 3);
-    b.lineStyle(1.5, BREAKFAST.boardLine, 0.7);
-    for (const y of [11, 19]) b.lineBetween(BOARD_LEFT + 30, y, BOARD_RIGHT - 30, y + 1);
+    kitchenBoard(this.boardG, BREAKFAST.board, BREAKFAST.boardEdge);
   }
 
   public reset(plan: RoundPlan): void {
@@ -198,6 +199,8 @@ export class BananaKnifeVignette implements Vignette {
     this.respondAt = -100;
     this.sliceAt = [];
     this.sliceFrom = [];
+    this.sliceFromY = [];
+    this.bananaG.setY(0);
     this.sliceWobble = [];
     this.cutT = this.cutFrom = this.cutTo = 1;
     this.cutAt = -100;
@@ -211,7 +214,11 @@ export class BananaKnifeVignette implements Vignette {
 
   public onPhase(phase: Phase, now: number): void {
     this.phase = phase;
-    if (phase === 'respond') { this.strikeAt = -100; this.setCut(0, now); this.respondAt = now; }
+    if (phase === 'respond') {
+      this.strikeAt = -100;
+      this.setCut(0, now);
+      this.respondAt = now;
+    }
   }
 
   private setCut(fraction: number, now: number): void {
@@ -228,9 +235,11 @@ export class BananaKnifeVignette implements Vignette {
 
   private takeSlice(now: number, targets: number): void {
     const at = bananaAt(this.cutTo);
-    if (!this.reducedMotion) this.bursts.burst('dust', at.x, at.y, [BREAKFAST.flesh, BREAKFAST.peel, BREAKFAST.pith], 6);
+    if (!this.reducedMotion)
+      this.bursts.burst('dust', at.x, at.y, [BREAKFAST.flesh, BREAKFAST.peel, BREAKFAST.pith], 6);
     this.sliceAt.push(now);
     this.sliceFrom.push(at.x);
+    this.sliceFromY.push(at.y + this.bananaG.y);
     this.sliceWobble.push(this.uneven * (((this.slices * 7 + 3) % 5) / 5 - 0.5));
     this.setCut(cutFraction(this.slices, targets), now);
   }
@@ -267,14 +276,20 @@ export class BananaKnifeVignette implements Vignette {
     this.successful = successful;
     this.finishAt = contactSec;
   }
-  public pause(): void { this.phase = 'paused'; this.finishAt = null; this.strikeAt = -100; }
+  public pause(): void {
+    this.phase = 'paused';
+    this.finishAt = null;
+    this.strikeAt = -100;
+  }
 
-  private beat(): number { return this.plan ? 60 / this.plan.bpm : REFERENCE_BEAT; }
+  private beat(): number {
+    return this.plan ? 60 / this.plan.bpm : REFERENCE_BEAT;
+  }
 
   private upcoming(now: number): number | null {
     if (this.finishAt !== null && !this.finished) return this.finishAt;
     if (this.phase !== 'prepare' && this.phase !== 'demonstrate') return null;
-    return this.plan?.cues.find(cue => cue.kind === 'action' && cue.time > now)?.time ?? null;
+    return this.plan?.cues.find((cue) => cue.kind === 'action' && cue.time > now)?.time ?? null;
   }
 
   private openStage(now: number): void {
@@ -283,7 +298,8 @@ export class BananaKnifeVignette implements Vignette {
   }
 
   public update(now: number): void {
-    if (this.phase === 'paused') now = this.lastNow; else this.lastNow = now;
+    if (this.phase === 'paused') now = this.lastNow;
+    else this.lastNow = now;
     this.openStage(now);
     if (this.phase === 'prepare' || this.phase === 'demonstrate') {
       for (const cue of this.plan?.cues ?? []) {
@@ -297,20 +313,24 @@ export class BananaKnifeVignette implements Vignette {
       this.slices++;
       this.sliceAt.push(this.finishAt);
       this.sliceFrom.push(bananaAt(this.cutTo).x);
+      this.sliceFromY.push(bananaAt(this.cutTo).y + this.bananaG.y);
       this.sliceWobble.push(this.successful ? 0 : 0.5);
       this.setCut(1, this.finishAt);
       if (!this.successful) this.uneven = Math.max(this.uneven, 0.6);
     }
     const beat = this.beat();
     const age = now - this.strikeAt;
-    const press = age >= 0 && age < 0.16 ? Math.sin(age / 0.16 * Math.PI) * STYLE.current.exaggeration : 0;
-    const shake = this.reducedMotion || age < 0 || age > 0.16 ? 0 : Math.sin(age * 120) * Math.exp(-age * 24) * 1.8 * STYLE.current.exaggeration;
+    const press = age >= 0 && age < 0.16 ? Math.sin((age / 0.16) * Math.PI) * STYLE.current.exaggeration : 0;
+    const shake =
+      this.reducedMotion || age < 0 || age > 0.16
+        ? 0
+        : Math.sin(age * 120) * Math.exp(-age * 24) * 1.8 * STYLE.current.exaggeration;
     this.stage.setPosition(this.baseX + shake * this.scale, this.baseY + shake * this.scale * 0.5);
     this.produce.setPosition(0, this.reducedMotion ? 0 : press * 1.6);
     this.poseKnife(now, beat, age);
     this.drawBanana();
     this.drawSlices(now, beat);
-    this.drawMarks(now);
+    this.drawMarks();
     this.drawJuice(beat, age);
     this.drawRings(age);
   }
@@ -327,71 +347,88 @@ export class BananaKnifeVignette implements Vignette {
     let x = this.strikeX + 6;
     if (parked) {
       lift = 1;
-      x = bananaAt(this.cutTo).x + 54;
+      x = bananaAt(this.cutTo).x - 22;
       if (!this.reducedMotion) lift += Math.sin(now * 1.6) * 0.02;
     }
     this.knife.setPosition(x, -lift * BANANA_MOTION.lift);
     this.knife.setRotation(-0.12 - 0.42 * Math.min(1.12, lift) + tremble);
   }
 
-  /** Remaining banana, stem to the cut, with ridges, speckles and an edge-on cream face. */
+  /** Curved peel bands follow the actual silhouette, including the freshly cut end. */
   private drawBanana(): void {
     const g = this.bananaG.clear();
-    const pts = bananaOutline(this.cutT);
+    const pts = bananaOutline(this.cutT, 40);
     if (pts.length < 6) return;
+    const bottom = Math.max(...pts.filter((_, i) => i % 2 === 1));
+    // The heel settles onto the board as its curved support is sliced away.
+    const settle = -bottom;
+    g.setY(settle);
     const cut = bananaAt(this.cutT);
-    const mid = bananaAt(Math.min(0.5, this.cutT * 0.5));
-    g.fillStyle(BREAKFAST.ink, 0.1);
-    fan(g, disc(mid.x + 8, 6, Math.max(24, (cut.x - BANANA_MOTION.stemX) * 0.42), 14, 0));
-    const line = STYLE.current.outline * 1.4;
-    if (line > 0) {
-      g.lineStyle(line, shade(BREAKFAST.peel, -0.45), 1);
-      strokePoly(g, pts);
-    }
-    g.fillStyle(BREAKFAST.peel);
-    fan(g, pts);
-    g.lineStyle(5, BREAKFAST.peelDark, 0.35);
-    for (const ridge of [0.38, -0.12]) {
-      g.beginPath();
-      let started = false;
-      for (let i = 0; i <= 16; i++) {
-        const t = (i / 16) * this.cutT;
-        if (t < 0.06) continue;
-        const p = bananaAt(t);
-        const x = p.x + p.nx * p.half * ridge;
-        const y = p.y + p.ny * p.half * ridge;
-        if (!started) { g.moveTo(x, y); started = true; } else g.lineTo(x, y);
+    const mid = bananaAt(this.cutT * 0.5);
+    g.fillStyle(BREAKFAST.ink, 0.12);
+    fan(g, disc(mid.x, 5 - settle, Math.max(20, (cut.x - BANANA_MOTION.stemX) * 0.43), 10, 0));
+    paintedContour(g, pts, BREAKFAST.peel, 0x85602b, STYLE.current.outline);
+    const band = (from: number, to: number): number[] => {
+      const out: number[] = [];
+      for (let i = 0; i <= 32; i++) {
+        const p = bananaAt(0.025 + ((this.cutT - 0.025) * i) / 32);
+        out.push(p.x + p.nx * p.half * from, p.y + p.ny * p.half * from);
       }
-      if (started) g.strokePath();
+      for (let i = 32; i >= 0; i--) {
+        const p = bananaAt(0.025 + ((this.cutT - 0.025) * i) / 32);
+        out.push(p.x + p.nx * p.half * to, p.y + p.ny * p.half * to);
+      }
+      return out;
+    };
+    g.fillStyle(BREAKFAST.peelDark);
+    fan(g, band(-0.94, -0.42));
+    g.fillStyle(BREAKFAST.peelLit);
+    fan(g, band(0.16, 0.84));
+    g.lineStyle(2.5, 0xffef9d, 0.9);
+    const ridge: number[] = [];
+    for (let i = 0; i <= 32; i++) {
+      const p = bananaAt(0.05 + (Math.max(0, this.cutT - 0.07) * i) / 32);
+      ridge.push(p.x + p.nx * p.half * 0.6, p.y + p.ny * p.half * 0.6);
     }
-    if (this.cutT > 0.28) {
-      g.fillStyle(BREAKFAST.peelLit, 0.75);
-      const lit = bananaAt(Math.min(0.42, this.cutT * 0.7));
-      fan(g, disc(lit.x + lit.nx * lit.half * 0.45, lit.y + lit.ny * lit.half * 0.45, 36, 14, -0.4));
+    traceContour(g, ridge);
+    g.strokePath();
+    // Sparse, small freckles, never a repeating polka-dot row.
+    for (const [t, side, r] of [
+      [0.12, 0.0, 2],
+      [0.18, -0.14, 1.5],
+      [0.37, -0.18, 2.4],
+      [0.4, -0.24, 1.5],
+      [0.65, -0.1, 1.7],
+      [0.77, -0.2, 2.1],
+    ]) {
+      if (t! >= this.cutT - 0.035) continue;
+      const p = bananaAt(t!);
+      g.fillStyle(BREAKFAST.speckle, 0.65).fillCircle(p.x + p.nx * p.half * side!, p.y + p.ny * p.half * side!, r!);
     }
-    g.fillStyle(BREAKFAST.speckle, 0.85);
-    for (let i = 0; i < 11; i++) {
-      const t = 0.1 + i * 0.075;
-      if (t >= this.cutT - 0.04) continue;
-      const p = bananaAt(t);
-      const side = (i % 2 ? 0.42 : -0.18) * p.half;
-      g.fillCircle(p.x + p.nx * side, p.y + p.ny * side, 2.2 + i % 3);
+    if (this.cutT < 0.995) {
+      const tilt = Math.atan2(cut.ny, cut.nx) + Math.PI / 2;
+      paintedContour(g, disc(cut.x, cut.y, 12, cut.half, tilt), BREAKFAST.flesh, 0x9a742e, 3);
+      g.fillStyle(BREAKFAST.fleshRing);
+      fan(g, disc(cut.x + 1, cut.y, 5, cut.half * 0.64, tilt));
+      g.fillStyle(BREAKFAST.pith);
+      fan(g, disc(cut.x + 2, cut.y, 3, cut.half * 0.22, tilt));
+    } else {
+      paintedContour(g, disc(cut.x, cut.y, 8, cut.half * 0.92, -0.45), BREAKFAST.speckle, 0x71502b, 2);
     }
-    const faceTilt = Math.atan2(cut.ny, cut.nx) + Math.PI / 2;
-    g.fillStyle(BREAKFAST.flesh);
-    fan(g, disc(cut.x, cut.y, 7, cut.half * 0.92, faceTilt));
-    g.fillStyle(BREAKFAST.pith, 0.8);
-    fan(g, disc(cut.x, cut.y, 4, cut.half * 0.28, faceTilt));
-    if (this.cutT > 0.08) {
-      const stem = bananaAt(0);
-      g.fillStyle(BREAKFAST.stem);
-      fan(g, [
-        stem.x - 18, stem.y - 12, stem.x + 8, stem.y - 16,
-        stem.x + 10, stem.y + 16, stem.x - 16, stem.y + 14,
-      ]);
-      g.fillStyle(BREAKFAST.stemLit).fillRoundedRect(stem.x - 26, stem.y - 8, 16, 16, 5);
-      g.fillStyle(shade(BREAKFAST.stem, -0.25)).fillCircle(stem.x - 26, stem.y, 5);
-    }
+    const stem = bananaAt(0);
+    paintedContour(
+      g,
+      cubicContour(stem.x - 4, stem.y - 8, [
+        [stem.x - 18, stem.y - 15, stem.x - 25, stem.y - 35, stem.x - 27, stem.y - 46],
+        [stem.x - 23, stem.y - 53, stem.x - 10, stem.y - 52, stem.x - 5, stem.y - 48],
+        [stem.x - 7, stem.y - 30, stem.x + 4, stem.y - 18, stem.x + 8, stem.y - 5],
+        [stem.x + 4, stem.y + 3, stem.x - 3, stem.y + 1, stem.x - 4, stem.y - 8],
+      ]),
+      BREAKFAST.stem,
+      0x675637,
+      4,
+    );
+    g.lineStyle(4, BREAKFAST.stemLit).lineBetween(stem.x - 17, stem.y - 41, stem.x - 10, stem.y - 23);
   }
 
   /** Each slice is an oval that flops from the cut and leans on the last one. */
@@ -400,57 +437,62 @@ export class BananaKnifeVignette implements Vignette {
     for (let i = 0; i < this.sliceAt.length; i++) {
       const p = Math.min(1.08, sliceTumble(now - this.sliceAt[i]!, beat));
       const wobble = this.sliceWobble[i] ?? 0;
-      const restX = PILE_X + i * PILE_STEP;
+      const restX = PILE_X + i * Math.min(PILE_STEP, 140 / Math.max(1, this.sliceAt.length - 1));
       const restLean = LEAN + wobble * 0.55;
       const squash = this.finished && !this.successful && i === this.sliceAt.length - 1 ? 0.5 : 1;
       const x = this.sliceFrom[i]! + (restX - this.sliceFrom[i]!) * Math.min(1, p);
       const lean = restLean * Math.min(1, p);
       const b = SLICE_RY * squash;
-      const cy = -b * Math.cos(lean) + 6;
-      const a = 5 + (SLICE_RX - 5) * Math.sin(Math.min(1, p) * Math.PI / 2);
+      const a = 5 + (SLICE_RX - 5) * Math.sin((Math.min(1, p) * Math.PI) / 2);
+      const restY = -Math.hypot(a * Math.sin(lean), b * Math.cos(lean)) - 2;
+      const cy = (this.sliceFromY[i] ?? -SLICE_RY) + (restY - (this.sliceFromY[i] ?? -SLICE_RY)) * Math.min(1, p);
       g.fillStyle(BREAKFAST.ink, 0.1);
       fan(g, disc(x + 10, 6, a * 0.9 + 8, 12, 0));
-      const outline = STYLE.current.outline * 1.4;
-      if (outline > 0 && a > 12) {
-        g.lineStyle(outline, shade(BREAKFAST.peel, -0.45), 1);
-        strokePoly(g, disc(x, cy, a, b, lean));
-      }
-      g.fillStyle(BREAKFAST.peel);
-      fan(g, disc(x, cy, a, b, lean));
+      paintedContour(
+        g,
+        disc(x - 9 * Math.min(1, p), cy + 2, a, b, lean),
+        BREAKFAST.peelDark,
+        0x98743c,
+        STYLE.current.outline * 0.65,
+      );
+      paintedContour(g, disc(x, cy, a, b, lean), BREAKFAST.peel, 0x98743c, STYLE.current.outline * 0.65);
       g.fillStyle(BREAKFAST.flesh);
-      fan(g, disc(x, cy, a * 0.84, b * 0.86, lean));
-      g.fillStyle(BREAKFAST.fleshRing, 0.65);
-      fan(g, disc(x, cy, a * 0.5, b * 0.52, lean));
+      fan(g, disc(x, cy, a * 0.89, b * 0.9, lean));
+      g.lineStyle(2, BREAKFAST.fleshRing);
+      strokePoly(g, disc(x, cy, a * 0.73, b * 0.76, lean));
       if (a > 16) {
-        g.fillStyle(BREAKFAST.pith, 0.9);
-        fan(g, disc(x, cy, a * 0.16, b * 0.18, lean));
-        g.fillStyle(BREAKFAST.seed);
-        for (let s = 0; s < 3; s++) {
-          const t = s * Math.PI * 2 / 3 - Math.PI / 2;
-          const sx = a * 0.22 * Math.cos(t);
-          const sy = b * 0.24 * Math.sin(t);
-          g.fillCircle(
+        for (let lobe = 0; lobe < 3; lobe++) {
+          const t = (lobe * Math.PI * 2) / 3 - 0.7;
+          const sx = Math.cos(t) * a * 0.54,
+            sy = Math.sin(t) * b * 0.54;
+          g.lineStyle(2.5, BREAKFAST.pith, 0.7).lineBetween(
+            x,
+            cy,
             x + sx * Math.cos(lean) - sy * Math.sin(lean),
             cy + sx * Math.sin(lean) + sy * Math.cos(lean),
-            2.4 + a / 28,
           );
+          for (let seed = 0; seed < 2; seed++) {
+            const st = t + (seed ? -0.3 : 0.3);
+            const dx = Math.cos(st) * a * 0.16,
+              dy = Math.sin(st) * b * 0.16;
+            g.fillStyle(BREAKFAST.seed, 0.7).fillEllipse(
+              x + dx * Math.cos(lean) - dy * Math.sin(lean),
+              cy + dx * Math.sin(lean) + dy * Math.cos(lean),
+              3,
+              4,
+              8,
+            );
+          }
         }
       }
     }
   }
 
-  private drawMarks(now: number): void {
+  private drawMarks(): void {
     const g = this.marks.clear();
     for (const x of this.nicks) {
       g.lineStyle(3, BREAKFAST.boardEdge, 0.7).lineBetween(x - 28, 5, x + 30, 5);
       g.lineStyle(1.5, BREAKFAST.ink, 0.25).lineBetween(x - 22, 7, x + 26, 7);
-    }
-    if (this.finished && this.successful && this.finishAt !== null) {
-      const p = clamp01((now - this.finishAt - 0.9) / 0.36);
-      if (p > 0 && p < 1) {
-        g.fillStyle(BREAKFAST.speckle, 1 - p * 0.4);
-        g.fillEllipse(bananaAt(bananaCutT(1)).x + 16, -62 + p * 62, 6, 10, 6);
-      }
     }
   }
 
@@ -468,7 +510,7 @@ export class BananaKnifeVignette implements Vignette {
       const x = this.strikeX + (seed / 17 - 0.5) * spread * 1.2;
       const y = at.y - 8 - Math.sin(i * 1.7) * spread * 0.4 + fall * (0.65 + seed / 34);
       g.fillStyle(i % 2 ? BREAKFAST.flesh : BREAKFAST.pith, life * 0.9);
-      g.fillEllipse(x, y, 5 + seed % 3, 7 + seed % 3, 6);
+      g.fillEllipse(x, y, 5 + (seed % 3), 7 + (seed % 3), 6);
     }
   }
 
@@ -479,6 +521,13 @@ export class BananaKnifeVignette implements Vignette {
     g.lineStyle(3, BREAKFAST.paper, 1 - p).strokeEllipse(this.strikeX + 60, 3, 150 + p * 160, 12 + p * 18);
   }
 
-  public translate(offset: number): void { this.stage.x += this.reducedMotion ? 0 : offset; }
-  public destroy(): void { this.bursts.destroy(); this.wall.destroy(); this.stage.destroy(true); this.backdrop.destroy(); }
+  public translate(offset: number): void {
+    this.stage.x += this.reducedMotion ? 0 : offset;
+  }
+  public destroy(): void {
+    this.bursts.destroy();
+    this.wall.destroy();
+    this.stage.destroy(true);
+    this.backdrop.destroy();
+  }
 }

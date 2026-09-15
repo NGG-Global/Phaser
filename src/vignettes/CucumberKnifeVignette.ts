@@ -7,13 +7,28 @@ import type { RoundPlan } from '@/rhythm/RhythmScheduler';
 import type { Judgement } from '@/rhythm/judge';
 import { MaterialKey } from '@/textures/materials';
 import { Backdrop } from '@/ui/backdrop';
-import { shade } from '@/ui/colour';
 import { Feedback } from '@/ui/feedback';
-import { castShadow, faces } from '@/ui/light';
+import { cubicContour, fillContour, paintedContour, traceContour } from '@/ui/illustration';
+import { kitchenKnife, kitchenBoard, KITCHEN_BOARD } from './kitchenArt';
 import type { Vignette } from './Vignette';
 import {
-  acceptDemoBeat, advanceSlice, clamp01, cucumberBody, cucumberHalfAt, CUCUMBER_MOTION, cucumberTiming,
-  cutAt, cutFraction, cutStart, easeOut, juiceFall, knifeLift, knifeWindup, REFERENCE_BEAT, sliceTumble,
+  acceptDemoBeat,
+  advanceSlice,
+  clamp01,
+  clipLeft,
+  cucumberBody,
+  cucumberHalfAt,
+  CUCUMBER_MOTION,
+  cucumberTiming,
+  cutAt,
+  cutFraction,
+  cutStart,
+  easeOut,
+  juiceFall,
+  knifeLift,
+  knifeWindup,
+  REFERENCE_BEAT,
+  sliceTumble,
 } from './cucumberMotion';
 import { isPlayerTurn, TURN_OPEN_SEC } from './motion';
 
@@ -22,17 +37,33 @@ import { isPlayerTurn, TURN_OPEN_SEC } from './motion';
  * subject — away from Window's glass, Bug's sage and Curl's teal tank.
  */
 export const CRISP = {
-  paper: 0xf1f5f3, ink: 0x2c4038, grout: 0xb7c9c4, counter: 0x8aa198,
-  board: 0xddd0a8, boardEdge: 0xb08d58, boardLine: 0xc9b47e,
-  skin: 0x3f8a38, skinLit: 0x6fb85a, stripe: 0x8fd46a, blossom: 0xf0c35a,
-  flesh: 0xeef6d4, fleshRing: 0xd4e8a4, gel: 0xc5d86a, seed: 0x6a7a32,
-  stem: 0x3a5c32, stemLit: 0x5a7c48,
-  steel: 0xd3dadd, steelLit: 0xf4f7f8, steelDark: 0x9aa5aa, handle: 0x2b2b30, rivet: 0xb9c2c6,
+  paper: 0xf1f5f3,
+  ink: 0x2c4038,
+  grout: 0xb7c9c4,
+  counter: 0x8aa198,
+  board: 0xddd0a8,
+  boardEdge: 0xb08d58,
+  boardLine: 0xc9b47e,
+  skin: 0x4c8848,
+  skinLit: 0x77a85d,
+  stripe: 0x93bd75,
+  blossom: 0xf0c35a,
+  flesh: 0xeef6d4,
+  fleshRing: 0xd4e8a4,
+  gel: 0xc5d86a,
+  seed: 0x6a7a32,
+  stem: 0x3a5c32,
+  stemLit: 0x5a7c48,
+  steel: 0xd3dadd,
+  steelLit: 0xf4f7f8,
+  steelDark: 0x9aa5aa,
+  handle: 0x2b2b30,
+  rivet: 0xb9c2c6,
 } as const;
 
-const BOARD_LEFT = -620;
-const BOARD_RIGHT = 620;
-const BOARD_THICK = 42;
+const BOARD_LEFT = KITCHEN_BOARD.left;
+const BOARD_RIGHT = KITCHEN_BOARD.right;
+const BOARD_THICK = KITCHEN_BOARD.thickness;
 const CX = CUCUMBER_MOTION.x;
 const RX = CUCUMBER_MOTION.radiusX;
 const RY = CUCUMBER_MOTION.radiusY;
@@ -41,34 +72,22 @@ const PILE_X = 186;
 const PILE_STEP = 22;
 const SLICE_R = 58;
 const LEAN = 0.38;
-const BLADE_LEN = 300;
-const HANDLE_LEN = 168;
 const ARC_STEPS = 28;
 const JUICE_DROPS = 8;
 
-function fan(g: Phaser.GameObjects.Graphics, pts: readonly number[]): void {
-  for (let i = 2; i + 1 < pts.length; i += 2) {
-    g.fillTriangle(pts[0]!, pts[1]!, pts[i]!, pts[i + 1]!, pts[i + 2] ?? pts[0]!, pts[i + 3] ?? pts[1]!);
-  }
-}
+const fan = fillContour;
 
 function disc(cx: number, cy: number, a: number, b: number, tilt: number): number[] {
   const pts: number[] = [];
   const c = Math.cos(tilt);
   const s = Math.sin(tilt);
   for (let i = 0; i < ARC_STEPS; i++) {
-    const t = i / ARC_STEPS * Math.PI * 2;
+    const t = (i / ARC_STEPS) * Math.PI * 2;
     const x = a * Math.cos(t);
     const y = b * Math.sin(t);
     pts.push(cx + x * c - y * s, cy + x * s + y * c);
   }
   return pts;
-}
-
-function strokePoly(g: Phaser.GameObjects.Graphics, pts: readonly number[]): void {
-  g.beginPath();
-  for (let i = 0; i < pts.length; i += 2) g[i === 0 ? 'moveTo' : 'lineTo'](pts[i]!, pts[i + 1]!);
-  g.closePath().strokePath();
 }
 
 /** Owns an illustration and its motion. Judgement arrives already decided; it is never computed here. */
@@ -111,15 +130,20 @@ export class CucumberKnifeVignette implements Vignette {
   private baseX = 0;
   private baseY = 0;
   private scale = 1;
-  private get reducedMotion(): boolean { return reducedMotion(); }
+  private get reducedMotion(): boolean {
+    return reducedMotion();
+  }
 
   public constructor(scene: Phaser.Scene) {
     this.backdrop = new Backdrop(scene, CRISP.paper, CRISP.board, { glowAt: { x: 0.42, y: 0.42 }, glowAlpha: 0.4 });
     this.wall = scene.add.graphics().setDepth(-20);
     this.stage = scene.add.container(0, 0).setDepth(-10);
     this.boardG = scene.add.graphics();
-    this.boardSurface = scene.add.tileSprite(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, MaterialKey.wood)
-      .setOrigin(0).setTint(CRISP.board).setAlpha(0.5 * STYLE.current.grain);
+    this.boardSurface = scene.add
+      .tileSprite(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, MaterialKey.wood)
+      .setOrigin(0)
+      .setTint(CRISP.board)
+      .setAlpha(0.18 * STYLE.current.grain);
     this.boardSurface.setTileScale(0.3, 0.3);
     this.produce = scene.add.container(0, 0);
     this.cucumberG = scene.add.graphics();
@@ -136,37 +160,17 @@ export class CucumberKnifeVignette implements Vignette {
   }
 
   private drawKnife(scene: Phaser.Scene): Phaser.GameObjects.Graphics {
-    const g = scene.add.graphics();
-    const line = STYLE.current.outline * 1.4;
-    const blade = [0, 0, BLADE_LEN, 0, BLADE_LEN, -72, 210, -74, 120, -62, 40, -34, 8, -8];
-    const drop = castShadow(8);
-    g.fillStyle(CRISP.ink, drop.alpha);
-    fan(g, blade.map((v, i) => v + (i % 2 ? drop.dy : drop.dx)));
-    if (line > 0) {
-      g.lineStyle(line, shade(CRISP.steel, -0.55), 1).beginPath();
-      for (let i = 0; i < blade.length; i += 2) g[i === 0 ? 'moveTo' : 'lineTo'](blade[i]!, blade[i + 1]!);
-      g.closePath().strokePath();
-    }
-    g.fillStyle(CRISP.steel);
-    fan(g, blade);
-    g.lineStyle(3, CRISP.steelLit, 0.9).lineBetween(6, -3, BLADE_LEN - 4, -3);
-    g.lineStyle(2, CRISP.steelDark, 0.6).lineBetween(40, -33, BLADE_LEN - 2, -71);
-    g.fillStyle(CRISP.steelDark).fillRoundedRect(BLADE_LEN - 8, -76, 22, 82, 5);
-    const handle = faces(CRISP.handle);
-    if (line > 0) g.lineStyle(line, handle.edge, 1).strokeRoundedRect(BLADE_LEN + 8, -64, HANDLE_LEN, 58, 16);
-    g.fillStyle(handle.shade).fillRoundedRect(BLADE_LEN + 8, -64, HANDLE_LEN, 58, 16);
-    g.fillStyle(handle.face).fillRoundedRect(BLADE_LEN + 8, -64, HANDLE_LEN, 46, 16);
-    g.fillStyle(CRISP.paper, 0.12).fillRoundedRect(BLADE_LEN + 22, -56, HANDLE_LEN - 40, 14, 7);
-    g.fillStyle(CRISP.rivet);
-    for (const x of [BLADE_LEN + 46, BLADE_LEN + 92, BLADE_LEN + 138]) g.fillCircle(x, -35, 6);
-    return g;
+    return kitchenKnife(scene, 0x355d59);
   }
 
   public layout(viewport: Viewport): void {
     const { full, safe } = viewport;
-    this.scale = Math.min(safe.width / 900, safe.height / 1300);
-    this.baseX = safe.centerX - 40 * this.scale;
-    this.baseY = safe.top + safe.height * 0.62;
+    const uiScale = Math.min(safe.width / 720, safe.height / 1150);
+    const top = safe.top + 320 * uiScale;
+    const bottom = safe.bottom - 410 * uiScale;
+    this.scale = Math.min(safe.width / 980, (bottom - top) / 460);
+    this.baseX = safe.centerX;
+    this.baseY = top + (bottom - top + 250 * this.scale) / 2;
     this.stage.setPosition(this.baseX, this.baseY).setScale(this.scale);
     this.backdrop.layout(viewport);
     const bg = this.wall.clear();
@@ -177,18 +181,7 @@ export class CucumberKnifeVignette implements Vignette {
     for (let x = this.baseX % tile; x < full.right + tile; x += tile) bg.lineBetween(x, full.y, x, counterY);
     bg.fillStyle(CRISP.counter, 0.35).fillRect(full.x, counterY, full.width, full.bottom - counterY);
     bg.fillStyle(CRISP.ink, 0.08).fillRect(full.x, counterY, full.width, 6 * this.scale);
-    const b = this.boardG.clear();
-    const board = faces(CRISP.board);
-    const line = STYLE.current.outline * 1.4;
-    const boardDrop = castShadow(10);
-    b.fillStyle(CRISP.ink, boardDrop.alpha).fillRect(BOARD_LEFT + 10 + boardDrop.dx, BOARD_THICK + boardDrop.dy, BOARD_RIGHT - BOARD_LEFT - 20, 14);
-    if (line > 0) b.lineStyle(line, shade(CRISP.board, -0.6), 1).strokeRoundedRect(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, 6);
-    b.fillStyle(board.face).fillRoundedRect(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, 6);
-    b.fillStyle(shade(CRISP.boardEdge, -0.1)).fillRect(BOARD_LEFT, BOARD_THICK - 16, BOARD_RIGHT - BOARD_LEFT, 16);
-    b.fillStyle(board.lit).fillRect(BOARD_LEFT + 4, 0, BOARD_RIGHT - BOARD_LEFT - 8, 7);
-    b.fillStyle(board.rim, 0.7).fillRect(BOARD_LEFT + 4, 0, BOARD_RIGHT - BOARD_LEFT - 8, 3);
-    b.lineStyle(1.5, CRISP.boardLine, 0.7);
-    for (const y of [11, 19]) b.lineBetween(BOARD_LEFT + 30, y, BOARD_RIGHT - 30, y + 1);
+    kitchenBoard(this.boardG, CRISP.board, CRISP.boardEdge);
   }
 
   public reset(plan: RoundPlan): void {
@@ -214,7 +207,11 @@ export class CucumberKnifeVignette implements Vignette {
 
   public onPhase(phase: Phase, now: number): void {
     this.phase = phase;
-    if (phase === 'respond') { this.strikeAt = -100; this.setCut(0, now); this.respondAt = now; }
+    if (phase === 'respond') {
+      this.strikeAt = -100;
+      this.setCut(0, now);
+      this.respondAt = now;
+    }
   }
 
   private setCut(fraction: number, now: number): void {
@@ -269,14 +266,20 @@ export class CucumberKnifeVignette implements Vignette {
     this.successful = successful;
     this.finishAt = contactSec;
   }
-  public pause(): void { this.phase = 'paused'; this.finishAt = null; this.strikeAt = -100; }
+  public pause(): void {
+    this.phase = 'paused';
+    this.finishAt = null;
+    this.strikeAt = -100;
+  }
 
-  private beat(): number { return this.plan ? 60 / this.plan.bpm : REFERENCE_BEAT; }
+  private beat(): number {
+    return this.plan ? 60 / this.plan.bpm : REFERENCE_BEAT;
+  }
 
   private upcoming(now: number): number | null {
     if (this.finishAt !== null && !this.finished) return this.finishAt;
     if (this.phase !== 'prepare' && this.phase !== 'demonstrate') return null;
-    return this.plan?.cues.find(cue => cue.kind === 'action' && cue.time > now)?.time ?? null;
+    return this.plan?.cues.find((cue) => cue.kind === 'action' && cue.time > now)?.time ?? null;
   }
 
   private openStage(now: number): void {
@@ -285,7 +288,8 @@ export class CucumberKnifeVignette implements Vignette {
   }
 
   public update(now: number): void {
-    if (this.phase === 'paused') now = this.lastNow; else this.lastNow = now;
+    if (this.phase === 'paused') now = this.lastNow;
+    else this.lastNow = now;
     this.openStage(now);
     if (this.phase === 'prepare' || this.phase === 'demonstrate') {
       for (const cue of this.plan?.cues ?? []) {
@@ -305,14 +309,17 @@ export class CucumberKnifeVignette implements Vignette {
     }
     const beat = this.beat();
     const age = now - this.strikeAt;
-    const press = age >= 0 && age < 0.14 ? Math.sin(age / 0.14 * Math.PI) * STYLE.current.exaggeration : 0;
-    const shake = this.reducedMotion || age < 0 || age > 0.16 ? 0 : Math.sin(age * 120) * Math.exp(-age * 24) * 1.8 * STYLE.current.exaggeration;
+    const press = age >= 0 && age < 0.14 ? Math.sin((age / 0.14) * Math.PI) * STYLE.current.exaggeration : 0;
+    const shake =
+      this.reducedMotion || age < 0 || age > 0.16
+        ? 0
+        : Math.sin(age * 120) * Math.exp(-age * 24) * 1.8 * STYLE.current.exaggeration;
     this.stage.setPosition(this.baseX + shake * this.scale, this.baseY + shake * this.scale * 0.5);
     this.produce.setPosition(0, this.reducedMotion ? 0 : press * 1.2);
     this.poseKnife(now, beat, age);
     this.drawCucumber();
     this.drawSlices(now, beat);
-    this.drawMarks(now);
+    this.drawMarks();
     this.drawJuice(beat, age);
     this.drawRings(age);
   }
@@ -329,60 +336,72 @@ export class CucumberKnifeVignette implements Vignette {
     let x = this.strikeX + 6;
     if (parked) {
       lift = 1;
-      x = this.cutTo + 54;
+      x = this.cutTo - 22;
       if (!this.reducedMotion) lift += Math.sin(now * 1.6) * 0.02;
     }
     this.knife.setPosition(x, -lift * CUCUMBER_MOTION.lift);
     this.knife.setRotation(-0.12 - 0.42 * Math.min(1.12, lift) + tremble);
   }
 
-  /** Remaining stadium, clipped at the cut, with ridges, a stem and an edge-on flesh face. */
+  /** Long tonal ridges, restrained pores and a moist, dimensional cut face. */
   private drawCucumber(): void {
     const g = this.cucumberG.clear();
-    const pts = cucumberBody(this.cut);
+    const pts = cucumberBody(this.cut, 48);
     if (pts.length < 6) return;
     const half = cucumberHalfAt(this.cut);
-    g.fillStyle(CRISP.ink, 0.1);
-    fan(g, disc(CX + 10, 6, Math.min(RX, (this.cut - (CX - RX)) / 2 + 8), 14, 0));
-    const line = STYLE.current.outline * 1.4;
-    if (line > 0) {
-      g.lineStyle(line, shade(CRISP.skin, -0.55), 1);
-      strokePoly(g, pts);
+    const left = CX - RX;
+    g.fillStyle(CRISP.ink, 0.12);
+    fan(g, disc((left + this.cut) / 2 + 4, 5, Math.max(0, (this.cut - left) / 2), 10, 0));
+    paintedContour(g, pts, CRISP.skin, 0x304d33, STYLE.current.outline);
+    // All bands are clipped with the fruit; there are no floating highlights at a late cut.
+    const ribbon = (y: number, w: number, colour: number): void => {
+      const p = cubicContour(left + 17, -RY, [
+        [left + 44, y, CX + 75, y, CX + RX - 15, -RY],
+        [CX + 75, y + w, left + 44, y + w, left + 17, -RY],
+      ]);
+      g.fillStyle(colour);
+      fan(g, clipLeft(p, this.cut));
+    };
+    ribbon(-123, 24, CRISP.skinLit);
+    ribbon(-118, 7, CRISP.stripe);
+    ribbon(-77, 9, 0x73a55b);
+    ribbon(-35, 17, 0x396b3e);
+    g.fillStyle(0xb4ce93, 0.55);
+    for (let i = 0; i < 24; i++) {
+      const x = left + 50 + ((i * 67) % 390);
+      const y = -113 + ((i * 31) % 85);
+      if (x > this.cut - 16) continue;
+      const h = cucumberHalfAt(x);
+      if (Math.abs(y + RY) > h - 12) continue;
+      g.fillEllipse(x, y, 3.5, 5, 8);
     }
-    g.fillStyle(CRISP.skin);
-    fan(g, pts);
-    g.fillStyle(CRISP.stripe, 0.75);
-    for (const offset of [-22, -4, 16]) {
-      const ribbon: number[] = [];
-      const left = CX - RX + RY + 18;
-      const right = Math.min(this.cut - 8, CX + RX - RY - 12);
-      if (right - left < 20) continue;
-      ribbon.push(left, -RY + offset - 5, right, -RY + offset - 7, right, -RY + offset + 5, left, -RY + offset + 6);
-      fan(g, ribbon);
+    if (half > 4 && this.cut < CX + RX - 2) {
+      const a = Math.min(19, half * 0.3);
+      paintedContour(g, disc(this.cut, -RY, a, half, 0), CRISP.flesh, 0x406638, 4);
+      g.fillStyle(CRISP.fleshRing);
+      fan(g, disc(this.cut + 1, -RY, a * 0.7, half * 0.78, 0));
+      g.fillStyle(CRISP.gel, 0.7);
+      fan(g, disc(this.cut + 2, -RY, a * 0.43, half * 0.58, 0));
+      g.fillStyle(0xf5f3ca);
+      for (const offset of [-0.38, 0, 0.38]) g.fillEllipse(this.cut + 3, -RY + half * offset, 4, 9, 8);
     }
-    if (this.cut > CX - 40) {
-      g.fillStyle(CRISP.skinLit, 0.7);
-      fan(g, disc(Math.min(CX - 90, this.cut - 40), -RY - 28, 70, 16, -0.12));
+    if (this.cut > left + 24) {
+      paintedContour(
+        g,
+        cubicContour(left + 9, -RY - 10, [
+          [left - 3, -RY - 15, left - 12, -RY - 12, left - 16, -RY - 18],
+          [left - 24, -RY - 17, left - 22, -RY - 3, left - 16, -RY + 1],
+          [left - 8, -RY + 7, left + 4, -RY + 8, left + 9, -RY + 5],
+          [left + 12, -RY, left + 12, -RY - 6, left + 9, -RY - 10],
+        ]),
+        CRISP.stem,
+        0x304d33,
+        3,
+      );
     }
-    if (half > 4) {
-      g.fillStyle(CRISP.flesh).fillRect(this.cut - 7, -RY - half, 8, half * 2);
-      g.fillStyle(CRISP.gel, 0.9).fillRect(this.cut - 5, -RY - half * 0.38, 6, half * 0.76);
-      g.fillStyle(CRISP.seed, 0.85);
-      for (let i = -1; i <= 1; i++) g.fillEllipse(this.cut - 3, -RY + i * half * 0.28, 3.5, 8, 6);
-    }
-    if (this.cut > CX - RX + 50) {
-      g.fillStyle(CRISP.stem);
-      fan(g, [CX - RX - 8, -RY - 10, CX - RX + 18, -RY - 14, CX - RX + 18, -RY + 14, CX - RX - 8, -RY + 10]);
-      g.fillStyle(CRISP.stemLit).fillRoundedRect(CX - RX - 16, -RY - 7, 14, 14, 4);
-    }
-    if (this.cut > CX + RX - 18) {
-      const fx = CX + RX + 6;
-      g.fillStyle(CRISP.blossom);
-      for (let p = 0; p < 5; p++) {
-        const a = p * Math.PI * 2 / 5 - Math.PI / 2;
-        g.fillEllipse(fx + Math.cos(a) * 12, -RY + Math.sin(a) * 10, 10, 16, 6);
-      }
-      g.fillStyle(shade(CRISP.blossom, -0.25)).fillCircle(fx, -RY, 5);
+    if (this.cut > CX + RX - 2) {
+      g.lineStyle(4, 0x827240).lineBetween(CX + RX - 1, -RY - 4, CX + RX + 9, -RY + 2);
+      g.fillStyle(CRISP.blossom).fillEllipse(CX + RX + 11, -RY, 10, 7);
     }
   }
 
@@ -392,57 +411,62 @@ export class CucumberKnifeVignette implements Vignette {
     for (let i = 0; i < this.sliceAt.length; i++) {
       const p = sliceTumble(now - this.sliceAt[i]!, beat);
       const wobble = this.sliceWobble[i] ?? 0;
-      const restX = PILE_X + i * PILE_STEP;
+      const restX = PILE_X + i * Math.min(PILE_STEP, 140 / Math.max(1, this.sliceAt.length - 1));
       const restLean = LEAN + wobble * 0.5;
       const squash = this.finished && !this.successful && i === this.sliceAt.length - 1 ? 0.55 : 1;
       const x = this.sliceFrom[i]! + (restX - this.sliceFrom[i]!) * p;
       const lean = restLean * p;
       const b = SLICE_R * squash;
-      const cy = -b * Math.cos(lean) + 6;
-      const a = 5 + (SLICE_R - 5) * Math.sin(Math.min(1, p) * Math.PI / 2);
+      const a = 5 + (SLICE_R - 5) * Math.sin((Math.min(1, p) * Math.PI) / 2);
+      const restY = -Math.hypot(a * Math.sin(lean), b * Math.cos(lean)) - 2;
+      const cy = -RY + (restY + RY) * p;
       g.fillStyle(CRISP.ink, 0.1);
       fan(g, disc(x + 8, 6, a * 0.9 + 6, 10, 0));
-      const outline = STYLE.current.outline * 1.4;
-      if (outline > 0 && a > 12) {
-        g.lineStyle(outline, shade(CRISP.skin, -0.55), 1);
-        strokePoly(g, disc(x, cy, a, b, lean));
-      }
-      g.fillStyle(CRISP.skin);
-      fan(g, disc(x, cy, a, b, lean));
+      // A shaded rind sidewall makes each coin a slice, not a flat target.
+      paintedContour(g, disc(x - 8 * p, cy + 2, a, b, lean), 0x376941, 0x304d33, STYLE.current.outline * 0.75);
+      paintedContour(g, disc(x, cy, a, b, lean), CRISP.skin, 0x304d33, STYLE.current.outline * 0.65);
       g.fillStyle(CRISP.flesh);
-      fan(g, disc(x, cy, a * 0.86, b * 0.86, lean));
-      g.fillStyle(CRISP.fleshRing, 0.7);
-      fan(g, disc(x, cy, a * 0.62, b * 0.62, lean));
+      fan(g, disc(x, cy, a * 0.88, b * 0.88, lean));
+      g.fillStyle(CRISP.fleshRing);
+      fan(g, disc(x, cy, a * 0.72, b * 0.72, lean));
       if (a > 18) {
-        g.fillStyle(CRISP.gel, 0.95);
-        fan(g, disc(x, cy, a * 0.34, b * 0.34, lean));
-        g.fillStyle(CRISP.seed);
-        for (let s = 0; s < 6; s++) {
-          const t = s * Math.PI / 3 + 0.35;
-          const sx = a * 0.22 * Math.cos(t);
-          const sy = b * 0.22 * Math.sin(t);
-          g.fillEllipse(
-            x + sx * Math.cos(lean) - sy * Math.sin(lean),
-            cy + sx * Math.sin(lean) + sy * Math.cos(lean),
-            5 + a / 18, 10, 6,
-          );
+        for (let chamber = 0; chamber < 3; chamber++) {
+          const t = (chamber * Math.PI * 2) / 3 - 0.5;
+          const ox = Math.cos(t) * a * 0.27,
+            oy = Math.sin(t) * b * 0.27;
+          const gx = x + ox * Math.cos(lean) - oy * Math.sin(lean);
+          const gy = cy + ox * Math.sin(lean) + oy * Math.cos(lean);
+          g.fillStyle(CRISP.gel, 0.65);
+          fan(g, disc(gx, gy, a * 0.26, b * 0.3, lean + t));
+          for (let seed = 0; seed < 2; seed++) {
+            const st = t + (seed ? -0.3 : 0.3);
+            const sx = Math.cos(st) * a * 0.36,
+              sy = Math.sin(st) * b * 0.36;
+            g.fillStyle(0xf7f4ce);
+            fan(
+              g,
+              disc(
+                x + sx * Math.cos(lean) - sy * Math.sin(lean),
+                cy + sx * Math.sin(lean) + sy * Math.cos(lean),
+                3.5,
+                7,
+                lean + t,
+              ),
+            );
+          }
         }
+        g.lineStyle(2, 0xffffff, 0.55);
+        traceContour(g, disc(x, cy, a * 0.79, b * 0.79, lean).slice(2, 18));
+        g.strokePath();
       }
     }
   }
 
-  private drawMarks(now: number): void {
+  private drawMarks(): void {
     const g = this.marks.clear();
     for (const x of this.nicks) {
       g.lineStyle(3, CRISP.boardEdge, 0.7).lineBetween(x - 28, 5, x + 30, 5);
       g.lineStyle(1.5, CRISP.ink, 0.25).lineBetween(x - 22, 7, x + 26, 7);
-    }
-    if (this.finished && this.successful && this.finishAt !== null) {
-      const p = clamp01((now - this.finishAt - 0.9) / 0.32);
-      if (p > 0 && p < 1) {
-        g.fillStyle(CRISP.seed, 1 - p * 0.5);
-        g.fillEllipse(cutAt(1) + 18, -56 + p * 54, 5, 9, 6);
-      }
     }
   }
 
@@ -459,7 +483,7 @@ export class CucumberKnifeVignette implements Vignette {
       const x = this.strikeX + (seed / 17 - 0.5) * spread * 1.4;
       const y = -RY - 12 - Math.sin(i * 1.9) * spread * 0.5 + fall * (0.7 + seed / 34);
       g.fillStyle(i % 3 ? CRISP.flesh : CRISP.gel, life * 0.85);
-      g.fillEllipse(x, y, 4 + seed % 3, 7 + seed % 4, 6);
+      g.fillEllipse(x, y, 4 + (seed % 3), 7 + (seed % 4), 6);
     }
   }
 
@@ -470,6 +494,13 @@ export class CucumberKnifeVignette implements Vignette {
     g.lineStyle(3, CRISP.paper, 1 - p).strokeEllipse(this.strikeX + 60, 3, 150 + p * 160, 12 + p * 18);
   }
 
-  public translate(offset: number): void { this.stage.x += this.reducedMotion ? 0 : offset; }
-  public destroy(): void { this.bursts.destroy(); this.wall.destroy(); this.stage.destroy(true); this.backdrop.destroy(); }
+  public translate(offset: number): void {
+    this.stage.x += this.reducedMotion ? 0 : offset;
+  }
+  public destroy(): void {
+    this.bursts.destroy();
+    this.wall.destroy();
+    this.stage.destroy(true);
+    this.backdrop.destroy();
+  }
 }

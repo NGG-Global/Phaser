@@ -12,7 +12,7 @@ export const CUCUMBER_MOTION = {
   tumbleBeats: 0.72,
   juiceBeats: 0.82,
   /** How far the knife lifts between chops, in board units. */
-  lift: 96,
+  lift: 180,
   /** Centre of the cucumber on the board. */
   x: -140,
   /** Half-length and half-height of the stadium; a cucumber is a long capsule. */

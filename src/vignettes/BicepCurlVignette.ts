@@ -10,10 +10,25 @@ import { Backdrop } from '@/ui/backdrop';
 import { mix, shade } from '@/ui/colour';
 import { Feedback } from '@/ui/feedback';
 import { castShadow, faces } from '@/ui/light';
+import { cubicContour, fillContour, paintedContour, traceContour } from '@/ui/illustration';
 import type { Vignette } from './Vignette';
 import {
-  acceptDemoBeat, advanceRep, bicepBulge, chalkDraw, clamp01, CURL_MOTION, curlFlex, curlLift,
-  curlTiming, DROP_LANDING_SEC, dropHeight, easeOut, forearmAngle, holdTremor, pumpLevel, REFERENCE_BEAT,
+  acceptDemoBeat,
+  advanceRep,
+  bicepBulge,
+  chalkDraw,
+  clamp01,
+  CURL_MOTION,
+  curlFlex,
+  curlLift,
+  curlTiming,
+  DROP_LANDING_SEC,
+  dropHeight,
+  easeOut,
+  forearmAngle,
+  holdTremor,
+  pumpLevel,
+  REFERENCE_BEAT,
 } from './curlMotion';
 import { isPlayerTurn, TURN_OPEN_SEC } from './motion';
 
@@ -22,10 +37,21 @@ import { isPlayerTurn, TURN_OPEN_SEC } from './motion';
  * saturated colour in the room, so the figure is the subject at a glance.
  */
 export const GYM = {
-  paper: 0xdad4cb, ink: 0x2b2733, wall: 0xcbc3b7, lamp: 0xfff1d6,
-  mat: 0x4c4954, matSeam: 0x5d5966, skin: 0xd8945f, flush: 0xd9634a,
-  tank: 0x2e9c8e, iron: 0x3b3e47, chrome: 0xbcc3ca,
-  board: 0x34493f, frame: 0x8a6743, chalk: 0xf4eddc, sweat: 0xbfe4ec,
+  paper: 0xdad4cb,
+  ink: 0x2b2733,
+  wall: 0xcbc3b7,
+  lamp: 0xfff1d6,
+  mat: 0x4c4954,
+  matSeam: 0x5d5966,
+  skin: 0xd8945f,
+  flush: 0xd9634a,
+  tank: 0x2e9c8e,
+  iron: 0x3b3e47,
+  chrome: 0xbcc3ca,
+  board: 0x34493f,
+  frame: 0x8a6743,
+  chalk: 0xf4eddc,
+  sweat: 0xbfe4ec,
 } as const;
 
 // The figure stands with the floor at y 0 and faces +x. The trunk is its own container,
@@ -37,35 +63,15 @@ export const GYM = {
 // heads tall, so the face can carry the effort and the working arm stays the subject.
 const HIP_Y = -292;
 /** Trunk space: origin at the hips. */
-const SHOULDER = { x: 56, y: -236 } as const;
 const ELBOW = { x: 68, y: -64 } as const;
 const HEAD = { x: 58, y: -368, rx: 66, ry: 78 } as const;
-const JAW = { x: 72, y: -314, rx: 48, ry: 44 } as const;
-const HAIR = { x: 48, y: -428, rx: 58, ry: 40 } as const;
-const DELTOID_R = 46;
-const UPPER_ARM = { shoulder: 42, elbow: 28 } as const;
-const FOREARM = { elbow: 28, wrist: 20 } as const;
 /** Side-on plates either side of the grip, and the grip itself. */
 const PLATE = { reach: 66, w: 40, h: 118 } as const;
-const GRIP_R = 28;
 /** The chalkboard on the wall, left of the torso. It keeps the set's count. */
-const BOARD = { x: -420, y: -560, w: 210, h: 168 } as const;
+const BOARD = { x: -300, y: -565, w: 190, h: 168 } as const;
 const TALLY_STEP = 22;
 const TALLY_GROUP = 5;
 const TALLY_GROUPS_PER_ROW = 2;
-
-/** A convex polygon as a fan of triangles. `fillPoints` wants Vector2 instances. */
-function fan(g: Phaser.GameObjects.Graphics, pts: readonly number[]): void {
-  for (let i = 2; i + 1 < pts.length; i += 2) {
-    g.fillTriangle(pts[0]!, pts[1]!, pts[i]!, pts[i + 1]!, pts[i + 2] ?? pts[0]!, pts[i + 3] ?? pts[1]!);
-  }
-}
-
-function outline(g: Phaser.GameObjects.Graphics, pts: readonly number[]): void {
-  g.beginPath();
-  for (let i = 0; i < pts.length; i += 2) g[i === 0 ? 'moveTo' : 'lineTo'](pts[i]!, pts[i + 1]!);
-  g.closePath().strokePath();
-}
 
 /** Owns an illustration and its motion. Judgement arrives already decided; it is never computed here. */
 export class BicepCurlVignette implements Vignette {
@@ -110,7 +116,9 @@ export class BicepCurlVignette implements Vignette {
   private baseY = 0;
   private scale = 1;
   /** Read per use, so a preference change applies mid-scene. */
-  private get reducedMotion(): boolean { return reducedMotion(); }
+  private get reducedMotion(): boolean {
+    return reducedMotion();
+  }
 
   public constructor(scene: Phaser.Scene) {
     // The pool of light sits over the working arm, which is what the eye is meant to follow.
@@ -119,8 +127,11 @@ export class BicepCurlVignette implements Vignette {
     this.room = scene.add.graphics();
     // Rubber matting is cloth at low strength: a weave over a dark ground reads as a mat,
     // where a flat fill read as a hole in the floor.
-    this.matting = scene.add.tileSprite(-3000, 0, 6000, 3000, MaterialKey.cloth).setOrigin(0)
-      .setTint(GYM.matSeam).setAlpha(0.4 * STYLE.current.grain);
+    this.matting = scene.add
+      .tileSprite(-3000, 0, 6000, 3000, MaterialKey.cloth)
+      .setOrigin(0)
+      .setTint(GYM.matSeam)
+      .setAlpha(0.4 * STYLE.current.grain);
     this.matting.setTileScale(0.7, 0.7);
     this.boardG = scene.add.graphics();
     this.tally = scene.add.graphics();
@@ -137,164 +148,242 @@ export class BicepCurlVignette implements Vignette {
     this.bursts = new Feedback(scene, -10, this.stage);
   }
 
-  /**
-   * A fleshy limb that tapers between two joints. Circular caps keep the silhouette
-   * one sausage, so a thigh meeting a knee does not seam the way stacked ellipses did.
-   */
-  private taper(
-    g: Phaser.GameObjects.Graphics,
-    x1: number, y1: number, r1: number,
-    x2: number, y2: number, r2: number,
-    colour: number, grow = 0,
-  ): void {
-    const a = r1 + grow, b = r2 + grow;
-    const dx = x2 - x1, dy = y2 - y1;
-    const len = Math.hypot(dx, dy);
-    g.fillStyle(colour);
-    if (len < 1) { g.fillCircle(x1, y1, a); return; }
-    const nx = -dy / len, ny = dx / len;
-    fan(g, [x1 + nx * a, y1 + ny * a, x2 + nx * b, y2 + ny * b, x2 - nx * b, y2 - ny * b, x1 - nx * a, y1 - ny * a]);
-    g.fillCircle(x1, y1, a);
-    g.fillCircle(x2, y2, b);
-  }
-
+  /** Continuous contours keep knees, calves and clothing free of overlap seams. */
   private drawLegs(g: Phaser.GameObjects.Graphics): void {
-    const line = STYLE.current.outline * 1.4;
-    const ink = faces(GYM.ink);
+    const line = STYLE.current.outline;
     const skin = faces(GYM.skin);
-    const drop = castShadow(6);
-    g.fillStyle(GYM.ink, drop.alpha).fillEllipse(22 + drop.dx, 10, 280, 22);
-    // Athletic stance, slight bend: the back leg in shade, the front leg lit. Each
-    // segment tapers hip → knee → ankle, so the mass sits in the thigh and calf
-    // instead of reading as two square posts under a box of shorts.
-    const back = { hip: { x: -22, y: -246 }, knee: { x: -48, y: -136 }, ankle: { x: -62, y: -46 } } as const;
-    const front = { hip: { x: 46, y: -246 }, knee: { x: 70, y: -128 }, ankle: { x: 88, y: -44 } } as const;
-    for (const pass of line > 0 ? [line, 0] : [0]) {
-      const shadeTone = pass > 0 ? ink.edge : skin.shade;
-      const litTone = pass > 0 ? ink.edge : skin.face;
-      this.taper(g, back.hip.x, back.hip.y, 34, back.knee.x, back.knee.y, 22, shadeTone, pass);
-      this.taper(g, back.knee.x, back.knee.y, 24, back.ankle.x, back.ankle.y, 18, shadeTone, pass);
-      g.fillStyle(shadeTone).fillEllipse(back.knee.x - 4, back.knee.y + 32, (22 + pass) * 2, (36 + pass) * 2);
-      this.taper(g, front.hip.x, front.hip.y, 38, front.knee.x, front.knee.y, 24, litTone, pass);
-      this.taper(g, front.knee.x, front.knee.y, 26, front.ankle.x, front.ankle.y, 19, litTone, pass);
-      g.fillStyle(litTone).fillEllipse(front.knee.x + 6, front.knee.y + 34, (24 + pass) * 2, (38 + pass) * 2);
+    const shape = (x: number, y: number, curves: Parameters<typeof cubicContour>[2], colour: number): void =>
+      paintedContour(g, cubicContour(x, y, curves), colour, GYM.ink, line);
+    g.fillStyle(GYM.ink, 0.16).fillEllipse(36, 9, 280, 24);
+    // Each leg is one tailored silhouette, not a stack of overlapping capsules.
+    shape(
+      -48,
+      -250,
+      [
+        [-10, -268, 18, -240, 8, -209],
+        [-4, -162, -35, -105, -40, -44],
+        [-46, -25, -76, -27, -78, -47],
+        [-79, -112, -62, -173, -48, -250],
+      ],
+      skin.shade,
+    );
+    shape(
+      27,
+      -244,
+      [
+        [51, -266, 84, -248, 86, -215],
+        [88, -157, 91, -111, 106, -49],
+        [107, -26, 75, -23, 68, -43],
+        [47, -98, 35, -140, 26, -171],
+        [18, -198, 17, -223, 27, -244],
+      ],
+      skin.face,
+    );
+    // Ribbed ivory socks give the ankles a clean transition into the trainers.
+    for (const [x, y] of [
+      [-60, -48],
+      [86, -46],
+    ]) {
+      g.fillStyle(GYM.chalk).fillRoundedRect(x! - 20, y! - 24, 39, 47, 9);
+      g.lineStyle(5, GYM.tank).lineBetween(x! - 18, y! - 12, x! + 17, y! - 12);
+      g.lineStyle(2, GYM.ink, 0.15).lineBetween(x! - 8, y! - 4, x! - 8, y! + 15);
     }
-    g.fillStyle(skin.lit, 0.5).fillEllipse(front.hip.x - 2, -192, 26, 48);
-    g.fillStyle(skin.lit, 0.4).fillEllipse(front.knee.x, front.knee.y + 20, 18, 26);
-    g.fillStyle(skin.shade, 0.35).fillEllipse(front.knee.x + 14, front.knee.y + 40, 14, 20);
-    // Back shoe planted further left, front shoe stepped forward, so two trainers
-    // do not fuse into one loaf.
-    this.drawShoe(g, back.ankle.x - 18, 0, 0.84, false, line);
-    this.drawShoe(g, front.ankle.x - 22, 3, 1, true, line);
-    // Shorts as a hip bubble and two thigh lobes, so the hem follows the leg instead
-    // of cutting a rounded rectangle across it.
-    for (const pass of line > 0 ? [line, 0] : [0]) {
-      const seat = pass > 0 ? ink.edge : ink.face;
-      const backLobe = pass > 0 ? ink.edge : ink.shade;
-      g.fillStyle(backLobe).fillEllipse(-24, HIP_Y + 58, (32 + pass) * 2, (30 + pass) * 2);
-      g.fillStyle(seat).fillEllipse(18, HIP_Y + 14, (68 + pass) * 2, (44 + pass) * 2);
-      g.fillStyle(seat).fillEllipse(52, HIP_Y + 64, (36 + pass) * 2, (32 + pass) * 2);
-    }
-    g.fillStyle(ink.shade, 0.45).fillEllipse(-24, HIP_Y + 20, 46, 52);
-    g.fillStyle(ink.lit, 0.35).fillEllipse(34, HIP_Y - 2, 62, 24);
-    if (line > 0) g.lineStyle(line, ink.edge).strokeRoundedRect(-48, HIP_Y - 16, 118, 20, 10);
-    g.fillStyle(ink.face).fillRoundedRect(-48, HIP_Y - 16, 118, 20, 10);
-    g.fillStyle(ink.lit, 0.7).fillRoundedRect(-42, HIP_Y - 14, 106, 7, 4);
-    g.fillStyle(GYM.tank, 0.95).fillEllipse(74, HIP_Y + 30, 12, 64);
+    this.drawShoe(g, -85, 0, 0.9, false, line);
+    this.drawShoe(g, 60, 3, 1, true, line);
+    shape(
+      -43,
+      HIP_Y - 15,
+      [
+        [-14, -319, 54, -319, 83, -292],
+        [91, -268, 96, -234, 87, -211],
+        [67, -203, 44, -208, 31, -220],
+        [26, -228, 24, -247, 19, -252],
+        [9, -233, 5, -219, -7, -213],
+        [-26, -207, -48, -215, -56, -228],
+        [-57, -250, -49, -276, -43, HIP_Y - 15],
+      ],
+      GYM.ink,
+    );
+    g.lineStyle(6, GYM.tank).lineBetween(77, -278, 79, -226);
+    g.lineStyle(3, GYM.chalk, 0.25).lineBetween(-37, -232, -12, -227).lineBetween(43, -227, 72, -222);
+    g.lineStyle(3, GYM.chalk, 0.75).lineBetween(14, -290, 9, -270).lineBetween(15, -290, 23, -273);
   }
 
-  /** A trainer in side view: round toe, heel cup, chalk midsole. Not a rounded brick. */
   private drawShoe(
-    g: Phaser.GameObjects.Graphics, heelX: number, soleY: number, size: number, lit: boolean, line: number,
+    g: Phaser.GameObjects.Graphics,
+    heelX: number,
+    soleY: number,
+    size: number,
+    lit: boolean,
+    line: number,
   ): void {
-    const ink = faces(GYM.ink);
-    const upper = lit ? ink.face : ink.shade;
-    const w = 108 * size;
-    const h = 46 * size;
-    const r = 16 * size;
-    for (const pass of line > 0 ? [line, 0] : [0]) {
-      const tone = pass > 0 ? ink.edge : upper;
-      // Heel collar cups the ankle so the leg does not dump into a flat sole.
-      g.fillStyle(tone).fillEllipse(heelX + w * 0.2, soleY - h * 0.72, (w * 0.22 + pass) * 2, (h * 0.55 + pass) * 2);
-      g.fillStyle(tone).fillRoundedRect(heelX - pass, soleY - h + 10 - pass, w + pass * 2, h * 0.58 + pass * 2, r);
-      g.fillStyle(tone).fillEllipse(heelX + w * 0.8, soleY - h * 0.46, (w * 0.26 + pass) * 2, (h * 0.5 + pass) * 2);
-    }
-    g.fillStyle(lit ? ink.lit : ink.face, 0.5).fillEllipse(heelX + w * 0.38, soleY - h * 0.7, w * 0.34, h * 0.28);
-    g.fillStyle(GYM.chalk).fillRoundedRect(heelX + 5, soleY - 14 * size, w - 10, 11 * size, 4 * size);
-    g.fillStyle(ink.edge).fillRoundedRect(heelX + 3, soleY - 5 * size, w - 6, 9 * size, 4 * size);
-    g.lineStyle(4.5 * size, GYM.tank).beginPath()
-      .arc(heelX + w * 0.52, soleY - h * 0.28, 20 * size, Math.PI * 1.12, Math.PI * 1.78, false)
-      .strokePath();
+    const points = cubicContour(0, -40, [
+      [10, -47, 29, -46, 38, -35],
+      [51, -26, 69, -23, 88, -21],
+      [106, -19, 112, -9, 107, 0],
+      [77, 8, 25, 6, 0, 2],
+      [-5, -7, -4, -29, 0, -40],
+    ]);
+    const mapped = points.map((v, i) => v * size + (i % 2 ? soleY : heelX));
+    paintedContour(g, mapped, lit ? 0x405457 : 0x354347, GYM.ink, line);
+    g.fillStyle(GYM.chalk).fillRoundedRect(heelX, soleY - 8, 107 * size, 12 * size, 5);
+    g.lineStyle(3, GYM.ink).lineBetween(heelX + 3, soleY + 5, heelX + 102 * size, soleY + 5);
+    g.lineStyle(4, GYM.chalk, 0.8);
+    for (let i = 0; i < 3; i++)
+      g.lineBetween(
+        heelX + (35 + i * 10) * size,
+        soleY - (29 - i * 3) * size,
+        heelX + (29 + i * 10) * size,
+        soleY - (19 - i * 3) * size,
+      );
+    g.lineStyle(5, GYM.tank).lineBetween(heelX + 13 * size, soleY - 27 * size, heelX + 13 * size, soleY - 15 * size);
   }
 
   private drawBody(g: Phaser.GameObjects.Graphics): void {
-    const line = STYLE.current.outline * 1.4;
-    const ink = faces(GYM.ink);
+    const line = STYLE.current.outline;
     const skin = faces(GYM.skin);
-    const tank = faces(GYM.tank);
-    // The far arm hangs behind the torso in shade: the one that is not working.
-    for (const pass of line > 0 ? [line, 0] : [0]) {
-      const tone = pass > 0 ? ink.edge : skin.shade;
-      this.taper(g, -36, -210, 22, -48, -92, 16, tone, pass);
-      this.taper(g, -48, -92, 16, -40, -48, 13, tone, pass);
-      g.fillStyle(tone).fillEllipse(-38, -40, (16 + pass) * 2, (13 + pass) * 2);
-    }
-    // Torso, neck and head as one silhouette: a V through the shoulders, an egg of a
-    // skull with a jaw, hair as a mass that breaks the oval. Drawn together so the
-    // outline runs the whole figure and a neck does not seam onto a floating circle.
-    const torso = [-38, -240, 96, -252, 106, -186, 98, -108, 72, -10, -20, -8, -44, -128, -48, -208];
-    if (line > 0) {
-      g.lineStyle(line * 2, ink.edge); outline(g, torso);
-      this.taper(g, 18, -242, 32, 42, -308, 24, ink.edge, line);
-      g.fillStyle(ink.edge).fillEllipse(HEAD.x, HEAD.y, (HEAD.rx + line) * 2, (HEAD.ry + line) * 2);
-      g.fillStyle(ink.edge).fillEllipse(JAW.x, JAW.y, (JAW.rx + line) * 2, (JAW.ry + line) * 2);
-      this.drawHair(g, ink.edge, line);
-    }
-    g.fillStyle(skin.face); fan(g, torso);
-    this.taper(g, 18, -242, 32, 42, -308, 24, skin.face);
-    g.fillStyle(skin.shade, 0.38); fan(g, [-38, -240, -4, -238, -2, -8, -20, -8, -44, -128, -48, -208]);
-    g.fillStyle(skin.face).fillEllipse(HEAD.x, HEAD.y, HEAD.rx * 2, HEAD.ry * 2);
-    g.fillStyle(skin.face).fillEllipse(JAW.x, JAW.y, JAW.rx * 2, JAW.ry * 2);
-    g.fillStyle(skin.lit, 0.72).fillEllipse(HEAD.x - 18, HEAD.y - 16, 64, 56);
-    g.fillStyle(skin.shade, 0.28).fillEllipse(HEAD.x + 30, HEAD.y + 24, 40, 48);
-    // Singlet, side-on: a lit chest panel, a thin shaded back, two straps. No mass
-    // behind the spine, which is what made an earlier vest read as luggage.
-    const vest = [-12, -172, 90, -186, 112, -132, 78, -12, -14, -10, -30, -118];
-    if (line > 0) { g.lineStyle(line, tank.edge); outline(g, vest); }
-    g.fillStyle(tank.face); fan(g, vest);
-    g.fillStyle(tank.shade, 0.9); fan(g, [-30, -118, -2, -128, 2, -10, -14, -10]);
-    g.fillStyle(tank.lit, 0.88); fan(g, [12, -164, 86, -178, 106, -132, 76, -108, 20, -106]);
-    if (line > 0) g.lineStyle(16 + line * 2, tank.edge).lineBetween(-2, -172, 16, -240).lineBetween(74, -186, 72, -246);
-    g.lineStyle(16, tank.face).lineBetween(-2, -172, 16, -240).lineBetween(74, -186, 72, -246);
-    // High fade: hair lives on the crown and a front tuft, so the sides of the egg stay
-    // skin and the mass cannot read as a helmet.
-    this.drawHair(g, ink.face, 0);
-    g.fillStyle(ink.shade, 0.4).fillEllipse(HAIR.x + 14, HAIR.y + 6, 36, 20);
-    g.fillStyle(ink.lit, 0.22).fillEllipse(HAIR.x - 12, HAIR.y - 8, 30, 18);
-    // Sweatband sized to the oval at the hairline so it does not stick out as a visor.
-    const bandDy = 46;
-    const bandW = HEAD.rx * 2 * Math.sqrt(Math.max(0, 1 - (bandDy / HEAD.ry) ** 2)) * 0.96;
-    g.fillStyle(GYM.chalk).fillRoundedRect(HEAD.x - bandW / 2, HEAD.y - bandDy - 2, bandW, 18, 8);
-    g.fillStyle(GYM.tank).fillRect(HEAD.x - bandW / 2 + 4, HEAD.y - bandDy + 5, bandW - 8, 4);
-    g.fillStyle(skin.shade).fillEllipse(HEAD.x - 56, HEAD.y + 6, 30, 36);
-    g.fillStyle(skin.face).fillEllipse(HEAD.x - 54, HEAD.y + 4, 24, 30);
-  }
-
-  /** Crown and tuft only. Grown by `grow` so the silhouette pass can include it. */
-  private drawHair(g: Phaser.GameObjects.Graphics, colour: number, grow: number): void {
-    g.fillStyle(colour);
-    g.fillEllipse(HAIR.x, HAIR.y, (HAIR.rx + grow) * 2, (HAIR.ry + grow) * 2);
-    g.fillEllipse(HEAD.x + 22, HEAD.y - 74, 52 + grow * 2, 34 + grow * 2);
-    g.fillEllipse(HEAD.x - 28, HEAD.y - 62, 42 + grow * 2, 32 + grow * 2);
+    const shape = (x: number, y: number, curves: Parameters<typeof cubicContour>[2], colour: number): void =>
+      paintedContour(g, cubicContour(x, y, curves), colour, GYM.ink, line);
+    // Relaxed far arm and a racerback singlet establish the three-quarter pose.
+    shape(
+      -36,
+      -245,
+      [
+        [-69, -238, -65, -189, -61, -151],
+        [-61, -121, -51, -91, -47, -62],
+        [-59, -45, -46, -28, -31, -39],
+        [-20, -49, -24, -65, -29, -75],
+        [-33, -114, -33, -148, -28, -185],
+        [-19, -209, -16, -235, -36, -245],
+      ],
+      skin.shade,
+    );
+    shape(
+      -20,
+      -247,
+      [
+        [0, -263, 22, -278, 23, -316],
+        [43, -331, 75, -325, 78, -300],
+        [76, -277, 89, -260, 105, -246],
+        [122, -205, 98, -75, 77, -15],
+        [50, -2, -12, -3, -32, -18],
+        [-46, -105, -55, -192, -20, -247],
+      ],
+      skin.face,
+    );
+    // One curved side plane, with no disconnected highlight spots.
+    g.fillStyle(skin.shade);
+    fillContour(
+      g,
+      cubicContour(24, -309, [
+        [34, -285, 53, -270, 77, -277],
+        [75, -258, 50, -242, 30, -247],
+        [16, -264, 20, -288, 24, -309],
+      ]),
+    );
+    shape(
+      -20,
+      -246,
+      [
+        [-9, -253, 1, -258, 9, -258],
+        [6, -219, 31, -198, 53, -212],
+        [65, -226, 68, -250, 66, -259],
+        [80, -264, 92, -257, 99, -248],
+        [85, -205, 84, -183, 103, -158],
+        [103, -120, 85, -48, 77, -15],
+        [46, -3, -5, -4, -32, -18],
+        [-37, -76, -52, -188, -20, -246],
+      ],
+      GYM.tank,
+    );
+    g.fillStyle(0x237a72);
+    fillContour(
+      g,
+      cubicContour(-20, -239, [
+        [-39, -162, -20, -73, -12, -11],
+        [-23, -12, -29, -15, -32, -18],
+        [-37, -87, -49, -182, -20, -239],
+      ]),
+    );
+    g.lineStyle(4, 0x89c7b4).beginPath().moveTo(-9, -242).lineTo(-15, -203).strokePath();
+    g.lineStyle(3, 0x154f4b, 0.5).lineBetween(-5, -42, 52, -34);
+    // A little lightning badge gives the kit a character of its own.
+    g.fillStyle(GYM.chalk);
+    fillContour(g, [7, -163, 30, -168, 21, -147, 36, -149, 10, -116, 16, -142, 3, -138]);
+    // The far cheek stays rounded: a three-quarter nose belongs inside the face,
+    // not in the outer silhouette as it would in a side profile.
+    shape(
+      4,
+      -407,
+      [
+        [8, -445, 41, -458, 79, -445],
+        [105, -439, 117, -420, 116, -394],
+        [115, -377, 120, -366, 121, -351],
+        [122, -339, 122, -331, 119, -325],
+        [116, -305, 104, -290, 83, -287],
+        [46, -282, 27, -301, 19, -326],
+        [-1, -327, -12, -344, -9, -360],
+        [-8, -370, -1, -375, 8, -371],
+        [1, -382, 1, -396, 4, -407],
+      ],
+      skin.face,
+    );
+    g.fillStyle(skin.shade);
+    fillContour(
+      g,
+      cubicContour(22, -324, [
+        [34, -308, 61, -301, 86, -304],
+        [102, -304, 112, -315, 119, -325],
+        [118, -303, 101, -287, 82, -287],
+        [50, -284, 30, -299, 22, -324],
+      ]),
+    );
+    g.lineStyle(3, 0x9c5c40, 0.7).beginPath().arc(7, -353, 10, -1.7, 1.3).strokePath();
+    // Sculpted swept quiff, not three intersecting circles.
+    shape(
+      2,
+      -370,
+      [
+        [-12, -395, -8, -420, 8, -434],
+        [18, -451, 39, -458, 62, -453],
+        [91, -467, 116, -451, 123, -437],
+        [127, -428, 121, -414, 110, -409],
+        [79, -402, 48, -412, 28, -416],
+        [21, -397, 20, -380, 15, -372],
+        [10, -379, 7, -377, 2, -370],
+      ],
+      GYM.ink,
+    );
+    g.lineStyle(5, 0x5b4c52, 0.85);
+    traceContour(g, cubicContour(15, -430, [[37, -447, 69, -431, 96, -439]]));
+    g.strokePath();
+    // Sweatband follows the forehead rather than projecting beyond its silhouette.
+    shape(
+      23,
+      -412,
+      [
+        [50, -406, 80, -405, 115, -412],
+        [118, -407, 118, -398, 117, -393],
+        [78, -386, 49, -389, 22, -396],
+        [22, -402, 22, -407, 23, -412],
+      ],
+      GYM.chalk,
+    );
+    g.lineStyle(4, GYM.tank);
+    traceContour(g, cubicContour(26, -402, [[51, -396, 91, -396, 113, -401]]));
+    g.strokePath();
   }
 
   public layout(viewport: Viewport): void {
     const { safe } = viewport;
     // A standing figure needs height more than width, so the floor sits low in the frame
     // and the frame is fitted to the figure's height first.
-    this.scale = Math.min(safe.width / 900, safe.height / 1450);
-    this.baseX = safe.centerX - 30 * this.scale;
-    this.baseY = safe.top + safe.height * 0.68;
+    const uiScale = Math.min(safe.width / 720, safe.height / 1150);
+    const top = safe.top + 320 * uiScale;
+    const bottom = safe.bottom - 410 * uiScale;
+    this.scale = Math.min(safe.width / 760, (bottom - top) / 795);
+    this.baseX = safe.centerX - 4 * this.scale;
+    this.baseY = top + (bottom - top + 760 * this.scale) / 2;
     this.stage.setPosition(this.baseX, this.baseY).setScale(this.scale);
     this.backdrop.layout(viewport);
     const r = this.room.clear();
@@ -305,7 +394,13 @@ export class BicepCurlVignette implements Vignette {
     r.lineStyle(4, GYM.ink, 0.1).lineBetween(-3000, -400, 3000, -400);
     r.fillStyle(GYM.mat).fillRect(-3000, 0, 6000, 3000);
     const mat = faces(GYM.mat);
-    if (STYLE.current.outline > 0) r.fillStyle(shade(GYM.mat, -0.6)).fillRect(-3000, -STYLE.current.outline * 0.7, 6000, STYLE.current.outline * 0.7);
+    if (STYLE.current.outline > 0)
+      r.fillStyle(shade(GYM.mat, -0.6)).fillRect(
+        -3000,
+        -STYLE.current.outline * 0.7,
+        6000,
+        STYLE.current.outline * 0.7,
+      );
     r.fillStyle(mat.lit).fillRect(-3000, 0, 6000, 9);
     r.fillStyle(mat.rim, 0.5).fillRect(-3000, 0, 6000, 3);
     r.lineStyle(3, GYM.matSeam, 0.7);
@@ -319,7 +414,8 @@ export class BicepCurlVignette implements Vignette {
     const frame = faces(GYM.frame);
     const drop = castShadow(7);
     g.fillStyle(GYM.ink, drop.alpha).fillRoundedRect(BOARD.x + drop.dx, BOARD.y + drop.dy, BOARD.w, BOARD.h, 10);
-    if (line > 0) g.lineStyle(line, frame.edge).strokeRoundedRect(BOARD.x - 12, BOARD.y - 12, BOARD.w + 24, BOARD.h + 24, 12);
+    if (line > 0)
+      g.lineStyle(line, frame.edge).strokeRoundedRect(BOARD.x - 12, BOARD.y - 12, BOARD.w + 24, BOARD.h + 24, 12);
     g.fillStyle(frame.face).fillRoundedRect(BOARD.x - 12, BOARD.y - 12, BOARD.w + 24, BOARD.h + 24, 12);
     g.fillStyle(frame.lit, 0.8).fillRoundedRect(BOARD.x - 8, BOARD.y - 8, BOARD.w + 16, 6, 3);
     g.fillStyle(GYM.board).fillRect(BOARD.x, BOARD.y, BOARD.w, BOARD.h);
@@ -328,7 +424,10 @@ export class BicepCurlVignette implements Vignette {
     g.lineStyle(3, GYM.chalk, 0.5).lineBetween(BOARD.x + 18, BOARD.y + 42, BOARD.x + BOARD.w - 18, BOARD.y + 42);
     g.lineStyle(4, GYM.chalk, 0.85);
     // A short heading stroke, and a rest for the chalk in the frame's channel.
-    g.lineBetween(BOARD.x + 18, BOARD.y + 24, BOARD.x + 74, BOARD.y + 24);
+    g.lineBetween(BOARD.x + 22, BOARD.y + 24, BOARD.x + 70, BOARD.y + 24);
+    g.lineStyle(8, GYM.chalk)
+      .lineBetween(BOARD.x + 25, BOARD.y + 15, BOARD.x + 25, BOARD.y + 33)
+      .lineBetween(BOARD.x + 67, BOARD.y + 15, BOARD.x + 67, BOARD.y + 33);
     g.fillStyle(GYM.chalk).fillRoundedRect(BOARD.x + BOARD.w - 62, BOARD.y + BOARD.h + 2, 40, 8, 4);
   }
 
@@ -357,7 +456,12 @@ export class BicepCurlVignette implements Vignette {
     // The demonstration curls the weight in full without counting, so the player starts
     // on the empty board they watched and nothing has to be wiped in the instant before
     // their turn.
-    if (phase === 'respond') { this.repAt = -100; this.reps = 0; this.setPump(0, now); this.respondAt = now; }
+    if (phase === 'respond') {
+      this.repAt = -100;
+      this.reps = 0;
+      this.setPump(0, now);
+      this.respondAt = now;
+    }
   }
 
   private setPump(level: number, now: number): void {
@@ -408,8 +512,10 @@ export class BicepCurlVignette implements Vignette {
     }
     // A wasted tap gets the weight halfway before the arm gives and the plates clank; a
     // missed target leaves the arm hanging and trembling under the load. Neither counts.
-    if (result.kind === 'extra') { this.repPeak = CURL_MOTION.halfRep; this.clankAt = now; }
-    else this.judderAt = now;
+    if (result.kind === 'extra') {
+      this.repPeak = CURL_MOTION.halfRep;
+      this.clankAt = now;
+    } else this.judderAt = now;
     this.strain = Math.min(1, this.strain + 0.22);
   }
 
@@ -417,15 +523,21 @@ export class BicepCurlVignette implements Vignette {
     this.successful = successful;
     this.finishAt = contactSec;
   }
-  public pause(): void { this.phase = 'paused'; this.finishAt = null; this.repAt = -100; }
+  public pause(): void {
+    this.phase = 'paused';
+    this.finishAt = null;
+    this.repAt = -100;
+  }
 
-  private beat(): number { return this.plan ? 60 / this.plan.bpm : REFERENCE_BEAT; }
+  private beat(): number {
+    return this.plan ? 60 / this.plan.bpm : REFERENCE_BEAT;
+  }
 
   /** Only known beats are anticipated: the demonstration's, and the coda's squeeze. */
   private upcoming(now: number): number | null {
     if (this.finishAt !== null && !this.finished) return this.finishAt;
     if (this.phase !== 'prepare' && this.phase !== 'demonstrate') return null;
-    return this.plan?.cues.find(cue => cue.kind === 'action' && cue.time > now)?.time ?? null;
+    return this.plan?.cues.find((cue) => cue.kind === 'action' && cue.time > now)?.time ?? null;
   }
 
   /** Flexion of the working arm now: 0 hanging, 1 squeezed at the top. */
@@ -455,7 +567,8 @@ export class BicepCurlVignette implements Vignette {
   }
 
   public update(now: number): void {
-    if (this.phase === 'paused') now = this.lastNow; else this.lastNow = now;
+    if (this.phase === 'paused') now = this.lastNow;
+    else this.lastNow = now;
     this.openStage(now);
     // Rendering may observe a beat before the controller's next pump. The squeeze is
     // sampled from the same absolute cue, so a throttled frame cannot shift it.
@@ -470,8 +583,10 @@ export class BicepCurlVignette implements Vignette {
       // The unscored last rep of the set. It never changes the result: a strong set holds
       // the squeeze at the top, a rough one gets the weight there and loses it.
       this.rep(this.finishAt);
-      if (this.successful) { this.setPump(1, this.finishAt); this.sweat(); }
-      else {
+      if (this.successful) {
+        this.setPump(1, this.finishAt);
+        this.sweat();
+      } else {
         this.strain = Math.max(this.strain, 0.6);
         const hand = this.handAt(1);
         const r = this.trunk.rotation;
@@ -481,14 +596,18 @@ export class BicepCurlVignette implements Vignette {
     }
     const age = now - this.repAt;
     const flex = this.flexion(now);
-    const pop = age >= 0 && age < 0.14 ? Math.sin(age / 0.14 * Math.PI) * STYLE.current.exaggeration : 0;
+    const pop = age >= 0 && age < 0.14 ? Math.sin((age / 0.14) * Math.PI) * STYLE.current.exaggeration : 0;
     const idle = this.reducedMotion ? 0 : Math.sin(now * 1.7) * 0.004;
     // The squeeze compresses the whole trunk and rocks it back; strain leans it back for
     // good. Both hinge at the hips, so the feet stay planted.
     this.trunk.setScale(1 + pop * 0.018, 1 - pop * 0.022 + idle);
     this.trunk.setRotation(-this.strain * 0.1 - (this.reducedMotion ? 0 : pop * 0.025));
-    const landing = this.finished && !this.successful && this.finishAt !== null ? now - this.finishAt - DROP_LANDING_SEC : -1;
-    const thump = this.reducedMotion || landing < 0 || landing > 0.2 ? 0 : Math.sin(landing * 110) * Math.exp(-landing * 20) * 3 * STYLE.current.exaggeration;
+    const landing =
+      this.finished && !this.successful && this.finishAt !== null ? now - this.finishAt - DROP_LANDING_SEC : -1;
+    const thump =
+      this.reducedMotion || landing < 0 || landing > 0.2
+        ? 0
+        : Math.sin(landing * 110) * Math.exp(-landing * 20) * 3 * STYLE.current.exaggeration;
     this.stage.setPosition(this.baseX + thump * this.scale * 0.4, this.baseY + thump * this.scale);
     this.drawArm(now, flex, pop);
     this.drawFace(now, flex);
@@ -504,59 +623,90 @@ export class BicepCurlVignette implements Vignette {
 
   private drawArm(now: number, flex: number, pop: number): void {
     const g = this.arm.clear();
-    const line = STYLE.current.outline * 1.4;
-    const skin = faces(mix(GYM.skin, GYM.flush, this.pump * 0.22));
-    const ink = faces(GYM.ink);
-    const bulge = bicepBulge(flex);
-    // Trembling: under a missed load, or shaking the arm out after dropping the weight.
+    const line = STYLE.current.outline;
+    const skin = faces(mix(GYM.skin, GYM.flush, this.pump * 0.12));
     const shake = now - this.judderAt;
-    const tremble = this.reducedMotion || shake < 0 || shake > 0.3 ? 0 : Math.sin(shake * 90) * Math.exp(-shake * 9) * 0.05;
+    const tremble =
+      this.reducedMotion || shake < 0 || shake > 0.3 ? 0 : Math.sin(shake * 90) * Math.exp(-shake * 9) * 0.05;
     const hand = this.handAt(flex + tremble);
     const angle = forearmAngle(flex + tremble);
-    // The bicep sits on the front of the upper arm and swells with the flexion; the pump
-    // grows its resting size as the set goes on.
-    const grow = 1 + this.pump * 0.2;
-    const bx = 78 + 10 * bulge;
-    const by = -152 + 6 * bulge;
-    const rx = (26 + 16 * bulge) * grow + pop * 2;
-    const ry = (46 + 8 * bulge) * grow;
-    const deltoid = DELTOID_R + this.pump * 4;
-    // Deltoid, upper arm, bicep, elbow and forearm as one silhouette: the edge pass first.
-    for (const pass of line > 0 ? [line, 0] : [0]) {
-      const tone = pass > 0 ? ink.edge : skin.face;
-      g.fillStyle(tone).fillCircle(SHOULDER.x, SHOULDER.y, deltoid + pass);
-      this.taper(g, SHOULDER.x, SHOULDER.y, UPPER_ARM.shoulder, ELBOW.x, ELBOW.y, UPPER_ARM.elbow, tone, pass);
-      g.fillStyle(tone).fillEllipse(bx, by, (rx + pass) * 2, (ry + pass) * 2);
-      g.fillStyle(tone).fillCircle(ELBOW.x, ELBOW.y, 30 + pass);
-      this.taper(g, ELBOW.x, ELBOW.y, FOREARM.elbow, hand.x, hand.y, FOREARM.wrist, tone, pass);
+    const swell = bicepBulge(flex) * (16 + this.pump * 9) + pop;
+    // The muscle swells inside one continuous shoulder-to-elbow contour.
+    const upper = cubicContour(25, -262, [
+      [51, -286, 83, -277, 99, -249],
+      [106, -226, 101, -205, 105 + swell, -177],
+      [115 + swell, -145, 108, -117, 96, -91],
+      [98, -59, 87, -40, 68, -40],
+      [47, -40, 36, -56, 39, -83],
+      [40, -138, 18, -199, 20, -229],
+      [17, -242, 18, -254, 25, -262],
+    ]);
+    paintedContour(g, upper, skin.face, GYM.ink, line);
+    g.fillStyle(skin.shade);
+    fillContour(
+      g,
+      cubicContour(39, -237, [
+        [26, -190, 59, -133, 53, -84],
+        [48, -64, 54, -48, 68, -44],
+        [48, -42, 37, -57, 39, -83],
+        [40, -138, 18, -199, 20, -229],
+        [22, -248, 30, -256, 39, -237],
+      ]),
+    );
+    // Short contour accents describe tension without drawing circles on the skin.
+    g.lineStyle(3, 0x995b40, 0.55);
+    traceContour(g, cubicContour(55, -217, [[68, -232, 91, -224, 96, -206]]));
+    g.strokePath();
+    if (flex > 0.25) {
+      traceContour(g, cubicContour(72, -112, [[91, -118, 101 + swell, -141, 96 + swell, -165]]));
+      g.strokePath();
     }
-    // Planes under the one light, drawn inside the silhouette.
-    g.fillStyle(skin.lit, 0.7).fillCircle(SHOULDER.x - 14, SHOULDER.y - 16, 24);
-    g.fillStyle(skin.lit, 0.75).fillEllipse(bx - rx * 0.28, by - ry * 0.3, rx * 0.9, ry * 0.8);
-    g.fillStyle(skin.shade, 0.45).fillEllipse(bx + rx * 0.35, by + ry * 0.4, rx * 0.7, ry * 0.5);
-    g.lineStyle(2.5, ink.face, 0.35 + bulge * 0.3).beginPath().arc(bx, by, ry * 0.92, Math.PI * 1.55, Math.PI * 1.95, false).strokePath();
-    g.fillStyle(skin.shade, 0.35).fillCircle(ELBOW.x + 12, ELBOW.y + 8, 12);
-    // Wristband echoes the sweatband: a wrap perpendicular to the forearm, not a disc.
-    const wx = ELBOW.x + Math.cos(angle) * (CURL_MOTION.forearm - 38);
-    const wy = ELBOW.y + Math.sin(angle) * (CURL_MOTION.forearm - 38);
-    const nx = -Math.sin(angle) * 20, ny = Math.cos(angle) * 20;
-    g.lineStyle(13, GYM.chalk).lineBetween(wx - nx, wy - ny, wx + nx, wy + ny);
-    g.lineStyle(4, GYM.tank).lineBetween(wx - nx, wy - ny, wx + nx, wy + ny);
-    // The dumbbell held level, with the plates either side of the fist. In the rough
-    // coda the hand is open and the weight is on the floor, drawn by the loose layer.
-    const held = !(this.finished && !this.successful);
-    if (held) this.drawDumbbell(g, hand.x, hand.y, now);
-    const thumbA = angle - 1.15;
-    const tx = hand.x + Math.cos(thumbA) * 22;
-    const ty = hand.y + Math.sin(thumbA) * 22;
-    for (const pass of line > 0 ? [line, 0] : [0]) {
-      const tone = pass > 0 ? ink.edge : skin.face;
-      g.fillStyle(tone).fillCircle(hand.x, hand.y, GRIP_R + pass);
-      g.fillStyle(tone).fillCircle(tx, ty, 13 + pass);
-    }
-    g.fillStyle(skin.lit, 0.6).fillCircle(hand.x - 8, hand.y - 8, 11);
-    g.lineStyle(3, ink.face, 0.4);
-    for (let i = -1; i <= 1; i++) g.lineBetween(hand.x - 12, hand.y + i * 9, hand.x + 12, hand.y + i * 9);
+    const local = cubicContour(0, -26, [
+      [42, -34, 111, -26, 176, -20],
+      [194, -14, 194, 15, 176, 21],
+      [122, 28, 68, 34, 12, 29],
+      [-13, 27, -24, 5, -16, -13],
+      [-12, -22, -6, -26, 0, -26],
+    ]);
+    const transform = (pts: readonly number[]): number[] => {
+      const out: number[] = [];
+      for (let i = 0; i < pts.length; i += 2)
+        out.push(
+          ELBOW.x + pts[i]! * Math.cos(angle) - pts[i + 1]! * Math.sin(angle),
+          ELBOW.y + pts[i]! * Math.sin(angle) + pts[i + 1]! * Math.cos(angle),
+        );
+      return out;
+    };
+    paintedContour(g, transform(local), skin.face, GYM.ink, line);
+    g.fillStyle(skin.shade);
+    fillContour(
+      g,
+      transform(
+        cubicContour(6, 19, [
+          [60, 24, 124, 19, 176, 13],
+          [190, 16, 184, 21, 176, 21],
+          [122, 28, 68, 34, 12, 29],
+          [-2, 28, -12, 21, 6, 19],
+        ]),
+      ),
+    );
+    // Keep the elbow joined: a short crease, not a ring around the joint.
+    g.fillStyle(skin.face).fillCircle(ELBOW.x, ELBOW.y, 22);
+    g.lineStyle(3, 0x995b40, 0.5);
+    const crease = transform(cubicContour(7, -14, [[0, -8, -1, 2, 5, 8]]));
+    traceContour(g, crease);
+    g.strokePath();
+    const band = transform([131, -25, 151, -23, 151, 25, 131, 27]);
+    paintedContour(g, band, GYM.chalk, GYM.ink, 2);
+    g.lineStyle(4, GYM.tank);
+    const stripe = transform([141, -24, 141, 26]);
+    g.lineBetween(stripe[0]!, stripe[1]!, stripe[2]!, stripe[3]!);
+    if (!(this.finished && !this.successful)) this.drawDumbbell(g, hand.x, hand.y, now);
+    g.fillStyle(skin.face).fillRoundedRect(hand.x - 24, hand.y - 26, 48, 52, 15);
+    g.lineStyle(line, GYM.ink).strokeRoundedRect(hand.x - 24, hand.y - 26, 48, 52, 15);
+    g.fillStyle(skin.face).fillEllipse(hand.x - 20, hand.y - 13, 25, 26);
+    g.lineStyle(3, 0x995b40, 0.8);
+    for (let i = 0; i < 3; i++) g.lineBetween(hand.x - 3, hand.y - 10 + i * 11, hand.x + 17, hand.y - 10 + i * 11);
   }
 
   private drawDumbbell(g: Phaser.GameObjects.Graphics, x: number, y: number, now: number): void {
@@ -565,16 +715,30 @@ export class BicepCurlVignette implements Vignette {
     const chrome = faces(GYM.chrome);
     // Plates clank against each other when a half rep is let go.
     const clank = now - this.clankAt;
-    const rattle = this.reducedMotion || clank < 0 || clank > 0.22 ? 0 : Math.sin(clank * 96) * Math.exp(-clank * 14) * 4;
+    const rattle =
+      this.reducedMotion || clank < 0 || clank > 0.22 ? 0 : Math.sin(clank * 96) * Math.exp(-clank * 14) * 4;
     const drop = castShadow(6);
-    g.fillStyle(GYM.ink, drop.alpha * 0.6).fillRoundedRect(x - PLATE.reach - PLATE.w / 2 + drop.dx, y - PLATE.h / 2 + drop.dy, PLATE.reach * 2 + PLATE.w, PLATE.h, 10);
+    g.fillStyle(GYM.ink, drop.alpha * 0.6).fillRoundedRect(
+      x - PLATE.reach - PLATE.w / 2 + drop.dx,
+      y - PLATE.h / 2 + drop.dy,
+      PLATE.reach * 2 + PLATE.w,
+      PLATE.h,
+      10,
+    );
     if (line > 0) g.lineStyle(line, chrome.edge).strokeRoundedRect(x - PLATE.reach, y - 12, PLATE.reach * 2, 24, 8);
     g.fillStyle(chrome.face).fillRoundedRect(x - PLATE.reach, y - 12, PLATE.reach * 2, 24, 8);
     g.fillStyle(chrome.rim, 0.9).fillRoundedRect(x - PLATE.reach + 6, y - 9, PLATE.reach * 2 - 12, 6, 3);
     for (const side of [-1, 1]) {
       const px = x + side * PLATE.reach + side * rattle;
-      if (line > 0) g.lineStyle(line, iron.edge).strokeRoundedRect(px - PLATE.w / 2, y - PLATE.h / 2, PLATE.w, PLATE.h, 9);
-      g.fillStyle(side < 0 ? iron.shade : iron.face).fillRoundedRect(px - PLATE.w / 2, y - PLATE.h / 2, PLATE.w, PLATE.h, 9);
+      if (line > 0)
+        g.lineStyle(line, iron.edge).strokeRoundedRect(px - PLATE.w / 2, y - PLATE.h / 2, PLATE.w, PLATE.h, 9);
+      g.fillStyle(side < 0 ? iron.shade : iron.face).fillRoundedRect(
+        px - PLATE.w / 2,
+        y - PLATE.h / 2,
+        PLATE.w,
+        PLATE.h,
+        9,
+      );
       g.fillStyle(iron.lit, 0.8).fillRoundedRect(px - PLATE.w / 2 + 5, y - PLATE.h / 2 + 5, 8, PLATE.h - 10, 4);
       g.fillStyle(GYM.chalk, 0.5).fillRect(px - 6, y - 18, 12, 4);
     }
@@ -582,44 +746,78 @@ export class BicepCurlVignette implements Vignette {
 
   private drawFace(now: number, flex: number): void {
     const g = this.face.clear();
-    const ink = GYM.ink;
-    const effort = clamp01((flex - 0.55) / 0.35);
-    const relieved = this.finished && this.successful;
-    const beaten = this.finished && !this.successful;
-    // Cheeks flush with the pump, the brow drops with the effort. Features sit on the
-    // egg of a head, large enough to read the squeeze from the back of a bus.
-    g.fillStyle(GYM.flush, this.pump * 0.28).fillEllipse(HEAD.x + 38, HEAD.y + 28, 40, 34);
-    const eyeX = HEAD.x + 36;
-    const eyeY = HEAD.y + 6;
-    g.lineStyle(6, ink, 1).lineBetween(eyeX - 16, eyeY - 24 + effort * 8, eyeX + 16, eyeY - 26 + effort * 12);
-    if (relieved || effort > 0.6) {
-      g.lineStyle(6, ink, 1).lineBetween(eyeX - 12, eyeY + 2, eyeX + 12, eyeY - (relieved ? -3 : 1));
-    } else {
-      g.fillStyle(GYM.chalk).fillEllipse(eyeX, eyeY, 30, 26);
-      g.fillStyle(ink).fillCircle(eyeX + 5, eyeY - (beaten ? -3 : 1), 8);
-      g.fillStyle(GYM.chalk, 0.7).fillCircle(eyeX + 2, eyeY - 6, 3);
+    const effort = clamp01((flex - 0.45) / 0.45);
+    const happy = this.finished && this.successful;
+    const tired = this.finished && !this.successful;
+    // Two eyes, an asymmetric brow and a friendly moustache read at phone scale.
+    for (const [x, y, size] of [
+      [61, -365, 1],
+      [103, -363, 0.8],
+    ] as const) {
+      g.lineStyle(6, GYM.ink);
+      traceContour(
+        g,
+        cubicContour(x - 12, y - 18, [
+          [x - 4, y - 25 + effort * 9, x + 6, y - 23 + effort * 9, x + 13, y - 19 + effort * 10],
+        ]),
+      );
+      g.strokePath();
+      if (happy || (effort > 0.65 && !tired)) {
+        traceContour(g, cubicContour(x - 9, y + 2, [[x - 3, y - 6, x + 5, y - 6, x + 10, y + 1]]));
+        g.strokePath();
+      } else {
+        g.fillStyle(GYM.chalk).fillEllipse(x, y, 25 * size, 28 * size);
+        g.fillStyle(GYM.ink).fillEllipse(x + 4, y + (tired ? 4 : 0), 11 * size, 16 * size);
+        g.fillStyle(GYM.chalk).fillCircle(x + 2, y - 4, 2.5);
+      }
     }
-    // A nose so the three-quarter head has a plane, not a ball with a sticker on it.
-    g.lineStyle(4, ink, 0.85).beginPath().moveTo(HEAD.x + 56, HEAD.y + 8).lineTo(HEAD.x + 68, HEAD.y + 22).lineTo(HEAD.x + 54, HEAD.y + 24).strokePath();
-    const mouthX = HEAD.x + 48;
-    const mouthY = HEAD.y + 48;
-    if (beaten) {
-      g.fillStyle(ink).fillEllipse(mouthX, mouthY + 4, 16, 20);
-    } else if (relieved) {
-      g.lineStyle(6, ink, 1).beginPath().arc(mouthX - 4, mouthY - 4, 18, Math.PI * 0.15, Math.PI * 0.8, false).strokePath();
-    } else if (effort > 0) {
-      // Teeth gritted on the squeeze.
-      const w = 16 + effort * 18;
-      g.lineStyle(4, ink, 1).strokeRoundedRect(mouthX - w / 2, mouthY - 7, w, 15, 6);
-      g.fillStyle(GYM.chalk).fillRoundedRect(mouthX - w / 2, mouthY - 7, w, 15, 6);
-      g.lineStyle(2, ink, 0.7).lineBetween(mouthX - w / 2 + 3, mouthY + 1, mouthX + w / 2 - 3, mouthY + 1);
+    // A short bridge and rounded tip sit between the eyes and over the moustache.
+    // Keep the left bridge open so the nose reads as a turning plane, not a sticker.
+    g.lineStyle(3.5, GYM.ink, 0.75);
+    traceContour(
+      g,
+      cubicContour(88, -360, [
+        [89, -354, 94, -352, 99, -349],
+        [108, -342, 96, -336, 88, -341],
+        [85, -343, 83, -343, 82, -341],
+      ]),
+    );
+    g.strokePath();
+    g.fillStyle(GYM.flush, 0.18 + this.pump * 0.1).fillEllipse(48, -340, 27, 15);
+    // A little curled moustache gives the coach a warm, old-school gym personality.
+    paintedContour(
+      g,
+      cubicContour(86, -334, [
+        [98, -340, 105, -329, 116, -333],
+        [115, -319, 99, -320, 90, -326],
+        [77, -314, 60, -321, 59, -333],
+        [69, -326, 75, -338, 86, -334],
+      ]),
+      GYM.ink,
+      GYM.ink,
+      1,
+    );
+    if (tired) {
+      g.fillStyle(GYM.ink).fillEllipse(95, -308, 17, 15);
+    } else if (effort > 0.2 || happy) {
+      paintedContour(
+        g,
+        cubicContour(79, -316, [
+          [91, -312, 102, -313, 109, -318],
+          [108, -300, 85, -297, 79, -316],
+        ]),
+        GYM.chalk,
+        GYM.ink,
+        3,
+      );
     } else {
-      g.lineStyle(5, ink, 1).lineBetween(mouthX - 10, mouthY, mouthX + 10, mouthY - 1);
+      g.lineStyle(4, GYM.ink);
+      traceContour(g, cubicContour(82, -311, [[90, -304, 101, -308, 106, -312]]));
+      g.strokePath();
     }
-    // Sweat on the brow once the set has started to tell.
     if (this.pump > 0.4 && !this.reducedMotion) {
       const bob = (now * 1.3) % 1;
-      g.fillStyle(GYM.sweat, 0.9).fillEllipse(HEAD.x + 72, HEAD.y - 20 + bob * 34, 8, 12);
+      g.fillStyle(GYM.sweat, 0.9).fillEllipse(132, -374 + bob * 30, 8, 13);
     }
   }
 
@@ -644,7 +842,10 @@ export class BicepCurlVignette implements Vignette {
       // A ring drawn round the count once the weight is held at the top.
       const cx = BOARD.x + BOARD.w / 2;
       const cy = BOARD.y + BOARD.h / 2 + 14;
-      g.lineStyle(5, GYM.chalk, 0.9).beginPath().arc(cx, cy, 84, -Math.PI * 0.5, -Math.PI * 0.5 + p * Math.PI * 2, false).strokePath();
+      g.lineStyle(5, GYM.chalk, 0.9)
+        .beginPath()
+        .arc(cx, cy, 84, -Math.PI * 0.5, -Math.PI * 0.5 + p * Math.PI * 2, false)
+        .strokePath();
     } else {
       // The chalk dragged across the count: the set is not what was written.
       g.lineStyle(9, GYM.chalk, 0.35).lineBetween(left - 6, top + 44, left - 6 + p * 170, top + 10 + p * 8);
@@ -667,6 +868,12 @@ export class BicepCurlVignette implements Vignette {
     if (landed > 0) g.fillStyle(GYM.ink, 0.35).fillEllipse(x, -1, 150, 10);
   }
 
-  public translate(offset: number): void { this.stage.x += this.reducedMotion ? 0 : offset; }
-  public destroy(): void { this.bursts.destroy(); this.stage.destroy(true); this.backdrop.destroy(); }
+  public translate(offset: number): void {
+    this.stage.x += this.reducedMotion ? 0 : offset;
+  }
+  public destroy(): void {
+    this.bursts.destroy();
+    this.stage.destroy(true);
+    this.backdrop.destroy();
+  }
 }

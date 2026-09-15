@@ -12,15 +12,15 @@ export const BANANA_MOTION = {
   tumbleBeats: 1.02,
   juiceBeats: 0.52,
   /** How far the knife lifts between chops, in board units. */
-  lift: 104,
+  lift: 210,
   /** Stem attachment, the left of the fruit. */
-  stemX: -250,
+  stemX: -280,
   /** Horizontal span from stem to tip. */
-  length: 332,
+  length: 370,
   /** Thickness at the fattest point. */
-  thickness: 82,
+  thickness: 94,
   /** How high the ends lift off the board; the belly sits on it. */
-  arch: 46,
+  arch: 132,
   /** A flawless response leaves the stem standing; the unscored coda takes it. */
   cutAtFullResponse: 0.86,
 } as const;
@@ -92,13 +92,13 @@ export function bananaAt(t: number): BananaSample {
   const u = clamp01(t);
   const { stemX, length, thickness, arch } = BANANA_MOTION;
   const x = stemX + u * length;
-  const taper = 0.4 + 0.6 * Math.sin(Math.PI * u);
+  const taper = 0.22 + 0.78 * Math.sin(Math.PI * u);
   const half = thickness * 0.5 * taper;
   const lift = arch * (1 - Math.sin(Math.PI * u));
   const y = -half - lift;
   const dx = length;
   const cos = Math.cos(Math.PI * u);
-  const dy = Math.PI * cos * (arch - thickness * 0.5 * 0.6);
+  const dy = Math.PI * cos * (arch - thickness * 0.5 * 0.78);
   const hyp = Math.hypot(dx, dy) || 1;
   let nx = -dy / hyp;
   let ny = dx / hyp;
