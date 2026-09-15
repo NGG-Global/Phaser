@@ -133,7 +133,7 @@ export class MapScene extends BaseScene {
     // The frontier puck lives here, under the numbers, so it can hop without a baked copy beneath.
     this.pulse = this.add.graphics().setDepth(3);
     this.touch = this.add.graphics().setDepth(5);
-    this.numbers = Array.from({ length: this.shown }, (_, i) => display(this, String(this.first + i), { size: 32, colour: SHELL.cream }).setOrigin(0.5).setDepth(4));
+    this.numbers = Array.from({ length: this.shown }, (_, i) => display(this, String(this.first + i), { size: 32, colour: SHELL.cream, align: 'center' }).setOrigin(0.5).setDepth(4));
     const areas = Math.floor((this.first + this.shown - 2) / PROGRESSION.areaSize) - this.firstBand + 1;
     this.areaTitles = Array.from({ length: areas }, () => display(this, '', { size: 30, colour: SHELL.cream }).setOrigin(0, 0.5).setDepth(2));
     // The pool of light stays put while the ground scrolls under it: a lamp over a table.
@@ -141,7 +141,7 @@ export class MapScene extends BaseScene {
     this.fibre = this.add.tileSprite(0, 0, 1, 1, MaterialKey.paper).setOrigin(0).setScrollFactor(0).setDepth(6).setAlpha(0.32 * STYLE.current.grain);
     this.signBack = this.add.graphics().setScrollFactor(0).setDepth(10);
     this.signSurface = surface(this, MaterialKey.wood, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, SHELL.wood, 0.7).setScrollFactor(0).setDepth(10);
-    this.status = display(this, '', { size: 40, colour: SHELL.cream }).setScrollFactor(0).setDepth(11);
+    this.status = display(this, '', { size: 40, colour: SHELL.cream, align: 'center' }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(11);
     this.pucks = this.add.graphics().setScrollFactor(0).setDepth(10);
     this.dock = this.add.graphics().setScrollFactor(0).setDepth(10);
     this.dockSurface = surface(this, MaterialKey.parchment, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, SHELL.puck, 0.5).setScrollFactor(0).setDepth(10);

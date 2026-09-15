@@ -12,6 +12,7 @@ import { Feedback, FxKey } from '@/ui/feedback';
 import { faces } from '@/ui/light';
 import type { Vignette } from './Vignette';
 import { anticipation, clamp01, easeOut, HAMMER_MOTION, nailHeight, recoil } from './hammerMotion';
+import { isPlayerTurn, TURN_OPEN_SEC } from './motion';
 
 export const WORKSHOP = {
   paper: 0xeee8d8, ink: 0x243e35, muted: 0x788074, sun: 0xdfc37f,
@@ -173,7 +174,10 @@ export class HammerNailVignette implements Vignette {
     // There is no bar between the demonstration and the response in which to reset it.
     this.strike(time, 0.8);
   }
-  public onPlayerHit(now: number): void { this.strike(now, 1); }
+  public onPlayerHit(now: number): void {
+    if (!isPlayerTurn(this.phase)) return;
+    this.strike(now, 1);
+  }
   public onAccuracy(result: Judgement, now: number): void {
     if (result.kind === 'hit') this.setDepth(this.depthTo + 0.75 / (this.plan?.targets.length ?? 4), now);
     else if (result.kind === 'extra') this.strength = 0.4;
@@ -244,7 +248,7 @@ export class HammerNailVignette implements Vignette {
     this.drawDust(age);
     // The spotlight opens toward the player's side the instant their turn starts. It is
     // the handover now that no bar separates the demonstration from the response.
-    const transfer = easeOut((now - this.respondAt) / 0.7);
+    const transfer = easeOut((now - this.respondAt) / TURN_OPEN_SEC);
     const offered = this.phase === 'respond' || this.phase === 'result';
     this.disc.setPosition(270 + (offered ? transfer * 40 : 0), -285 + (offered ? transfer * 28 : 0));
     this.disc.setScale(offered ? 1 + transfer * 0.09 : 1).setAlpha(offered ? 0.5 + transfer * 0.22 : 0.5);
