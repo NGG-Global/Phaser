@@ -1,0 +1,244 @@
+import { levelSpec, starsFor } from './levels';
+import type { Progress } from './progress';
+
+/**
+ * Stamina for challenge attempts. Separate from rhythm scoring: stars still come only
+ * from accuracy, and a heart is never a point. Persistence follows `progress.ts` —
+ * versioned, every field validated on read, storage optional.
+ */
+export const HEALTH = {
+  max: 5,
+  /** One heart returns this many milliseconds after the current refill started. */
+  regenMs: 20 * 60 * 1000,
+  /** Levels up to this one never cost a heart. */
+  protectedThrough: 5,
+} as const;
+
+export interface Health {
+  readonly hearts: number;
+  /**
+   * Epoch ms when the current regen interval started. Null at full health. Spending
+   * another heart does not rewrite this; the display countdown is derived from it.
+   */
+  readonly refillStartedAt: number | null;
+  /** Attempt currently holding a spent heart, if any. Used so spend/refund are idempotent. */
+  readonly spentAttempt: string | null;
+}
+
+export interface HealthView {
+  readonly hearts: number;
+  readonly maxHearts: number;
+  /** Milliseconds until the next heart, or null when already at max. */
+  readonly nextHeartInMs: number | null;
+}
+
+export interface BeginAttemptResult {
+  readonly ok: boolean;
+  readonly spent: boolean;
+  readonly health: Health;
+}
+
+export interface FinishAttemptResult {
+  readonly refunded: boolean;
+  readonly health: Health;
+}
+
+const KEY = 'tiny-tempo.health.v1';
+/** Written but not required on read, so a future migration has something to branch on. */
+const VERSION = 1;
+const FULL: Health = Object.freeze({ hearts: HEALTH.max, refillStartedAt: null, spentAttempt: null });
+
+function freeze(health: Health): Health {
+  return Object.freeze({
+    hearts: health.hearts,
+    refillStartedAt: health.refillStartedAt,
+    spentAttempt: health.spentAttempt,
+  });
+}
+
+function clampHearts(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return null;
+  return Math.max(0, Math.min(HEALTH.max, value));
+}
+
+/**
+ * Apply elapsed regeneration. Pure: the stored timestamp only advances by whole
+ * intervals, so a UI tick never restarts the refill.
+ */
+export function reconcile(health: Health, now: number): Health {
+  if (health.hearts >= HEALTH.max) {
+    return health.refillStartedAt === null ? health : freeze({ ...health, refillStartedAt: null });
+  }
+  if (!Number.isFinite(now)) return health;
+  const started = health.refillStartedAt;
+  if (started === null || !Number.isFinite(started) || started > now) {
+    return freeze({ ...health, refillStartedAt: now });
+  }
+  const gained = Math.floor((now - started) / HEALTH.regenMs);
+  if (gained <= 0) return health;
+  const hearts = Math.min(HEALTH.max, health.hearts + gained);
+  return freeze({
+    hearts,
+    refillStartedAt: hearts >= HEALTH.max ? null : started + gained * HEALTH.regenMs,
+    spentAttempt: health.spentAttempt,
+  });
+}
+
+export function viewHealth(health: Health, now: number = Date.now()): HealthView {
+  const live = reconcile(health, now);
+  if (live.hearts >= HEALTH.max || live.refillStartedAt === null) {
+    return { hearts: Math.min(HEALTH.max, live.hearts), maxHearts: HEALTH.max, nextHeartInMs: null };
+  }
+  return {
+    hearts: live.hearts,
+    maxHearts: HEALTH.max,
+    nextHeartInMs: Math.max(0, live.refillStartedAt + HEALTH.regenMs - now),
+  };
+}
+
+/** `m:ss` remaining. Ceil so a leftover millisecond still reads as a second on the clock. */
+export function formatCountdown(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+export function healthHud(view: HealthView): { readonly count: string; readonly wait: string | null } {
+  return {
+    count: `${view.hearts}/${view.maxHearts}`,
+    wait: view.nextHeartInMs === null ? null : formatCountdown(view.nextHeartInMs),
+  };
+}
+
+export function isProtectedLevel(level: number): boolean {
+  return Number.isInteger(level) && level >= 1 && level <= HEALTH.protectedThrough;
+}
+
+export function isMastered(progress: Progress, level: number): boolean {
+  const best = progress.best[level];
+  if (best === undefined) return false;
+  return starsFor(best, levelSpec(level)) === 3;
+}
+
+/** A normal challenge attempt: not a free early level and not a 3-star replay. */
+export function attemptCostsHeart(progress: Progress, level: number): boolean {
+  return !isProtectedLevel(level) && !isMastered(progress, level);
+}
+
+export function canBeginAttempt(health: Health, progress: Progress, level: number, now: number = Date.now()): boolean {
+  if (!attemptCostsHeart(progress, level)) return true;
+  return reconcile(health, now).hearts > 0;
+}
+
+export function practiceLevel(progress: Progress): number | null {
+  let highest: number | null = null;
+  for (const key of Object.keys(progress.best)) {
+    const level = Number(key);
+    if (!Number.isInteger(level) || !isMastered(progress, level)) continue;
+    if (highest === null || level > highest) highest = level;
+  }
+  return highest;
+}
+
+/**
+ * Called when actual gameplay begins, not when the scene is entered. Initialization
+ * that fails before this is reached must not call it. Idempotent per `attemptId`.
+ */
+export function beginAttempt(
+  health: Health, progress: Progress, level: number, attemptId: string, now: number = Date.now(),
+): BeginAttemptResult {
+  const live = reconcile(health, now);
+  if (!attemptCostsHeart(progress, level)) return { ok: true, spent: false, health: live };
+  if (live.spentAttempt === attemptId) return { ok: true, spent: true, health: live };
+  if (live.hearts <= 0) return { ok: false, spent: false, health: live };
+  return {
+    ok: true,
+    spent: true,
+    health: freeze({
+      hearts: live.hearts - 1,
+      // Start the clock only when leaving full health; an existing refill keeps its stamp.
+      refillStartedAt: live.refillStartedAt ?? now,
+      spentAttempt: attemptId,
+    }),
+  };
+}
+
+/**
+ * Resolves a finished attempt. Three stars refunds the heart this attempt spent;
+ * 0–2 stars leaves it spent. Duplicate calls with the same id do not refund twice.
+ */
+export function finishAttempt(
+  health: Health, attemptId: string, stars: 0 | 1 | 2 | 3, now: number = Date.now(),
+): FinishAttemptResult {
+  const live = reconcile(health, now);
+  if (live.spentAttempt !== attemptId) return { refunded: false, health: live };
+  if (stars === 3) {
+    const hearts = Math.min(HEALTH.max, live.hearts + 1);
+    return {
+      refunded: true,
+      health: freeze({
+        hearts,
+        refillStartedAt: hearts >= HEALTH.max ? null : (live.refillStartedAt ?? now),
+        spentAttempt: null,
+      }),
+    };
+  }
+  return { refunded: false, health: freeze({ ...live, spentAttempt: null }) };
+}
+
+/** Leaving a run that already began: the heart stays spent. Idempotent per `attemptId`. */
+export function abandonAttempt(health: Health, attemptId: string, now: number = Date.now()): Health {
+  const live = reconcile(health, now);
+  if (live.spentAttempt !== attemptId) return live;
+  return freeze({ ...live, spentAttempt: null });
+}
+
+/** Reads may fail in private windows or blocked storage; the game then starts at full health. */
+export function loadHealth(storage: Storage | null = safeStorage(), now: number = Date.now()): Health {
+  try {
+    const raw = storage?.getItem(KEY);
+    if (!raw) return FULL;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return FULL;
+    const { hearts, refillStartedAt, spentAttempt } = parsed as {
+      hearts?: unknown; refillStartedAt?: unknown; spentAttempt?: unknown;
+    };
+    const cleanHearts = clampHearts(hearts);
+    if (cleanHearts === null) return FULL;
+    let started: number | null = null;
+    if (typeof refillStartedAt === 'number' && Number.isFinite(refillStartedAt)) started = refillStartedAt;
+    const attempt = typeof spentAttempt === 'string' && spentAttempt.length > 0 ? spentAttempt : null;
+    return reconcile(freeze({
+      hearts: cleanHearts,
+      refillStartedAt: cleanHearts >= HEALTH.max ? null : started,
+      spentAttempt: attempt,
+    }), now);
+  } catch {
+    return FULL;
+  }
+}
+
+/** False means nothing was written — blocked storage, a private window, or a full quota. */
+export function saveHealth(health: Health, storage: Storage | null = safeStorage()): boolean {
+  try {
+    storage?.setItem(KEY, JSON.stringify({ version: VERSION, ...health }));
+    return storage !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** Settings reset. False means nothing was written. */
+export function clearHealth(storage: Storage | null = safeStorage()): boolean {
+  try {
+    storage?.removeItem(KEY);
+    return storage !== null;
+  } catch {
+    return false;
+  }
+}
+
+function safeStorage(): Storage | null {
+  try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
+}

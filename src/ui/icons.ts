@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { shade } from './colour';
 
 /**
  * Controls drawn as geometry. `♪ × ← ↻` were set as text, and `gear.ts` already records
@@ -42,6 +43,18 @@ export function drawRestart(g: Phaser.GameObjects.Graphics, x: number, y: number
 export function drawPlay(g: Phaser.GameObjects.Graphics, x: number, y: number, r: number, colour: number, alpha = 1): void {
   g.fillStyle(colour, alpha);
   g.fillTriangle(x - r * 0.5, y - r * 0.7, x - r * 0.5, y + r * 0.7, x + r * 0.75, y);
+}
+
+export function drawHeart(g: Phaser.GameObjects.Graphics, x: number, y: number, r: number, colour: number, alpha = 1): void {
+  const points: Phaser.Math.Vector2[] = [];
+  for (let i = 0; i <= 28; i++) {
+    const t = (i / 28) * Math.PI * 2;
+    const hx = 16 * Math.sin(t) ** 3;
+    const hy = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+    points.push(new Phaser.Math.Vector2(x + hx * r / 16, y - hy * r / 18));
+  }
+  g.fillStyle(colour, alpha).fillPoints(points, true);
+  g.lineStyle(Math.max(1.6, r * 0.18), shade(colour, -0.55), alpha).strokePoints(points, true);
 }
 
 export function drawMap(g: Phaser.GameObjects.Graphics, x: number, y: number, r: number, colour: number, alpha = 1): void {

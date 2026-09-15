@@ -7,6 +7,7 @@ import { BaseScene } from '@/core/BaseScene';
 import { reducedMotion } from '@/core/motionPreference';
 import { CalibrationRun, CALIBRATION } from '@/game/CalibrationRun';
 import { clearProgress, loadProgress } from '@/game/progress';
+import { clearHealth } from '@/game/health';
 import { CALIBRATION_TAPS, loadSettings } from '@/game/settings';
 import { TapInput, type Tap } from '@/input/TapInput';
 import { MaterialKey } from '@/textures/materials';
@@ -299,6 +300,7 @@ export class SettingsScene extends BaseScene {
     if (!this.resetArmed) { this.resetArmed = true; this.refreshCopy(); return; }
     this.resetArmed = false;
     const cleared = clearProgress();
+    clearHealth();
     this.refreshCopy();
     if (!cleared) this.progressValue.setText('Couldn’t reset');
   }

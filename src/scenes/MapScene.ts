@@ -7,6 +7,10 @@ import { STYLE } from '@/config/style';
 import { PALETTE, SHELL } from '@/config/theme';
 import { BaseScene } from '@/core/BaseScene';
 import { areaOf, levelSpec, starsFor, type Area } from '@/game/levels';
+import {
+  canBeginAttempt, formatCountdown, healthHud, loadHealth, practiceLevel, reconcile, viewHealth,
+  type Health,
+} from '@/game/health';
 import { loadProgress, type Progress } from '@/game/progress';
 import { MaterialKey } from '@/textures/materials';
 import { mix, shade, starColour } from '@/ui/colour';
@@ -14,12 +18,12 @@ import { CHROME, drawPuck, drawRopes, pressAmount, puckSink } from '@/ui/chrome'
 import { FxKey } from '@/ui/feedback';
 import { dashes, smoothPath, type Point } from '@/ui/path';
 import { drawGear } from '@/ui/gear';
-import { drawBack, drawPlay, drawSpeaker } from '@/ui/icons';
+import { drawBack, drawHeart, drawPlay, drawSpeaker } from '@/ui/icons';
 import { castShadow, faces } from '@/ui/light';
 import { BRASS, drawDisc, drawPanel, placeSurface, surface } from '@/ui/panel';
 import { drawStar } from '@/ui/star';
 import { arrive, settle, spring, squash } from '@/ui/spring';
-import { display, resize } from '@/ui/type';
+import { body, display, label, resize } from '@/ui/type';
 import { resizedScroll, scrollStep } from '@/ui/navigation';
 import { SceneCurtain } from '@/ui/SceneCurtain';
 import { VIGNETTES } from '@/vignettes/registry';
@@ -55,6 +59,7 @@ const MAP = {
  */
 export class MapScene extends BaseScene {
   private progress!: Progress;
+  private health!: Health;
   private shown = 0;
   /** Lowest level rendered. Node i is level `first + i`. */
   private first = 1;
@@ -67,10 +72,27 @@ export class MapScene extends BaseScene {
   private signBack!: Phaser.GameObjects.Graphics;
   private signSurface!: Phaser.GameObjects.TileSprite;
   private status!: Phaser.GameObjects.Text;
+  private healthCount!: Phaser.GameObjects.Text;
+  private healthWait!: Phaser.GameObjects.Text;
+  private healthMark!: Phaser.GameObjects.Graphics;
   private pucks!: Phaser.GameObjects.Graphics;
   private dock!: Phaser.GameObjects.Graphics;
   private dockSurface!: Phaser.GameObjects.TileSprite;
   private dockTitle!: Phaser.GameObjects.Text;
+  private restPlate!: Phaser.GameObjects.Graphics;
+  private restSurface!: Phaser.GameObjects.TileSprite;
+  private restTitle!: Phaser.GameObjects.Text;
+  private restWait!: Phaser.GameObjects.Text;
+  private restNote!: Phaser.GameObjects.Text;
+  private restAction!: Phaser.GameObjects.Graphics;
+  private restActionLabel!: Phaser.GameObjects.Text;
+  private restRect = new Phaser.Geom.Rectangle();
+  private restActionRect = new Phaser.Geom.Rectangle();
+  private restShown = false;
+  private restPractice: number | null = null;
+  private restAt = -Infinity;
+  private restPressDirty = false;
+  private restPressedAt = -Infinity;
   private curtain!: SceneCurtain;
   private footerTop = 0;
   private lastHeight = 0;
@@ -122,6 +144,10 @@ export class MapScene extends BaseScene {
     this.puckPressed = null;
     this.muted = isMuted(this);
     this.progress = loadProgress();
+    this.health = loadHealth();
+    this.restShown = false;
+    this.restPractice = null;
+    this.restAt = this.restPressedAt = -Infinity;
     const data = this.sys.settings.data as { focus?: number } | undefined;
     this.focus = Math.max(1, Math.min(this.progress.unlocked, data?.focus ?? this.progress.unlocked));
     const top = this.progress.unlocked + PROGRESSION.mapLookahead;
@@ -142,10 +168,20 @@ export class MapScene extends BaseScene {
     this.signBack = this.add.graphics().setScrollFactor(0).setDepth(10);
     this.signSurface = surface(this, MaterialKey.wood, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, SHELL.wood, 0.7).setScrollFactor(0).setDepth(10);
     this.status = display(this, '', { size: 40, colour: SHELL.cream, align: 'center' }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(11);
+    this.healthCount = display(this, '', { size: 28, colour: SHELL.cream, align: 'right' }).setOrigin(1, 0.5).setScrollFactor(0).setDepth(11);
+    this.healthWait = body(this, '', { size: 20, colour: SHELL.cream, align: 'right' }).setOrigin(1, 0.5).setScrollFactor(0).setDepth(11);
+    this.healthMark = this.add.graphics().setScrollFactor(0).setDepth(11);
     this.pucks = this.add.graphics().setScrollFactor(0).setDepth(10);
     this.dock = this.add.graphics().setScrollFactor(0).setDepth(10);
     this.dockSurface = surface(this, MaterialKey.parchment, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, SHELL.puck, 0.5).setScrollFactor(0).setDepth(10);
     this.dockTitle = display(this, '', { size: 30, colour: PALETTE.ink }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(11);
+    this.restPlate = this.add.graphics().setScrollFactor(0).setDepth(20);
+    this.restSurface = surface(this, MaterialKey.parchment, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, SHELL.puck, 0.5).setScrollFactor(0).setDepth(20);
+    this.restTitle = display(this, 'No hearts', { size: 44, colour: PALETTE.ink, align: 'center' }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
+    this.restWait = body(this, '', { size: 28, colour: PALETTE.ink, align: 'center' }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
+    this.restNote = body(this, 'Early levels stay open.', { size: 24, colour: PALETTE.muted, align: 'center' }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
+    this.restAction = this.add.graphics().setScrollFactor(0).setDepth(20);
+    this.restActionLabel = label(this, 'Practice', { size: 30, colour: SHELL.cream, align: 'center' }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
     this.enteredAt = performance.now() / 1000;
     this.curtain = new SceneCurtain(this);
     this.events.once(Phaser.Scenes.Events.CREATE, () => this.curtain.reveal());
@@ -199,7 +235,8 @@ export class MapScene extends BaseScene {
     this.drawSign(s, 0, 0);
     this.drawPucks(s, 0);
     this.drawDock(s, 0);
-    this.pressDirty = this.puckDirty = true;
+    this.drawRest(s, 0);
+    this.pressDirty = this.puckDirty = this.restPressDirty = true;
     this.cameras.main.setBounds(0, 0, full.width, this.worldHeight);
     if (!this.centered) { this.centered = true; this.scrollTo(this.focus); }
     else this.scrollY = resizedScroll(this.scrollY, oldScale, s, oldHeader, this.hudHeight, this.lastHeight, full.height);
@@ -596,11 +633,30 @@ export class MapScene extends BaseScene {
     const inner = STYLE.current.radius * s * 0.7;
     this.hang(this.signSurface, this.signRect.x + inner, this.signRect.y + inner, angle, drop);
     const current = areaOf(this.progress.unlocked);
+    const view = viewHealth(this.health);
+    const hud = healthHud(view);
+    const waiting = hud.wait !== null;
+    const healthW = 118 * s;
     this.status.setText(current.name);
     resize(this.status, 40 * s, SHELL.cream);
-    // Repeat areas ("Pavement VIII") are long; shrink to the sign, never below 28 units.
-    if (this.status.width > w - 44 * s) resize(this.status, Math.max(28 * s, 40 * s * (w - 44 * s) / this.status.width), SHELL.cream);
+    if (this.status.width > w - 36 * s - healthW) {
+      resize(this.status, Math.max(28 * s, 40 * s * (w - 36 * s - healthW) / this.status.width), SHELL.cream);
+    }
     this.hang(this.status, this.signRect.x + 20 * s, this.signRect.y + h * 0.5, angle, drop);
+    const heartY = this.signRect.y + h * (waiting ? 0.38 : 0.5);
+    const heartX = this.signRect.right - 88 * s;
+    this.healthMark.clear();
+    drawHeart(this.healthMark, 0, 0, 11 * s, view.hearts === 0 ? mix(SHELL.cream, PALETTE.coral, 0.35) : SHELL.cream);
+    this.hang(this.healthMark, heartX, heartY, angle, drop);
+    this.healthCount.setText(hud.count);
+    resize(this.healthCount, 28 * s, SHELL.cream);
+    this.hang(this.healthCount, this.signRect.right - 16 * s, heartY, angle, drop);
+    this.healthWait.setText(hud.wait ?? '');
+    this.healthWait.setVisible(waiting);
+    if (waiting) {
+      resize(this.healthWait, 18 * s, SHELL.cream, STYLE.current, false);
+      this.hang(this.healthWait, this.signRect.right - 16 * s, this.signRect.y + h * 0.72, angle, drop);
+    }
   }
 
   /** Back, settings and mute as pucks at the top right, clear of the sign's swing. */
@@ -663,6 +719,87 @@ export class MapScene extends BaseScene {
     }
   }
 
+  /**
+   * A small paper plaque, not a shop screen: empty hearts, when the next one lands, and
+   * a way back into a 3-starred level. Nothing here sells a refill.
+   */
+  private drawRest(s: number, press: number): void {
+    const shown = this.restShown;
+    this.restPlate.setVisible(shown);
+    this.restSurface.setVisible(shown);
+    this.restTitle.setVisible(shown);
+    this.restWait.setVisible(shown);
+    this.restNote.setVisible(shown);
+    this.restAction.setVisible(shown && this.restPractice !== null);
+    this.restActionLabel.setVisible(shown && this.restPractice !== null);
+    if (!shown) {
+      this.restPlate.clear();
+      this.restAction.clear();
+      return;
+    }
+    const { safe } = this.viewport;
+    const view = viewHealth(this.health);
+    const wait = view.nextHeartInMs === null ? null : formatCountdown(view.nextHeartInMs);
+    const hasPractice = this.restPractice !== null;
+    const width = Math.min(560 * s, safe.width - 48 * s);
+    const height = (hasPractice ? 280 : 200) * s;
+    const y = (this.hudHeight + this.footerTop) / 2 - height / 2;
+    this.restRect.setTo(safe.centerX - width / 2, y, width, height);
+    const g = this.restPlate.clear();
+    drawPanel(g, this.restRect, s, { fill: SHELL.puck, depth: 12, hero: true, radius: 28 });
+    placeSurface(this.restSurface, this.restRect, s);
+    resize(this.restTitle, 44 * s, PALETTE.ink);
+    this.restTitle.setPosition(this.restRect.centerX, this.restRect.y + 52 * s);
+    this.restWait.setText(wait === null ? 'Hearts are full.' : `Next heart ${wait}`);
+    resize(this.restWait, 28 * s, PALETTE.ink, STYLE.current, false);
+    this.restWait.setPosition(this.restRect.centerX, this.restRect.y + 108 * s);
+    resize(this.restNote, 24 * s, PALETTE.muted, STYLE.current, false);
+    this.restNote.setPosition(this.restRect.centerX, this.restRect.y + 148 * s);
+    const action = this.restAction.clear();
+    if (!hasPractice) return;
+    const control = Math.max(88 * s, 48 * this.viewport.unitScale);
+    const actionH = Math.max(96 * s, control);
+    this.restActionRect.setTo(this.restRect.centerX - 180 * s, this.restRect.bottom - 28 * s - actionH, 360 * s, actionH);
+    drawPanel(action, this.restActionRect, s, { fill: PALETTE.coral, depth: CHROME.block.depth, press, hero: true });
+    const sink = CHROME.block.depth * s * press * 0.8;
+    this.restActionLabel.setText('PRACTICE');
+    resize(this.restActionLabel, 30 * s, SHELL.cream);
+    this.restActionLabel.setPosition(this.restActionRect.centerX, this.restActionRect.centerY + sink);
+  }
+
+  private showRest(): void {
+    this.restShown = true;
+    this.restPractice = practiceLevel(this.progress);
+    this.restAt = performance.now() / 1000;
+    this.drawRest(this.uiScale, 0);
+    this.restPressDirty = true;
+  }
+
+  private hideRest(): void {
+    if (!this.restShown) return;
+    this.restShown = false;
+    this.restPractice = null;
+    this.drawRest(this.uiScale, 0);
+  }
+
+  private refreshHealthHud(): void {
+    const view = viewHealth(this.health);
+    const hud = healthHud(view);
+    const wait = hud.wait ?? '';
+    if (this.healthCount.text !== hud.count || this.healthWait.visible !== (hud.wait !== null)) {
+      this.drawSign(this.uiScale, 0, 0);
+      return;
+    }
+    if (this.healthWait.text !== wait) this.healthWait.setText(wait);
+  }
+
+  private refreshRestCopy(): void {
+    const view = viewHealth(this.health);
+    const wait = view.nextHeartInMs === null ? null : formatCountdown(view.nextHeartInMs);
+    const copy = wait === null ? 'Hearts are full.' : `Next heart ${wait}`;
+    if (this.restWait.text !== copy) this.restWait.setText(copy);
+  }
+
   private scrollTo(level: number): void {
     const node = this.nodes[level - this.first];
     if (node) this.scrollY = node.y - (this.hudHeight + (this.footerTop - this.hudHeight) * 0.72);
@@ -688,11 +825,15 @@ export class MapScene extends BaseScene {
 
     // The sign drops in on its ropes and swings itself quiet, then hangs still.
     const age = now - this.enteredAt;
+    this.health = reconcile(this.health, Date.now());
     if (age < 2.4) {
       const entry = still ? { rise: 0 } : arrive(age - 0.1, 0.9);
       const swing = still ? 0 : settle(age - 0.3, 5.2, 1.6) * 0.05 * ex;
       this.drawSign(s, swing, -entry.rise * 200 * s);
+    } else {
+      this.refreshHealthHud();
     }
+    if (this.restShown) this.refreshRestCopy();
 
     // The frontier puck hops once a bar and lands with a spread; a ring rolls out from it.
     const g = this.pulse.clear();
@@ -731,11 +872,27 @@ export class MapScene extends BaseScene {
     if (press > 0.001 || this.pressDirty) { this.drawDock(s, Math.max(0, press)); this.pressDirty = press > 0.001; }
     const puckPress = pressAmount(now, this.puckPressedAt);
     if (puckPress > 0.001 || this.puckDirty) { this.drawPucks(s, Math.max(0, puckPress)); this.puckDirty = puckPress > 0.001; }
+    const restPress = pressAmount(now, this.restPressedAt);
+    if (this.restShown && (restPress > 0.001 || this.restPressDirty)) {
+      this.drawRest(s, Math.max(0, restPress));
+      this.restPressDirty = restPress > 0.001;
+    }
+    if (this.restShown) {
+      const shownFor = now - this.restAt;
+      const alpha = still || shownFor > 0.55 ? 1 : arrive(shownFor, 0.45).alpha;
+      this.restPlate.setAlpha(alpha);
+      this.restSurface.setAlpha(alpha);
+      this.restTitle.setAlpha(alpha);
+      this.restWait.setAlpha(alpha);
+      this.restNote.setAlpha(alpha);
+      this.restAction.setAlpha(alpha);
+      this.restActionLabel.setAlpha(alpha);
+    }
   }
 
   private pointerDown(pointer: Phaser.Input.Pointer): void {
     if (this.curtain.active || this.drag || (!pointer.wasTouch && pointer.button !== 0)) return;
-    this.drag = { id: pointer.id, scrollable: pointer.y > this.hudHeight && pointer.y < this.footerTop, lastY: pointer.y, lastAt: performance.now(), startX: pointer.x, startY: pointer.y, moved: false };
+    this.drag = { id: pointer.id, scrollable: !this.restShown && pointer.y > this.hudHeight && pointer.y < this.footerTop, lastY: pointer.y, lastAt: performance.now(), startX: pointer.x, startY: pointer.y, moved: false };
     this.velocity = 0;
     this.touchAt = performance.now() / 1000;
     this.touchPoint = { x: pointer.x, y: pointer.y };
@@ -782,6 +939,18 @@ export class MapScene extends BaseScene {
       return;
     }
     if (near(this.backAt)) { this.pressPuck('back'); this.curtain.cover(() => this.scene.start(SceneKey.Menu)); return; }
+    if (this.restShown) {
+      if (this.restPractice !== null && this.restActionRect.contains(x, y)) {
+        this.restPressedAt = performance.now() / 1000;
+        this.restPressDirty = true;
+        const level = this.restPractice;
+        this.hideRest();
+        this.openLevel(level);
+        return;
+      }
+      if (!this.restRect.contains(x, y)) this.hideRest();
+      return;
+    }
     if (this.dockRect.contains(x, y)) {
       this.pressedAt = performance.now() / 1000;
       this.pressDirty = true;
@@ -804,12 +973,16 @@ export class MapScene extends BaseScene {
   private readonly cancelDrag = (): void => { this.drag = null; this.velocity = 0; };
 
   private wheel(pointer: Phaser.Input.Pointer, _objects: Phaser.GameObjects.GameObject[], _dx: number, dy: number): void {
-    if (this.curtain.active || pointer.y < this.hudHeight || pointer.y >= this.footerTop) return;
+    if (this.curtain.active || this.restShown || pointer.y < this.hudHeight || pointer.y >= this.footerTop) return;
     this.cancelDrag();
     this.scrollY += Math.max(-240, Math.min(240, dy)) * this.viewport.unitScale;
     this.clampScroll();
   }
   private openLevel(level: number): void {
+    if (!canBeginAttempt(this.health, this.progress, level)) {
+      this.showRest();
+      return;
+    }
     this.velocity = 0;
     this.curtain.cover(() => this.scene.start(SceneKey.Play, { level, autoStart: true }));
   }

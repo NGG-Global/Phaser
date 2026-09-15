@@ -16,6 +16,9 @@ import { MaterialKey } from '@/textures/materials';
 import type { Judgement } from '@/rhythm/judge';
 import { beatsPlayed, countIn, markFor, trackGeometry, type Mark } from '@/game/beatTrack';
 import { levelSpec, meanAccuracy, starsFor, type LevelSpec } from '@/game/levels';
+import {
+  beginAttempt, canBeginAttempt, finishAttempt, healthHud, loadHealth, saveHealth, viewHealth,
+} from '@/game/health';
 import { loadProgress, recordResult, saveProgress, type LevelOutcome } from '@/game/progress';
 import { STYLE } from '@/config/style';
 import { PALETTE, SHELL } from '@/config/theme';
@@ -26,7 +29,7 @@ import { CHROME, drawPuck, pressAmount, puckSink } from '@/ui/chrome';
 import { drawPanel, placeSurface, Rect, surface } from '@/ui/panel';
 import { Feedback } from '@/ui/feedback';
 import { arrive, overshoot, settle, squash, stagger } from '@/ui/spring';
-import { body, display, resize } from '@/ui/type';
+import { body, display, label, resize } from '@/ui/type';
 import { drawStar } from '@/ui/star';
 import { SceneCurtain } from '@/ui/SceneCurtain';
 import { VIGNETTES } from '@/vignettes/registry';
@@ -67,12 +70,16 @@ export class PlayScene extends BaseScene {
   /** Computed and persisted the instant the last task resolves; the summary only displays it. */
   private outcome: LevelOutcome | null = null;
   private saveFailed = false;
+  /** Set once gameplay actually begins; refunds use the same id so a double-finish cannot restore two hearts. */
+  private attemptId: string | null = null;
+  private heartRefunded = false;
   private get definition() { return VIGNETTES.find(v => v.id === this.spec.vignette) ?? VIGNETTES[0]!; }
   private stars!: Phaser.GameObjects.Graphics;
   private headline!: Phaser.GameObjects.Text;
   /** Hung behind the phase word so Watch and Your turn are different objects, not just colours. */
   private turnSign!: Phaser.GameObjects.Graphics;
   private accuracy!: Phaser.GameObjects.Text;
+  private kept!: Phaser.GameObjects.Text;
   private turn: TurnCue = 'none';
   /** Judgements that scored in the early window while the example was still on screen. */
   private heldJudgements: Judgement[] = [];
@@ -152,6 +159,7 @@ export class PlayScene extends BaseScene {
     this.turnSign = this.add.graphics().setDepth(11);
     this.headline = display(this, this.definition.intro, { size: 88, colour: ink, align: 'center' }).setOrigin(0.5, 0).setDepth(12);
     this.accuracy = body(this, '', { size: 34, colour: ink, align: 'center' }).setOrigin(0.5).setDepth(11);
+    this.kept = label(this, '', { size: 22, colour: PALETTE.coral, align: 'center' }).setOrigin(0.5).setDepth(11).setVisible(false);
     this.chrome = this.add.graphics().setDepth(10);
     this.actionRoot = this.add.container(0, 0).setDepth(10);
     this.action = this.add.graphics();
@@ -222,6 +230,8 @@ export class PlayScene extends BaseScene {
     this.actionPressDirty = true;
     resize(this.accuracy, 34 * s, ink, STYLE.current, false);
     this.accuracy.setPosition(safe.centerX, this.trackY + 28 * s);
+    resize(this.kept, 22 * s, PALETTE.coral, STYLE.current, false);
+    this.kept.setPosition(safe.centerX, this.trackY + 52 * s);
     this.drawStars();
     this.drawTaskMarks();
   }
@@ -269,6 +279,12 @@ export class PlayScene extends BaseScene {
   private now(): number { return this.audio?.clock.now() ?? performance.now() / 1000; }
 
   private async startRound(): Promise<void> {
+    // Gate before tearing anything down: a denied restart must not kill a paid run.
+    if (!canBeginAttempt(loadHealth(), loadProgress(), this.spec.level)) {
+      if (this.controller?.active) return;
+      this.showNoHearts();
+      return;
+    }
     const request = ++this.startRequest;
     this.replay = null;
     this.replayOffset = null;
@@ -280,6 +296,9 @@ export class PlayScene extends BaseScene {
     this.levelCleared = false;
     this.outcome = null;
     this.saveFailed = false;
+    this.attemptId = null;
+    this.heartRefunded = false;
+    this.kept.setVisible(false);
     this.stars.clear();
     this.setTurn('none');
     this.controller?.dispose();
@@ -323,6 +342,21 @@ export class PlayScene extends BaseScene {
       this.starting = false;
       this.audio!.setSounds(this.definition.sounds(this.audio!.context));
       const origin = this.audio!.music.start(); // fresh sources: every level starts at the base tempo
+      if (this.disposed || request !== this.startRequest || this.blocked()) {
+        this.audio!.music.stop();
+        return;
+      }
+      // Spend only once audio is running: a failed unlock/load above never reaches here.
+      const attemptId = `${this.spec.level}:${request}`;
+      const begun = beginAttempt(loadHealth(), loadProgress(), this.spec.level, attemptId);
+      if (!begun.ok) {
+        this.audio!.music.stop();
+        this.showNoHearts();
+        return;
+      }
+      saveHealth(begun.health);
+      this.attemptId = attemptId;
+      this.heartRefunded = false;
       this.sequence = new TaskSequence(this.task.bpm, origin, 1);
       this.beginTask(origin);
     } catch (error) {
@@ -368,9 +402,14 @@ export class PlayScene extends BaseScene {
     if (this.actionCaption !== '' && Phaser.Geom.Rectangle.Contains(this.actionRect, tap.x, tap.y)) {
       this.actionPressedAt = performance.now() / 1000;
       this.actionPressDirty = true;
+      if (this.actionCaption === 'Map') { this.leaveForMap(); return; }
     }
     const phase = this.controller?.phase ?? 'idle';
-    if (phase === 'idle' || phase === 'paused') { if (!this.starting) void this.startRound(); return; }
+    if (phase === 'idle' || phase === 'paused') {
+      if (this.actionCaption === 'Map') { this.leaveForMap(); return; }
+      if (!this.starting) void this.startRound();
+      return;
+    }
     if (phase === 'result') {
       // Cleared: back to the road, centred on what just opened. Failed: straight into another go.
       if (this.summaryShown) { if (this.levelCleared) this.leaveForMap(); else void this.startRound(); }
@@ -742,6 +781,11 @@ export class PlayScene extends BaseScene {
     this.outcome = outcome;
     this.levelCleared = outcome.cleared;
     this.saveFailed = outcome.cleared && !saveProgress(outcome.progress);
+    if (this.attemptId !== null) {
+      const finished = finishAttempt(loadHealth(), this.attemptId, outcome.stars);
+      this.heartRefunded = finished.refunded;
+      saveHealth(finished.health);
+    }
   }
   private showSummary(): void {
     this.summaryShown = true;
@@ -755,6 +799,7 @@ export class PlayScene extends BaseScene {
     this.setTurn('none');
     this.changeHeadline(this.saveFailed ? 'Couldn’t save' : outcome.cleared ? 'Cleared' : 'Again?');
     this.accuracy.setText(`${Math.round(accuracy)}%`);
+    this.kept.setText('HEART KEPT').setVisible(this.heartRefunded);
     this.setAction(outcome.cleared ? 'Continue' : 'Try again');
     this.drawStars();
     this.drawTaskMarks();
@@ -781,14 +826,18 @@ export class PlayScene extends BaseScene {
   }
   private drawStars(scales: readonly number[] = [1, 1, 1]): void {
     this.stars.clear();
-    if (!this.summaryShown) return;
+    if (!this.summaryShown) {
+      this.kept.setVisible(false);
+      return;
+    }
     const s = this.uiScale;
     const { safe } = this.viewport;
     // One cream plaque: stars above, the percentage below. They used to float on the
     // timber of the bench, which is why empty outlines vanished and the score looked
     // like a caption from another screen.
-    const plateW = 268 * s, plateH = 100 * s;
-    drawPanel(this.stars, new Rect(safe.centerX - plateW / 2, this.trackY - plateH / 2, plateW, plateH), s, {
+    const plateW = 268 * s, plateH = (this.heartRefunded ? 128 : 100) * s;
+    const plateY = this.heartRefunded ? this.trackY - 50 * s : this.trackY - plateH / 2;
+    drawPanel(this.stars, new Rect(safe.centerX - plateW / 2, plateY, plateW, plateH), s, {
       fill: SHELL.puck, depth: 6, radius: 22,
     });
     const earned = starsFor(meanAccuracy(this.results), this.spec);
@@ -830,6 +879,15 @@ export class PlayScene extends BaseScene {
     this.audio?.music.setRate(1, this.audio.context.currentTime);
     this.curtain.cover(() => this.scene.start(SceneKey.Map, { focus: this.levelCleared ? this.spec.level + 1 : this.spec.level }));
   }
+  private showNoHearts(): void {
+    this.starting = false;
+    this.setTurn('none');
+    this.changeHeadline('No hearts');
+    const wait = healthHud(viewHealth(loadHealth())).wait;
+    if (!this.summaryShown) this.accuracy.setText(wait === null ? '' : wait);
+    this.setAction('Map');
+  }
+
   private showPause(): void {
     this.vignette.pause();
     this.setTurn('none');
