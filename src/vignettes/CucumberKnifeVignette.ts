@@ -37,7 +37,7 @@ const CX = CUCUMBER_MOTION.x;
 const RX = CUCUMBER_MOTION.radiusX;
 const RY = CUCUMBER_MOTION.radiusY;
 // Coins come off the flower end and lean in a pile to the right of the remaining fruit.
-const PILE_X = 230;
+const PILE_X = 186;
 const PILE_STEP = 22;
 const SLICE_R = 58;
 const LEAN = 0.38;
@@ -164,8 +164,8 @@ export class CucumberKnifeVignette implements Vignette {
 
   public layout(viewport: Viewport): void {
     const { full, safe } = viewport;
-    this.scale = Math.min(safe.width / 980, safe.height / 1300);
-    this.baseX = safe.centerX - 20 * this.scale;
+    this.scale = Math.min(safe.width / 900, safe.height / 1300);
+    this.baseX = safe.centerX - 40 * this.scale;
     this.baseY = safe.top + safe.height * 0.62;
     this.stage.setPosition(this.baseX, this.baseY).setScale(this.scale);
     this.backdrop.layout(viewport);
@@ -351,7 +351,7 @@ export class CucumberKnifeVignette implements Vignette {
     }
     g.fillStyle(CRISP.skin);
     fan(g, pts);
-    g.fillStyle(CRISP.stripe, 0.55);
+    g.fillStyle(CRISP.stripe, 0.75);
     for (const offset of [-22, -4, 16]) {
       const ribbon: number[] = [];
       const left = CX - RX + RY + 18;

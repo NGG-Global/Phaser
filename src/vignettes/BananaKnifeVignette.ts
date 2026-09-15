@@ -33,7 +33,7 @@ export const BREAKFAST = {
 const BOARD_LEFT = -620;
 const BOARD_RIGHT = 620;
 const BOARD_THICK = 42;
-const PILE_X = 196;
+const PILE_X = 168;
 const PILE_STEP = 28;
 const SLICE_RX = 46;
 const SLICE_RY = 68;
@@ -161,8 +161,8 @@ export class BananaKnifeVignette implements Vignette {
 
   public layout(viewport: Viewport): void {
     const { full, safe } = viewport;
-    this.scale = Math.min(safe.width / 960, safe.height / 1300);
-    this.baseX = safe.centerX - 10 * this.scale;
+    this.scale = Math.min(safe.width / 900, safe.height / 1300);
+    this.baseX = safe.centerX - 40 * this.scale;
     this.baseY = safe.top + safe.height * 0.62;
     this.stage.setPosition(this.baseX, this.baseY).setScale(this.scale);
     this.backdrop.layout(viewport);

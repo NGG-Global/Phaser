@@ -14,7 +14,7 @@ export const BANANA_MOTION = {
   /** How far the knife lifts between chops, in board units. */
   lift: 104,
   /** Stem attachment, the left of the fruit. */
-  stemX: -210,
+  stemX: -250,
   /** Horizontal span from stem to tip. */
   length: 332,
   /** Thickness at the fattest point. */

@@ -14,10 +14,10 @@ export const CUCUMBER_MOTION = {
   /** How far the knife lifts between chops, in board units. */
   lift: 96,
   /** Centre of the cucumber on the board. */
-  x: -80,
+  x: -140,
   /** Half-length and half-height of the stadium; a cucumber is a long capsule. */
   radiusX: 248,
-  radiusY: 62,
+  radiusY: 70,
   /** A flawless response leaves a heel standing; the unscored coda takes it. */
   cutAtFullResponse: 0.86,
 } as const;
