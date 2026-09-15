@@ -23,6 +23,11 @@ export class RoundController {
   private generation = 0;
   private cueIndex = 0;
   private lastPumpMs = 0;
+  /**
+   * A tap that scored in the early window before the response downbeat. The example is
+   * still on the tool, so the action voice and the vignette wait for `respond`.
+   */
+  private heldHit: { readonly renderNow: number } | null = null;
   private readonly scheduler: RhythmScheduler;
 
   public constructor(private readonly sound: SoundSink, private readonly events: RoundEvents) {
@@ -36,6 +41,7 @@ export class RoundController {
     this.result = null;
     this.cueIndex = 0;
     this.lastPumpMs = wallMs;
+    this.heldHit = null;
     this.scheduler.schedule(this.plan);
     this.setPhase('prepare');
   }
@@ -60,6 +66,7 @@ export class RoundController {
     this.lastPumpMs = wallMs;
     const plan = this.plan;
     this.setPhase(now < plan.demo ? 'prepare' : now < plan.response ? 'demonstrate' : 'respond');
+    this.releaseHeldHit();
     while (this.cueIndex < plan.cues.length && plan.cues[this.cueIndex]!.time <= now) {
       const cue = plan.cues[this.cueIndex++]!;
       if (now - cue.time < RHYTHM.stallMs / 1000) this.events.cue(cue);
@@ -75,10 +82,17 @@ export class RoundController {
   public tap(inputSec: number, renderNow: number, wallMs: number): Judgement | null {
     if (!this.active || !this.plan || !this.judge || !this.healthy(inputSec, wallMs)) return null;
     if (inputSec < this.plan.response - RHYTHM.goodMs / 1000 || inputSec > this.plan.end + RHYTHM.goodMs / 1000) return null;
-    this.events.tap();
-    this.sound.play(renderNow, 'action');
     const result = judgeTap(this.judge, inputSec);
-    this.events.judgement(result);
+    // The early window still scores the first response beat, but the demonstration is
+    // still the rendered phase. Starting the player's strike there snaps the example
+    // back to rest mid-recoil.
+    if (inputSec >= this.plan.response) {
+      this.emitHit(renderNow);
+      this.events.judgement(result);
+    } else {
+      this.events.judgement(result);
+      this.heldHit ??= { renderNow };
+    }
     return result;
   }
   public interrupt(reason: string): void {
@@ -86,6 +100,7 @@ export class RoundController {
     this.scheduler.cancel();
     this.judge = null;
     this.result = null;
+    this.heldHit = null;
     this.setPhase('paused');
     this.events.interrupted(reason);
   }
@@ -94,7 +109,17 @@ export class RoundController {
     this.plan = null;
     this.judge = null;
     this.result = null;
+    this.heldHit = null;
     this.phase = 'idle';
+  }
+  private emitHit(renderNow: number): void {
+    this.events.tap();
+    this.sound.play(renderNow, 'action');
+  }
+  private releaseHeldHit(): void {
+    if (this.phase !== 'respond' || !this.heldHit) return;
+    this.emitHit(this.heldHit.renderNow);
+    this.heldHit = null;
   }
   private setPhase(phase: Phase): void {
     if (this.phase !== phase) { this.phase = phase; this.events.phase(phase); }

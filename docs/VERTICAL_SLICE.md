@@ -1,4 +1,4 @@
-# Five vignettes — implementation and QA
+# Vignettes — implementation and QA
 
 ## Scope and content
 
@@ -48,6 +48,51 @@ of a beat, so the knife is always back up before the next possible hit at any te
 `tomatoSounds.ts` supplies a deterministic board knock with a wet element, plus the shared
 `scrape`/`judder` accent slots.
 
+## Bicep curl
+
+`BicepCurlVignette.ts` owns the illustration and `curlMotion.ts` its pure curves. A
+standing gym-goer curls a dumbbell on rubber matting, the teal tank the only saturated
+thing in frame. One tap is one curl: the elbow stays planted, the forearm sweeps from
+hanging to a squeeze in front of the shoulder, and the squeeze at the top carries the
+timing; the lift before it and the controlled lower after it do not. Each accurate rep
+chalks a stroke on the board and pumps the working arm; an extra tap gets the weight
+halfway before the arm gives and the plates clank; a missed target leaves the arm
+trembling under the load; neither counts. Off reps lean the figure back into bad form,
+so a rough ending is visible before it is announced. The demonstration curls without
+counting, so the player starts on the empty board they watched, and the unscored coda
+is the last rep of the set; a strong finish holds the squeeze, a rough one drops the
+weight on the mat. Rep phases are fractions of a beat, so the arm is hanging again
+before the next possible hit at any tempo. See [curl notes](BICEP_CURL.md).
+
+`curlSounds.ts` supplies a deterministic exhale with plates settling, plus the shared
+`scrape`/`judder` accent slots.
+
+## Knife + Cucumber
+
+`CucumberKnifeVignette.ts` owns the illustration and `cucumberMotion.ts` its pure curves.
+A chef's knife slices a cucumber on a board in a cool kitchen, the vegetable the only
+saturated green in frame. One tap is one rocking chop, same contract as the tomato: the
+tip stays near the board, the heel drops, and the edge meeting the board carries the
+timing. Each accurate chop takes a round coin, which topples off the cut and leans on the
+pile showing its seed star; an extra tap nicks the board, a missed target leaves the knife
+trembling, and neither takes a slice. The demonstration rocks without slicing, and the
+unscored coda takes the standing heel. See [cucumber notes](CUCUMBER_KNIFE.md).
+
+`cucumberSounds.ts` supplies a deterministic board knock with a watery crunch, plus the
+shared `scrape`/`judder` accent slots.
+
+## Knife + Banana
+
+`BananaKnifeVignette.ts` owns the illustration and `bananaMotion.ts` its pure curves. A
+chef's knife slices a banana on a board in a cream kitchen, the fruit the only saturated
+yellow in frame. One tap is one rocking chop. Each accurate chop takes an oval coin, which
+flops onto the pile showing cream flesh and three locules; an extra tap nicks the board, a
+missed target leaves the knife trembling, and neither takes a slice. The demonstration
+rocks without slicing, and the unscored coda takes the stem. See [banana notes](BANANA_KNIFE.md).
+
+`bananaSounds.ts` supplies a deterministic dull knock with soft flesh, plus the shared
+`scrape`/`judder` accent slots.
+
 ## Transitions
 
 Vignettes no longer swap inside a session (each level is one vignette and the map sits between levels), so the impact-ring and squeegee curtain painters were retired; they remain in Git history if a direct level-to-level flow ever wants them.
@@ -68,7 +113,9 @@ DEV replay buttons: Accurate, Good (+80 ms), Rough (+240 ms), Spam (40 ms interv
 
 1. Implement `Vignette` with responsive layout, callbacks, absolute-time update and complete destroy.
 2. Register its factory, identity/copy, palette, sound buffers, outcome presentation settings and transition painter.
-3. Add it to `VIGNETTES`; levels rotate through the registry in order, so a fourth vignette appears at every fourth level automatically. New rhythmic vocabulary goes into `PATTERN_TIERS`.
+3. Add it to `VIGNETTES`; levels rotate through the registry in order, so an appended
+   vignette appears at every *n*th level and the earlier entries keep theirs. New
+   rhythmic vocabulary goes into `PATTERN_TIERS`.
 
 Do not add vignette-specific rules to `RoundController`, `judge.ts`, `TapInput`, or `AudioClock`.
 
@@ -150,7 +197,7 @@ length of the phrase, one bead per beat, filling in ink as the example sounds an
 to coral sockets the instant the turn passes. The stage light opens with it — the pool the
 `Backdrop` already owns, moved down the frame and warmed toward its own colour rather than
 merely brightened, because on a pale stage another tenth of alpha on an open pool is
-invisible. The Hammer had this last cue alone on its own disc; all five carry it now,
+invisible. The Hammer had this last cue alone on its own disc; every act carries it now,
 level 1 included, since that is where the hand-over has to be clearest.
 
 Each bead then records its beat: Perfect filled in coral, Good a smaller fill inside a
@@ -172,7 +219,7 @@ absent slot. Only the Saw and the Tomato declared them, so a mistake was silent 
 quiet. The Hammer, Window and Bug now synthesize both in their own material, the two slots
 are required, and a new vignette that forgets them fails to compile.
 
-Measured rather than listened to: all 25 buffers across the five vignettes are between 180
+Measured rather than listened to: all 30 buffers across the six vignettes are between 180
 and 700 ms, mono, peak 0.16 to 0.91, with no non-finite samples. The Tomato's judder was
 the one outlier at a fifth of its siblings' peak and has been levelled with them. One bug
 underneath: `settle` returned NaN for an age of +Infinity — `sin(Infinity)` is NaN and NaN

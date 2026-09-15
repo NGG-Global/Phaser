@@ -9,6 +9,15 @@ import { SawTimberVignette, TIMBER } from './SawTimberVignette';
 import { createSawSounds } from '@/audio/sawSounds';
 import { TomatoKnifeVignette, KITCHEN } from './TomatoKnifeVignette';
 import { createTomatoSounds } from '@/audio/tomatoSounds';
+import { BicepCurlVignette, GYM } from './BicepCurlVignette';
+import { createCurlSounds } from '@/audio/curlSounds';
+import { CucumberKnifeVignette, CRISP } from './CucumberKnifeVignette';
+import { createCucumberSounds } from '@/audio/cucumberSounds';
+import { BananaKnifeVignette, BREAKFAST } from './BananaKnifeVignette';
+import { createBananaSounds } from '@/audio/bananaSounds';
+import { ScissorsPaperVignette, CRAFT } from './ScissorsPaperVignette';
+import { createPaperSounds } from '@/audio/paperSounds';
+import { PAPER_MOTION } from './paperMotion';
 
 export const VIGNETTES: readonly VignetteDefinition[] = [
   {
@@ -41,5 +50,33 @@ export const VIGNETTES: readonly VignetteDefinition[] = [
     success: ['Thin and\neven.', 'Every slice the same.'], rough: ['Roughly\nchopped.', 'Rustic. We are calling it rustic.'],
     endingSec: 1.35, successAccuracy: 70,
     create: scene => new TomatoKnifeVignette(scene), sounds: createTomatoSounds,
+  },
+  // New acts are appended so the introductory levels retain their order.
+  {
+    id: 'curl', title: 'Bicep curl', intro: 'One more\nrep.', ink: GYM.ink,
+    success: ['Solid\nset.', 'Every rep to the top.'], rough: ['Form\ncheck.', 'The weight had other ideas.'],
+    endingSec: 1.35, successAccuracy: 70,
+    create: scene => new BicepCurlVignette(scene), sounds: createCurlSounds,
+  },
+  // Appended, not inserted: levels 1 to 6 keep the vignettes they had.
+  {
+    id: 'cucumber', title: 'Knife & cucumber', intro: 'Keep it\ncrisp.', ink: CRISP.ink,
+    success: ['Clean\nrounds.', 'Every disc the same.'], rough: ['A bit\nragged.', 'Still a salad. Just rustic.'],
+    endingSec: 1.35, successAccuracy: 70,
+    create: scene => new CucumberKnifeVignette(scene), sounds: createCucumberSounds,
+  },
+  {
+    id: 'banana', title: 'Knife & banana', intro: 'Easy does\nit.', ink: BREAKFAST.ink,
+    success: ['Even\ncoins.', 'Breakfast, sorted.'], rough: ['A bit\nmushy.', 'Call it banana bread.'],
+    endingSec: 1.35, successAccuracy: 70,
+    create: scene => new BananaKnifeVignette(scene), sounds: createBananaSounds,
+  },
+  {
+    id: 'paper', title: 'Scissors & paper', intro: 'A little\npaper magic.', ink: CRAFT.ink,
+    success: ['Made with\na snip.', 'A little paper magic.'],
+    partial: { minAccuracy: PAPER_MOTION.partialAccuracy, copy: ['Almost\na masterpiece.', 'One edge needs another snip.'] },
+    rough: ['A fresh\nsheet?', 'A few snips went astray.'],
+    endingSec: 2, endingHoldBeats: 5, successAccuracy: PAPER_MOTION.successAccuracy,
+    create: scene => new ScissorsPaperVignette(scene), sounds: createPaperSounds,
   },
 ];

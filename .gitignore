@@ -25,6 +25,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Audio working files
+# The premixed MP3 and the WAV masters are tracked; exported stem archives are not.
+bgm/**/*.zip
+
 # Local environment
 .env
 .env.local

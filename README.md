@@ -12,6 +12,25 @@ per level, and a road of levels that never ends.
 Boot → Preload → **menu** → **map** → **play** → back to the map, with a
 **settings** screen reachable from the menu and the map.
 
+The first Play opens a skippable **tutorial** before the map. **How to play** on
+the menu replays it at any time. It uses the same hammer, workshop surfaces,
+fonts and sound engine as gameplay:
+
+1. A slow animated example shows **tap, tap, wait, tap**, then a finger copies
+   it as the sign switches from **Watch** to **Your turn**.
+2. Guided practice waits indefinitely at each required tap. Tap anywhere on
+   the stage; glowing beads prompt the hits, a hollow **WAIT** bead teaches the
+   gap, and completed taps receive checkmarks. There is no score or failure.
+3. A preview at the game's starting tempo demonstrates that the player's turn
+   begins on the next beat, with no extra pause. **Let's play** saves tutorial
+   completion separately from level progress and opens the map.
+
+Replay, mute and skip remain available. Backgrounding, interrupted audio or
+turning a touch device sideways pauses the lesson; resume restarts the current
+demonstration or practice. `src/game/TutorialRun.ts` owns the guided sequence,
+and `src/scenes/TutorialScene.ts` presents it without changing level timing or
+judgement rules.
+
 - **The map** is an endless scrollable road grouped into ten-level areas:
   Grass, Pavement, Sand, Snow, Dusk, then the same five again numbered II, III
   and so on. It renders a bounded window of levels, not the whole road.
@@ -21,10 +40,18 @@ Boot → Preload → **menu** → **map** → **play** → back to the map, with
   preparation bar opens the level so the player can find the pulse, and a level
   of six tasks or more gets one four-bar breather at its midpoint with the beat
   kept alive through it.
-- **Five vignettes** rotate strictly by registry order in
+- **Nine vignettes** rotate strictly by registry order in
   `src/vignettes/registry.ts`: Hammer & nail, Window cleaning, Bug & shoe, Saw &
-  timber, Knife & tomato. `levelSpec` picks `VIGNETTES[(level - 1) % length]`, so
-  reordering or inserting an entry reassigns every level's vignette.
+  timber, Knife & tomato, Bicep curl, Knife & cucumber, Knife & banana,
+  Scissors & paper. `levelSpec` picks
+  `VIGNETTES[(level - 1) % length]`, so reordering or inserting an entry
+  reassigns every level's vignette. New acts are appended so the earlier levels
+  keep theirs.
+- **Scissors & paper** first appears at level 9 and cycles through star, heart
+  and angel cutouts across tasks. At 70% or higher the paper unfolds cleanly;
+  40–69% produces an uneven, unfinished cutout; below 40% it tears and crumples.
+  Its reveal adds one musical bar between tasks, preserving the downbeat.
+  See [scissors and paper](docs/SCISSORS_PAPER.md).
 - **Difficulty** comes from a single curve, `d(level) = 1 − e^(−(level−1)/25)`,
   in `src/config/progression.ts`. It drives tempo, task count, pattern tier and
   the clear bar together: easy for the first few areas, still climbing at level
@@ -86,9 +113,10 @@ fill-rate limits, audio output delay, or Android Chrome's collapsing URL bar.
 With `import.meta.env.DEV` and `?debug`: a timing and resource readout, and
 Accurate, Good, Rough and Spam replay plus a music toggle in a DOM panel. The
 replays dispatch real DOM events through the normal Phaser input path; they do
-not inject grades. A `level` query parameter sets the level when the play scene
-starts without one — the map always passes its own, so reach a specific vignette
-through the map or by clearing progress. Production builds omit all of it.
+not inject grades. In development, `?debug&level=9` opens Scissors & paper
+directly; use level 2 for Window cleaning or level 5 for Knife & tomato.
+Tap the stage to play, or use Accurate/Good/Rough replay to exercise outcomes.
+Production builds omit the preview route and replay controls.
 
 ## Android build
 
@@ -112,7 +140,7 @@ src/
   game/         Level generation, round controller, scoring, progress, settings
   input/        Unified timestamped taps
   rhythm/       Patterns, scheduling and pure timing judgement
-  scenes/       Boot, Preload, Menu, Map, Play, Settings
+  scenes/       Boot, Preload, Menu, Tutorial, Map, Play, Settings
   textures/     Generated material tiles
   ui/           The drawing system: light, panels, type, icons, motion, materials
   vignettes/    One module per act, plus their pure motion curves
@@ -164,6 +192,7 @@ alone. The native build declares the lock in its manifest and never shows it.
   vignette may and may not own.
 - One document per vignette: [hammer](docs/HAMMER_NAIL.md),
   [window](docs/WINDOW_CLEANING.md), [saw](docs/SAW_TIMBER.md),
-  [tomato](docs/TOMATO_KNIFE.md).
+  [tomato](docs/TOMATO_KNIFE.md), [curl](docs/BICEP_CURL.md),
+  [cucumber](docs/CUCUMBER_KNIFE.md), [banana](docs/BANANA_KNIFE.md).
 - [Music](docs/MUSIC.md) — measured metadata, the premix, and open listening
   questions.

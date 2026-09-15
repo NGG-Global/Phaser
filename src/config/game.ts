@@ -9,6 +9,7 @@ import { MenuScene } from '@/scenes/MenuScene';
 import { PlayScene } from '@/scenes/PlayScene';
 import { PreloadScene } from '@/scenes/PreloadScene';
 import { SettingsScene } from '@/scenes/SettingsScene';
+import { TutorialScene } from '@/scenes/TutorialScene';
 
 /**
  * Builds the Phaser game configuration.
@@ -141,6 +142,6 @@ export function createGameConfig(): Phaser.Types.Core.GameConfig {
     /** Console banner is useful while developing, noise in production. */
     banner: import.meta.env.DEV,
 
-    scene: [BootScene, PreloadScene, MenuScene, MapScene, PlayScene, SettingsScene],
+    scene: [BootScene, PreloadScene, MenuScene, MapScene, PlayScene, SettingsScene, TutorialScene],
   };
 }

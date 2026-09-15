@@ -15,6 +15,7 @@ import {
   advanceBite, acceptDemoBeat, bladeVisibleDepth, clamp01, drawBack, dustFall,
   easeOut, kerfDepth, REFERENCE_BEAT, SAW_MOTION, sawDirection, sawTiming, strokeTravel,
 } from './sawMotion';
+import { isPlayerTurn, TURN_OPEN_SEC } from './motion';
 
 /** Cold linen and slate. Sawdust is the only warm note, so the accent doubles as the reward. */
 export const TIMBER = {
@@ -245,7 +246,10 @@ export class SawTimberVignette implements Vignette {
     this.stroke(time);
   }
 
-  public onPlayerHit(now: number): void { this.stroke(now); }
+  public onPlayerHit(now: number): void {
+    if (!isPlayerTurn(this.phase)) return;
+    this.stroke(now);
+  }
 
   /**
    * Chips thrown off the teeth. The falling plume stays hand drawn beside this: it is
@@ -306,7 +310,7 @@ export class SawTimberVignette implements Vignette {
    */
   private openStage(now: number): void {
     const offered = this.phase === 'respond' || this.phase === 'result';
-    this.backdrop.open(offered ? easeOut((now - this.respondAt) / 0.7) : 0);
+    this.backdrop.open(offered ? easeOut((now - this.respondAt) / TURN_OPEN_SEC) : 0);
   }
   public update(now: number): void {
     if (this.phase === 'paused') now = this.lastNow; else this.lastNow = now;

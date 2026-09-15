@@ -33,6 +33,9 @@ import { VIGNETTES } from '@/vignettes/registry';
 import type { Vignette } from '@/vignettes/Vignette';
 import { clamp01, easeOut } from '@/vignettes/motion';
 
+/** Watch is a timber plaque; Your turn is the coral block the thumb already knows. */
+type TurnCue = 'none' | 'watch' | 'play';
+
 /**
  * The beat track's metrics, in design units at scale 1. The beads are deliberately larger
  * than the map's area pips: this row is the only thing on screen that says whose turn it
@@ -67,7 +70,12 @@ export class PlayScene extends BaseScene {
   private get definition() { return VIGNETTES.find(v => v.id === this.spec.vignette) ?? VIGNETTES[0]!; }
   private stars!: Phaser.GameObjects.Graphics;
   private headline!: Phaser.GameObjects.Text;
+  /** Hung behind the phase word so Watch and Your turn are different objects, not just colours. */
+  private turnSign!: Phaser.GameObjects.Graphics;
   private accuracy!: Phaser.GameObjects.Text;
+  private turn: TurnCue = 'none';
+  /** Judgements that scored in the early window while the example was still on screen. */
+  private heldJudgements: Judgement[] = [];
   /** The three pucks — map, restart, mute — drawn as one baked graphic. */
   private chrome!: Phaser.GameObjects.Graphics;
   private actionRoot!: Phaser.GameObjects.Container;
@@ -141,6 +149,7 @@ export class PlayScene extends BaseScene {
     const ink = this.definition.ink;
     this.stars = this.add.graphics().setDepth(9);
     this.fx = new Feedback(this, 5);
+    this.turnSign = this.add.graphics().setDepth(11);
     this.headline = display(this, this.definition.intro, { size: 88, colour: ink, align: 'center' }).setOrigin(0.5, 0).setDepth(12);
     this.accuracy = body(this, '', { size: 34, colour: ink, align: 'center' }).setOrigin(0.5).setDepth(11);
     this.chrome = this.add.graphics().setDepth(10);
@@ -183,8 +192,9 @@ export class PlayScene extends BaseScene {
     // The phase cue and task beads are the whole HUD. Level metadata lives on the map.
     this.headlineY = top + 84 * s;
     this.headlineSize = (this.controller?.active ? 48 : 88) * s;
-    resize(this.headline, this.headlineSize, ink);
+    resize(this.headline, this.headlineSize, this.headlineColour);
     this.headline.setPosition(safe.centerX, this.headlineY).setLineSpacing(-12 * s);
+    this.drawTurnSign();
     this.controlSize = Math.max(88 * s, 48 * this.viewport.unitScale);
     const gap = Math.max(88 * s, this.controlSize + 4 * s);
     this.muteAt = { x: safe.right - 56 * s, y: top + 66 * s };
@@ -271,6 +281,7 @@ export class PlayScene extends BaseScene {
     this.outcome = null;
     this.saveFailed = false;
     this.stars.clear();
+    this.setTurn('none');
     this.controller?.dispose();
     this.audio?.cancel();
     this.audio?.music.stop();
@@ -296,7 +307,10 @@ export class PlayScene extends BaseScene {
               this.demoCount++;
             }
           },
-          tap: () => this.vignette.onPlayerHit(this.now()),
+          tap: () => {
+            this.vignette.onPlayerHit(this.now());
+            this.releaseHeldJudgements();
+          },
           judgement: result => this.showJudgement(result),
           complete: result => this.showResult(result),
           interrupted: () => this.showPause(),
@@ -318,6 +332,7 @@ export class PlayScene extends BaseScene {
       this.audio?.cancel();
       this.audio?.music.stop();
       console.error('Unable to start round', error);
+      this.setTurn('none');
       this.changeHeadline('No sound');
       this.setAction('Retry');
     }
@@ -328,6 +343,7 @@ export class PlayScene extends BaseScene {
     this.finishUnlock = Infinity;
     this.accuracy.setText('');
     this.outcomes = this.task.pattern.hits.map(() => 'pending');
+    this.heldJudgements = [];
     this.struckIndex = -1;
     this.struckAt = this.extraAt = this.verdictAt = -Infinity;
     this.verdict.setAlpha(0);
@@ -455,6 +471,7 @@ export class PlayScene extends BaseScene {
     const headlineSize = (playing ? 48 : 88) * this.uiScale;
     if (headlineSize !== this.headlineSize) { this.headlineSize = headlineSize; resize(this.headline, headlineSize, this.headlineColour); }
     this.headline.setAlpha(entry.alpha * endReveal).setY(this.headlineY + entry.rise * 16 * this.uiScale);
+    this.drawTurnSign();
     if (this.summaryShown) {
       this.accuracy.setAlpha(still ? 1 : easeOut((now - this.summaryAt) / 0.45));
       this.animateStars(now);
@@ -498,20 +515,54 @@ export class PlayScene extends BaseScene {
     this.headlineColour = colour;
     this.headline.setText(text).setAlpha(0).setY(this.headlineY + 16 * this.uiScale);
     resize(this.headline, this.headlineSize, colour);
+    this.drawTurnSign();
+  }
+  private setTurn(turn: TurnCue): void {
+    this.turn = turn;
+    this.drawTurnSign();
+  }
+  private drawTurnSign(): void {
+    const g = this.turnSign.clear();
+    if (this.turn === 'none' || this.headline.text === '') {
+      this.turnSign.setAlpha(0);
+      return;
+    }
+    const s = this.uiScale;
+    const padX = 26 * s;
+    const padY = 10 * s;
+    const w = Math.max(this.headline.displayWidth + padX * 2, 168 * s);
+    const h = Math.max(this.headline.displayHeight + padY * 2, 52 * s);
+    const x = this.viewport.safe.centerX - w / 2;
+    const y = this.headline.y - padY;
+    drawPanel(g, new Rect(x, y, w, h), s, {
+      fill: this.turn === 'play' ? PALETTE.coral : SHELL.wood,
+      depth: 8,
+      radius: 22,
+      hero: this.turn === 'play',
+    });
+    this.turnSign.setAlpha(1);
   }
   private showPhase(phase: Phase): void {
     this.vignette.onPhase(phase, this.now());
     // A lead-in longer than the level's opening bar is the breather, and it is the only
     // place in a level where nothing is being asked of the player.
     const resting = this.task.leadBeats > RHYTHM.leadInBeats;
-    if (phase === 'prepare') { this.changeHeadline(resting ? 'Breathe' : 'Watch'); this.setAction(''); }
-    if (phase === 'demonstrate') this.changeHeadline('Watch');
+    if (phase === 'prepare') {
+      this.setTurn('watch');
+      this.changeHeadline(resting ? 'Breathe' : 'Watch', SHELL.cream);
+      this.setAction('');
+    }
+    if (phase === 'demonstrate') {
+      this.setTurn('watch');
+      this.changeHeadline('Watch', SHELL.cream);
+    }
     // The demonstration runs straight into the response, so this flip is the only thing
     // that tells the player their turn has started. It cannot be deferred a frame. The
-    // word, its colour and the beat track's beads all turn over together.
+    // plaque, the word and the beat track's beads all turn over together.
     if (phase === 'respond') {
       this.turnAt = this.now();
-      this.changeHeadline('Your turn', PALETTE.coral);
+      this.setTurn('play');
+      this.changeHeadline('Your turn', SHELL.cream);
       this.setAction('');
       this.demoCount = 0;
       this.struckIndex = -1;
@@ -520,17 +571,30 @@ export class PlayScene extends BaseScene {
   }
   private showJudgement(result: Judgement): void {
     this.lastJudgement = `${result.kind} ${result.grade} ${result.deltaMs?.toFixed(0) ?? '—'} ms`;
+    if (result.index !== null) this.outcomes[result.index] = markFor(result);
+    // An extra tap belongs to no beat, so it shakes the whole row rather than marking one.
+    // Held until respond: sinking the nail or flashing Perfect during Watch is the glitch.
+    if (this.controller?.phase !== 'respond') {
+      this.heldJudgements.push(result);
+      return;
+    }
+    this.presentJudgement(result);
+  }
+  private presentJudgement(result: Judgement): void {
     this.vignette.onAccuracy(result, this.now());
     // The action sound is scheduled before the tap is graded, so a reaction to the
     // grade needs its own voice. Sound sets that declare neither accent stay silent.
     const now = this.now();
     if (result.kind === 'extra') this.audio?.playAccent(now, 'scrape');
     else if (result.kind === 'omission') this.audio?.playAccent(now, 'judder');
-    if (result.index !== null) this.outcomes[result.index] = markFor(result);
-    // An extra tap belongs to no beat, so it shakes the whole row rather than marking one.
     if (result.kind === 'extra') this.extraAt = now;
     else if (result.kind === 'hit' && result.index !== null) { this.struckIndex = result.index; this.struckAt = now; }
     this.sayVerdict(result, now);
+  }
+  private releaseHeldJudgements(): void {
+    const pending = this.heldJudgements;
+    this.heldJudgements = [];
+    for (const result of pending) this.presentJudgement(result);
   }
 
   /**
@@ -592,9 +656,9 @@ export class PlayScene extends BaseScene {
     const width = Math.min(Math.max(span * 2, 220 * s), safe.width - 48 * s);
     const height = TRACK.plateHeight * s;
     const plate = new Rect(safe.centerX - width / 2 + rattle, y - height / 2, width, height);
-    const heat = answering ? (still ? 1 : clamp01((now - this.turnAt) / 0.28)) : 0;
-    const rest = shade(PALETTE.paper, -0.06);
-    const hot = mix(PALETTE.paper, PALETTE.coral, 0.22);
+    const heat = answering ? (still ? 1 : clamp01((now - this.turnAt) / 0.12)) : 0;
+    const rest = mix(PALETTE.paper, SHELL.wood, 0.34);
+    const hot = mix(PALETTE.paper, PALETTE.coral, 0.42);
     const face = mix(rest, hot, easeOut(heat));
     drawPanel(g, plate, s, { fill: face, depth: TRACK.plateDepth, radius: TRACK.plateRadius });
     if (answering) {
@@ -651,9 +715,9 @@ export class PlayScene extends BaseScene {
     const strong = result.accuracy >= this.definition.successAccuracy;
     this.sequence!.complete(result.accuracy);
     this.results[this.taskIndex] = result.accuracy;
-    const ending = this.sequence!.ending(this.controller!.plan!.end);
+    const ending = this.sequence!.ending(this.controller!.plan!.end, this.definition.endingHoldBeats);
     const contact = ending.contact;
-    this.vignette.finish(strong, contact);
+    this.vignette.finish(strong, contact, result.accuracy);
     this.audio!.playFinish(contact, strong);
     this.finishUnlock = contact + this.definition.endingSec;
     const last = this.taskIndex >= this.spec.tasks.length - 1;
@@ -665,7 +729,9 @@ export class PlayScene extends BaseScene {
       // cleared level entirely.
       this.recordOutcome();
     }
-    const copy = strong ? this.definition.success : this.definition.rough;
+    const partial = this.definition.partial;
+    const copy = strong ? this.definition.success : partial && result.accuracy >= partial.minAccuracy ? partial.copy : this.definition.rough;
+    this.setTurn('none');
     this.changeHeadline(copy[0]);
     this.accuracy.setText(this.debugMode ? `${Math.round(result.accuracy)}%` : '');
     this.setAction('');
@@ -687,6 +753,7 @@ export class PlayScene extends BaseScene {
     const accuracy = meanAccuracy(this.results);
     this.recordOutcome();
     const outcome = this.outcome!;
+    this.setTurn('none');
     this.changeHeadline(this.saveFailed ? 'Couldn’t save' : outcome.cleared ? 'Cleared' : 'Again?');
     this.accuracy.setText(`${Math.round(accuracy)}%`);
     this.setAction(outcome.cleared ? 'Continue' : 'Try again');
@@ -766,6 +833,7 @@ export class PlayScene extends BaseScene {
   }
   private showPause(): void {
     this.vignette.pause();
+    this.setTurn('none');
     this.changeHeadline('Paused');
     this.setAction('Resume');
   }

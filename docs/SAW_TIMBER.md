@@ -5,7 +5,7 @@ scheduler or judgement rule changed for it. The engine gained one generic capabi
 an optional judgement accent on the sound set — because the action sound is scheduled
 before the tap is graded, so nothing existing could react to a grade.
 
-`levelSpec` cycles the registry, so the saw is every fifth level now that Tomato follows it. Its tasks and tempo
+`levelSpec` cycles the registry, so the saw is every sixth level now that Curl follows Tomato. Its tasks and tempo
 come from the progression curve like any other vignette's: each level starts at the
 music's 120 BPM and ramps task by task toward its peak, up to 150 BPM on the plateau.
 

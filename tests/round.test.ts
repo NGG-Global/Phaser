@@ -48,13 +48,20 @@ describe('round lifecycle', () => {
     expect(events.phase).toHaveBeenCalledWith('respond');
   });
   it('retains the early first-hit window before the rendered respond phase', () => {
-    const { round, advance } = setup();
+    const { round, events, sound, advance } = setup();
     const early = round.plan!.response - 0.1;
     advance(early);
     // The demonstration now runs right up to the response, so an early first tap lands
     // while the demonstration is still the rendered phase. It is still eligible.
+    const plays = sound.play.mock.calls.length;
     expect(round.phase).toBe('demonstrate');
     expect(round.tap(early, early, early * 1000)?.grade).toBe('Good');
+    expect(events.tap).not.toHaveBeenCalled();
+    expect(sound.play).toHaveBeenCalledTimes(plays);
+    advance(round.plan!.response);
+    expect(round.phase).toBe('respond');
+    expect(events.tap).toHaveBeenCalledTimes(1);
+    expect(sound.play).toHaveBeenCalledTimes(plays + 1);
   });
   it('uses capture time even when a callback is delivered late', () => {
     const { round, advance } = setup();
