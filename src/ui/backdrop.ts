@@ -7,7 +7,7 @@ import { mix } from './colour';
 import { FxKey } from './feedback';
 
 /**
- * The shared stage behind a vignette. Five vignettes each filled the screen with their
+ * The shared stage behind a vignette. The acts each filled the screen with their
  * own paper colour and one of them laid a grain over it; this is that, once: the ground
  * colour, a soft pool of warmer light from the shared light's side, and the paper fibre
  * over the whole frame so every surface in the game is on the same sheet.

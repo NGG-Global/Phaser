@@ -9,6 +9,8 @@ import { SawTimberVignette, TIMBER } from './SawTimberVignette';
 import { createSawSounds } from '@/audio/sawSounds';
 import { TomatoKnifeVignette, KITCHEN } from './TomatoKnifeVignette';
 import { createTomatoSounds } from '@/audio/tomatoSounds';
+import { BicepCurlVignette, GYM } from './BicepCurlVignette';
+import { createCurlSounds } from '@/audio/curlSounds';
 
 export const VIGNETTES: readonly VignetteDefinition[] = [
   {
@@ -41,5 +43,13 @@ export const VIGNETTES: readonly VignetteDefinition[] = [
     success: ['Thin and\neven.', 'Every slice the same.'], rough: ['Roughly\nchopped.', 'Rustic. We are calling it rustic.'],
     endingSec: 1.35, successAccuracy: 70,
     create: scene => new TomatoKnifeVignette(scene), sounds: createTomatoSounds,
+  },
+  // Appended, not inserted: levels 1 to 5 keep the vignettes they had, and the rotation
+  // becomes six from level 6 on.
+  {
+    id: 'curl', title: 'Bicep curl', intro: 'One more\nrep.', ink: GYM.ink,
+    success: ['Solid\nset.', 'Every rep to the top.'], rough: ['Form\ncheck.', 'The weight had other ideas.'],
+    endingSec: 1.35, successAccuracy: 70,
+    create: scene => new BicepCurlVignette(scene), sounds: createCurlSounds,
   },
 ];

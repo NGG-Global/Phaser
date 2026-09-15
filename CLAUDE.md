@@ -11,9 +11,10 @@ curve. `src/game/progress.ts` owns saved progress and `src/game/settings.ts`
 owns player settings; both validate every field on read, because storage can be
 blocked, stale or tampered with.
 
-Five vignettes rotate strictly by registry order: `levelSpec` picks
+Six vignettes rotate strictly by registry order: `levelSpec` picks
 `VIGNETTES[(level - 1) % VIGNETTES.length]`, so reordering or inserting an entry
-in `src/vignettes/registry.ts` silently reassigns every level's vignette.
+in `src/vignettes/registry.ts` silently reassigns every level's vignette. New
+acts are appended so the earlier levels keep theirs.
 Presentation lives inside the vignette; the rhythm controller, judge and scorer
 stay authoritative, as `docs/VERTICAL_SLICE.md` sets out.
 

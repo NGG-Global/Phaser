@@ -3,7 +3,7 @@
 A fifth vignette over the existing rhythm engine, added at request. No clock, input,
 scheduler or judgement rule changed for it, and no engine capability was added: it uses
 the judgement accents Saw introduced. `levelSpec` cycles the registry, so the tomato is
-every fifth level.
+`levelSpec` cycles the registry, so the tomato is every sixth level now that Curl follows it.
 
 ## Visual direction and controls
 
