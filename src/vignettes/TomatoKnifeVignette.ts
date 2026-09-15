@@ -15,6 +15,7 @@ import {
   acceptDemoBeat, advanceSlice, clamp01, cutFraction, easeOut, juiceFall, knifeLift, knifeWindup,
   REFERENCE_BEAT, sliceTumble, TOMATO_MOTION, tomatoTiming,
 } from './tomatoMotion';
+import { isPlayerTurn, TURN_OPEN_SEC } from './motion';
 
 /** A white-tiled kitchen. The tomato is the only saturated thing in it, so it is the subject. */
 export const KITCHEN = {
@@ -262,7 +263,10 @@ export class TomatoKnifeVignette implements Vignette {
     this.strike(time);
   }
 
-  public onPlayerHit(now: number): void { this.strike(now); }
+  public onPlayerHit(now: number): void {
+    if (!isPlayerTurn(this.phase)) return;
+    this.strike(now);
+  }
 
   public onAccuracy(result: Judgement, now: number): void {
     const slices = advanceSlice(this.slices, result.kind);
@@ -304,7 +308,7 @@ export class TomatoKnifeVignette implements Vignette {
    */
   private openStage(now: number): void {
     const offered = this.phase === 'respond' || this.phase === 'result';
-    this.backdrop.open(offered ? easeOut((now - this.respondAt) / 0.7) : 0);
+    this.backdrop.open(offered ? easeOut((now - this.respondAt) / TURN_OPEN_SEC) : 0);
   }
   public update(now: number): void {
     if (this.phase === 'paused') now = this.lastNow; else this.lastNow = now;

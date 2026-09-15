@@ -42,7 +42,9 @@ function strokeFor(t: Treatment, size: number): number {
 function dressPad(size: number, stroke: number): { left: number; right: number; top: number; bottom: number } {
   const inset = Math.ceil(stroke + 1);
   const drop = Math.max(1, Math.ceil(size * 0.07));
-  return { left: inset, right: inset, top: inset, bottom: inset + drop };
+  // Equal on opposite sides so origin 0.5 is the letter, not a point shifted by the drop.
+  const y = inset + drop;
+  return { left: inset, right: inset, top: y, bottom: y };
 }
 
 export interface TypeSpec {
