@@ -5,6 +5,8 @@ import { createCurlSounds } from '../src/audio/curlSounds';
 import { createImpactBuffers, synthesizeImpact } from '../src/audio/hammerSounds';
 import { createSawSounds } from '../src/audio/sawSounds';
 import { createTomatoSounds } from '../src/audio/tomatoSounds';
+import { createCucumberSounds } from '../src/audio/cucumberSounds';
+import { createBananaSounds } from '../src/audio/bananaSounds';
 import { createWindowSounds } from '../src/audio/windowSounds';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -124,6 +126,8 @@ it('gives every vignette a voice for a wasted tap and for a missed beat', () => 
     saw: createSawSounds,
     tomato: createTomatoSounds,
     curl: createCurlSounds,
+    cucumber: createCucumberSounds,
+    banana: createBananaSounds,
   };
   const context = {
     sampleRate: rate,

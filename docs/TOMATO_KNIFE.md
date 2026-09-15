@@ -2,8 +2,8 @@
 
 A fifth vignette over the existing rhythm engine, added at request. No clock, input,
 scheduler or judgement rule changed for it, and no engine capability was added: it uses
-the judgement accents Saw introduced. `levelSpec` cycles the registry, so the tomato is
-`levelSpec` cycles the registry, so the tomato is every sixth level now that Curl follows it.
+the judgement accents Saw introduced. `levelSpec` cycles the registry, so the tomato is every eighth level now that Cucumber
+and Banana follow Curl. The entry was never moved: later acts were appended.
 
 ## Visual direction and controls
 

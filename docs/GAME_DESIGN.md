@@ -12,7 +12,7 @@ All rounds share the seven-stem composition at its measured 120 BPM. Each stem i
 
 ## Endless level progression
 
-The game is an endless road of levels (`src/game/levels.ts`, tuned in `src/config/progression.ts`), reached from a scrollable map (`MapScene`) grouped into ten-level areas: Grass, Pavement, Sand, Snow, Dusk, then Grass II and so on forever. A level is one round of one vignette (Hammer, Window, Bug, Saw, Tomato rotating by level, in registry order), several tasks long. Clearing a level unlocks the next; stars record how far above the bar the player finished. Progress is saved locally.
+The game is an endless road of levels (`src/game/levels.ts`, tuned in `src/config/progression.ts`), reached from a scrollable map (`MapScene`) grouped into ten-level areas: Grass, Pavement, Sand, Snow, Dusk, then Grass II and so on forever. A level is one round of one vignette (Hammer, Window, Bug, Saw, Tomato, Curl, Cucumber, Banana rotating by level, in registry order), several tasks long. Clearing a level unlocks the next; stars record how far above the bar the player finished. Progress is saved locally.
 
 One curve drives every difficulty knob so they move together and never contradict each other: `d(level) = 1 − e^(−(level−1)/25)`, which rises fast through the first two areas and saturates near level 60. From `d`:
 
@@ -164,4 +164,4 @@ Replay resets the six-round session and its score. Keep the slice's state in mem
 - Test on a physical Android phone, mobile Safari where available, and desktop mouse/keyboard; portrait resizing and interruptions preserve fairness.
 - Under deliberate frame delays, scheduled sound remains steady and judgement uses event timestamps; a severe stall restarts the attempt instead of issuing unfair misses.
 
-The slice excludes egg cracking, stamping, procedural rhythms, a song library, multiplayer, physics simulation, asset editors and monetization. Sawing (Saw + Timber) and slicing a tomato (Knife + Tomato) were each added later at request as the fourth and fifth vignettes, and endless levels superseded the fixed session; see the current sections above. Further vignettes remain out of scope without a request. Its purpose is to prove that repeating rhythms through changing physical jokes is satisfying and technically reliable.
+The slice excludes egg cracking, stamping, procedural rhythms, a song library, multiplayer, physics simulation, asset editors and monetization. Sawing, the tomato, the curl, and later cucumber and banana cutting were each added at request, and endless levels superseded the fixed session; see the current sections above. Further vignettes remain out of scope without a request. Its purpose is to prove that repeating rhythms through changing physical jokes is satisfying and technically reliable.
