@@ -11,6 +11,7 @@ export const SceneKey = {
   Map: 'map',
   Play: 'play',
   Settings: 'settings',
+  Tutorial: 'tutorial',
 } as const;
 
 export type SceneKey = (typeof SceneKey)[keyof typeof SceneKey];

@@ -121,13 +121,14 @@ export class HammerNailVignette implements Vignette {
     this.hammer.add(g);
   }
 
-  public layout(viewport: Viewport): void {
+  public layout(viewport: Viewport, benchY?: number): void {
     const { safe } = viewport;
     const t = STYLE.current;
     // The cover reserves the sign above the tool; gameplay retains its large pose.
     this.scale = this.cover ? Math.min(safe.width / 720, safe.height / 1550) : Math.min(safe.width / 650, safe.height / 1000);
     this.baseX = safe.centerX - 350 * this.scale;
-    this.baseY = safe.top + safe.height * 0.68;
+    // The tutorial reserves space below the tool for its labelled rhythm beads.
+    this.baseY = benchY ?? safe.top + safe.height * 0.68;
     this.stage.setPosition(this.baseX, this.baseY).setScale(this.scale);
     this.backdrop.layout(viewport);
     const wood = faces(WORKSHOP.wood);

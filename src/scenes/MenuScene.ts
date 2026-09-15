@@ -6,6 +6,7 @@ import { PALETTE, SHELL } from '@/config/theme';
 import { BaseScene } from '@/core/BaseScene';
 import { reducedMotion } from '@/core/motionPreference';
 import { TapInput, type Tap } from '@/input/TapInput';
+import { tutorialComplete } from '@/game/TutorialRun';
 import { MaterialKey } from '@/textures/materials';
 import { shade } from '@/ui/colour';
 import { CHROME, drawPuck, drawRopes, pressAmount, puckSink } from '@/ui/chrome';
@@ -44,6 +45,9 @@ export class MenuScene extends BaseScene {
   private button!: Phaser.GameObjects.Graphics;
   private buttonSurface!: Phaser.GameObjects.TileSprite;
   private playLabel!: Phaser.GameObjects.Text;
+  private tutorialButton!: Phaser.GameObjects.Graphics;
+  private tutorialLabel!: Phaser.GameObjects.Text;
+  private tutorialRect = new Phaser.Geom.Rectangle();
   private pucks!: Phaser.GameObjects.Graphics;
   private taps!: TapInput;
   private curtain!: SceneCurtain;
@@ -88,6 +92,8 @@ export class MenuScene extends BaseScene {
     this.button = this.add.graphics();
     this.buttonSurface = surface(this, MaterialKey.cloth, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, PALETTE.coral, 0.35);
     this.playLabel = display(this, 'Play', { size: 40, colour: SHELL.cream, align: 'center' }).setOrigin(0.5);
+    this.tutorialButton = this.add.graphics();
+    this.tutorialLabel = display(this, 'How to play', { size: 32, colour: PALETTE.ink, align: 'center' }).setOrigin(0.5);
     this.pucks = this.add.graphics();
 
     this.taps = new TapInput(this, tap => this.handleTap(tap));
@@ -132,6 +138,10 @@ export class MenuScene extends BaseScene {
     this.buttonRect.setTo(safe.centerX - CHROME.block.width * s / 2, safe.bottom - CHROME.block.fromBottom * s - height, CHROME.block.width * s, height);
     this.drawButton(0, s);
     resize(this.playLabel, 40 * s, SHELL.cream);
+    this.tutorialRect.setTo(safe.centerX - 200 * s, this.buttonRect.y - this.controlSize - 24 * s, 400 * s, this.controlSize);
+    drawPanel(this.tutorialButton.clear(), this.tutorialRect, s, { fill: SHELL.puck, depth: 8 });
+    this.tutorialLabel.setPosition(this.tutorialRect.centerX, this.tutorialRect.centerY);
+    resize(this.tutorialLabel, 32 * s, PALETTE.ink);
   }
 
   private drawPucks(s: number, press: number): void {
@@ -222,8 +232,9 @@ export class MenuScene extends BaseScene {
       this.pressDirty = true;
       void this.play();
     }
+    if (Phaser.Geom.Rectangle.Contains(this.tutorialRect, tap.x, tap.y)) void this.play(true);
   }
-  private async play(): Promise<void> {
+  private async play(tutorial = false): Promise<void> {
     if (this.busy) return;
     const request = ++this.request;
     this.busy = true;
@@ -236,7 +247,8 @@ export class MenuScene extends BaseScene {
       await audio.music.load();
       if (this.disposed || request !== this.request) return;
       this.playLabel.setText('Play');
-      this.curtain.cover(() => this.scene.start(SceneKey.Map));
+      const needsTutorial = tutorial || !(this.registry.get('tutorial-complete') || tutorialComplete());
+      this.curtain.cover(() => this.scene.start(needsTutorial ? SceneKey.Tutorial : SceneKey.Map));
     } catch (error) {
       if (this.disposed || request !== this.request) return;
       this.busy = false;

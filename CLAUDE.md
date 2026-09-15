@@ -11,12 +11,19 @@ curve. `src/game/progress.ts` owns saved progress and `src/game/settings.ts`
 owns player settings; both validate every field on read, because storage can be
 blocked, stale or tampered with.
 
-Eight vignettes rotate strictly by registry order: `levelSpec` picks
+Nine vignettes rotate strictly by registry order: `levelSpec` picks
 `VIGNETTES[(level - 1) % VIGNETTES.length]`, so reordering or inserting an entry
 in `src/vignettes/registry.ts` silently reassigns every level's vignette. New
 acts are appended so the earlier levels keep theirs.
 Presentation lives inside the vignette; the rhythm controller, judge and scorer
 stay authoritative, as `docs/VERTICAL_SLICE.md` sets out.
+
+Scissors & paper is the ninth act. Its three cutout shapes rotate per task;
+`paperMotion.ts` derives success (70%+), partial (40–69%) and failure from the
+round accuracy passed to `Vignette.finish`. Other acts retain their binary
+endings. Its five-beat reveal hold adds one bar to the default coda; holds must
+complete whole bars with the contact and two slide beats. See
+`docs/SCISSORS_PAPER.md`. In DEV only, `?debug&level=9` opens it directly.
 
 Music is one premixed stereo MP3 normalized to a 120 BPM, 60-bar loop
 (`docs/MUSIC.md`), encoded from the seven WAV masters by `npm run music:encode`.

@@ -715,9 +715,9 @@ export class PlayScene extends BaseScene {
     const strong = result.accuracy >= this.definition.successAccuracy;
     this.sequence!.complete(result.accuracy);
     this.results[this.taskIndex] = result.accuracy;
-    const ending = this.sequence!.ending(this.controller!.plan!.end);
+    const ending = this.sequence!.ending(this.controller!.plan!.end, this.definition.endingHoldBeats);
     const contact = ending.contact;
-    this.vignette.finish(strong, contact);
+    this.vignette.finish(strong, contact, result.accuracy);
     this.audio!.playFinish(contact, strong);
     this.finishUnlock = contact + this.definition.endingSec;
     const last = this.taskIndex >= this.spec.tasks.length - 1;
@@ -729,7 +729,8 @@ export class PlayScene extends BaseScene {
       // cleared level entirely.
       this.recordOutcome();
     }
-    const copy = strong ? this.definition.success : this.definition.rough;
+    const partial = this.definition.partial;
+    const copy = strong ? this.definition.success : partial && result.accuracy >= partial.minAccuracy ? partial.copy : this.definition.rough;
     this.setTurn('none');
     this.changeHeadline(copy[0]);
     this.accuracy.setText(this.debugMode ? `${Math.round(result.accuracy)}%` : '');
