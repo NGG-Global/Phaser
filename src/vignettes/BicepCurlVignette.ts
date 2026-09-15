@@ -39,9 +39,9 @@ const HIP_Y = -292;
 /** Trunk space: origin at the hips. */
 const SHOULDER = { x: 56, y: -236 } as const;
 const ELBOW = { x: 68, y: -64 } as const;
-const HEAD = { x: 54, y: -402, rx: 58, ry: 72 } as const;
-const JAW = { x: 64, y: -352, rx: 42, ry: 38 } as const;
-const HAIR = { x: 46, y: -440, rx: 56, ry: 44 } as const;
+const HEAD = { x: 58, y: -368, rx: 66, ry: 78 } as const;
+const JAW = { x: 72, y: -314, rx: 48, ry: 44 } as const;
+const HAIR = { x: 48, y: -428, rx: 58, ry: 40 } as const;
 const DELTOID_R = 46;
 const UPPER_ARM = { shoulder: 42, elbow: 28 } as const;
 const FOREARM = { elbow: 28, wrist: 20 } as const;
@@ -167,37 +167,40 @@ export class BicepCurlVignette implements Vignette {
     // Athletic stance, slight bend: the back leg in shade, the front leg lit. Each
     // segment tapers hip → knee → ankle, so the mass sits in the thigh and calf
     // instead of reading as two square posts under a box of shorts.
-    const back = { hip: { x: -26, y: -248 }, knee: { x: -40, y: -138 }, ankle: { x: -48, y: -40 } } as const;
-    const front = { hip: { x: 44, y: -248 }, knee: { x: 58, y: -132 }, ankle: { x: 70, y: -38 } } as const;
+    const back = { hip: { x: -22, y: -246 }, knee: { x: -48, y: -136 }, ankle: { x: -62, y: -46 } } as const;
+    const front = { hip: { x: 46, y: -246 }, knee: { x: 70, y: -128 }, ankle: { x: 88, y: -44 } } as const;
     for (const pass of line > 0 ? [line, 0] : [0]) {
       const shadeTone = pass > 0 ? ink.edge : skin.shade;
       const litTone = pass > 0 ? ink.edge : skin.face;
-      this.taper(g, back.hip.x, back.hip.y, 36, back.knee.x, back.knee.y, 22, shadeTone, pass);
-      this.taper(g, back.knee.x, back.knee.y, 24, back.ankle.x, back.ankle.y, 15, shadeTone, pass);
-      g.fillStyle(shadeTone).fillEllipse(back.knee.x - 6, back.knee.y + 28, (26 + pass) * 2, (40 + pass) * 2);
-      this.taper(g, front.hip.x, front.hip.y, 40, front.knee.x, front.knee.y, 24, litTone, pass);
-      this.taper(g, front.knee.x, front.knee.y, 26, front.ankle.x, front.ankle.y, 16, litTone, pass);
-      g.fillStyle(litTone).fillEllipse(front.knee.x + 8, front.knee.y + 30, (28 + pass) * 2, (44 + pass) * 2);
+      this.taper(g, back.hip.x, back.hip.y, 34, back.knee.x, back.knee.y, 22, shadeTone, pass);
+      this.taper(g, back.knee.x, back.knee.y, 24, back.ankle.x, back.ankle.y, 18, shadeTone, pass);
+      g.fillStyle(shadeTone).fillEllipse(back.knee.x - 4, back.knee.y + 32, (22 + pass) * 2, (36 + pass) * 2);
+      this.taper(g, front.hip.x, front.hip.y, 38, front.knee.x, front.knee.y, 24, litTone, pass);
+      this.taper(g, front.knee.x, front.knee.y, 26, front.ankle.x, front.ankle.y, 19, litTone, pass);
+      g.fillStyle(litTone).fillEllipse(front.knee.x + 6, front.knee.y + 34, (24 + pass) * 2, (38 + pass) * 2);
     }
-    g.fillStyle(skin.lit, 0.5).fillEllipse(front.hip.x - 4, -196, 28, 52);
-    g.fillStyle(skin.lit, 0.4).fillEllipse(front.knee.x - 2, front.knee.y + 18, 20, 28);
-    g.fillStyle(skin.shade, 0.35).fillEllipse(front.knee.x + 16, front.knee.y + 38, 16, 22);
-    this.drawShoe(g, back.ankle.x - 8, 0, 0.86, false, line);
-    this.drawShoe(g, front.ankle.x - 14, 2, 1, true, line);
+    g.fillStyle(skin.lit, 0.5).fillEllipse(front.hip.x - 2, -192, 26, 48);
+    g.fillStyle(skin.lit, 0.4).fillEllipse(front.knee.x, front.knee.y + 20, 18, 26);
+    g.fillStyle(skin.shade, 0.35).fillEllipse(front.knee.x + 14, front.knee.y + 40, 14, 20);
+    // Back shoe planted further left, front shoe stepped forward, so two trainers
+    // do not fuse into one loaf.
+    this.drawShoe(g, back.ankle.x - 18, 0, 0.84, false, line);
+    this.drawShoe(g, front.ankle.x - 22, 3, 1, true, line);
     // Shorts as a hip bubble and two thigh lobes, so the hem follows the leg instead
     // of cutting a rounded rectangle across it.
     for (const pass of line > 0 ? [line, 0] : [0]) {
       const seat = pass > 0 ? ink.edge : ink.face;
       const backLobe = pass > 0 ? ink.edge : ink.shade;
-      g.fillStyle(backLobe).fillEllipse(-30, HIP_Y + 56, (36 + pass) * 2, (32 + pass) * 2);
-      g.fillStyle(seat).fillEllipse(16, HIP_Y + 10, (78 + pass) * 2, (48 + pass) * 2);
-      g.fillStyle(seat).fillEllipse(50, HIP_Y + 62, (40 + pass) * 2, (34 + pass) * 2);
+      g.fillStyle(backLobe).fillEllipse(-24, HIP_Y + 58, (32 + pass) * 2, (30 + pass) * 2);
+      g.fillStyle(seat).fillEllipse(18, HIP_Y + 14, (68 + pass) * 2, (44 + pass) * 2);
+      g.fillStyle(seat).fillEllipse(52, HIP_Y + 64, (36 + pass) * 2, (32 + pass) * 2);
     }
-    g.fillStyle(ink.shade, 0.45).fillEllipse(-28, HIP_Y + 18, 52, 58);
-    g.fillStyle(ink.lit, 0.35).fillEllipse(36, HIP_Y - 4, 70, 28);
-    g.fillStyle(ink.face).fillRoundedRect(-52, HIP_Y - 18, 128, 22, 11);
-    g.fillStyle(ink.lit, 0.7).fillRoundedRect(-46, HIP_Y - 16, 116, 8, 4);
-    g.fillStyle(GYM.tank, 0.95).fillEllipse(72, HIP_Y + 28, 14, 72);
+    g.fillStyle(ink.shade, 0.45).fillEllipse(-24, HIP_Y + 20, 46, 52);
+    g.fillStyle(ink.lit, 0.35).fillEllipse(34, HIP_Y - 2, 62, 24);
+    if (line > 0) g.lineStyle(line, ink.edge).strokeRoundedRect(-48, HIP_Y - 16, 118, 20, 10);
+    g.fillStyle(ink.face).fillRoundedRect(-48, HIP_Y - 16, 118, 20, 10);
+    g.fillStyle(ink.lit, 0.7).fillRoundedRect(-42, HIP_Y - 14, 106, 7, 4);
+    g.fillStyle(GYM.tank, 0.95).fillEllipse(74, HIP_Y + 30, 12, 64);
   }
 
   /** A trainer in side view: round toe, heel cup, chalk midsole. Not a rounded brick. */
@@ -206,20 +209,21 @@ export class BicepCurlVignette implements Vignette {
   ): void {
     const ink = faces(GYM.ink);
     const upper = lit ? ink.face : ink.shade;
-    const w = 112 * size;
-    const h = 36 * size;
-    const r = 14 * size;
+    const w = 108 * size;
+    const h = 46 * size;
+    const r = 16 * size;
     for (const pass of line > 0 ? [line, 0] : [0]) {
       const tone = pass > 0 ? ink.edge : upper;
-      g.fillStyle(tone).fillRoundedRect(heelX - pass, soleY - h + 8 - pass, w + pass * 2, h * 0.62 + pass * 2, r);
-      g.fillStyle(tone).fillEllipse(heelX + w * 0.78, soleY - h * 0.42, (w * 0.28 + pass) * 2, (h * 0.42 + pass) * 2);
-      g.fillStyle(tone).fillEllipse(heelX + w * 0.18, soleY - h * 0.52, (w * 0.2 + pass) * 2, (h * 0.48 + pass) * 2);
+      // Heel collar cups the ankle so the leg does not dump into a flat sole.
+      g.fillStyle(tone).fillEllipse(heelX + w * 0.2, soleY - h * 0.72, (w * 0.22 + pass) * 2, (h * 0.55 + pass) * 2);
+      g.fillStyle(tone).fillRoundedRect(heelX - pass, soleY - h + 10 - pass, w + pass * 2, h * 0.58 + pass * 2, r);
+      g.fillStyle(tone).fillEllipse(heelX + w * 0.8, soleY - h * 0.46, (w * 0.26 + pass) * 2, (h * 0.5 + pass) * 2);
     }
-    g.fillStyle(lit ? ink.lit : ink.face, 0.55).fillEllipse(heelX + w * 0.42, soleY - h * 0.62, w * 0.42, h * 0.28);
-    g.fillStyle(GYM.chalk).fillRoundedRect(heelX + 4, soleY - 12 * size, w - 8, 10 * size, 4 * size);
-    g.fillStyle(ink.edge).fillRoundedRect(heelX + 2, soleY - 4 * size, w - 4, 8 * size, 4 * size);
+    g.fillStyle(lit ? ink.lit : ink.face, 0.5).fillEllipse(heelX + w * 0.38, soleY - h * 0.7, w * 0.34, h * 0.28);
+    g.fillStyle(GYM.chalk).fillRoundedRect(heelX + 5, soleY - 14 * size, w - 10, 11 * size, 4 * size);
+    g.fillStyle(ink.edge).fillRoundedRect(heelX + 3, soleY - 5 * size, w - 6, 9 * size, 4 * size);
     g.lineStyle(4.5 * size, GYM.tank).beginPath()
-      .arc(heelX + w * 0.55, soleY - h * 0.22, 22 * size, Math.PI * 1.15, Math.PI * 1.75, false)
+      .arc(heelX + w * 0.52, soleY - h * 0.28, 20 * size, Math.PI * 1.12, Math.PI * 1.78, false)
       .strokePath();
   }
 
@@ -238,42 +242,50 @@ export class BicepCurlVignette implements Vignette {
     // Torso, neck and head as one silhouette: a V through the shoulders, an egg of a
     // skull with a jaw, hair as a mass that breaks the oval. Drawn together so the
     // outline runs the whole figure and a neck does not seam onto a floating circle.
-    const torso = [-40, -242, 104, -262, 122, -196, 108, -108, 74, -10, -22, -8, -46, -132, -50, -210];
+    const torso = [-38, -240, 96, -252, 106, -186, 98, -108, 72, -10, -20, -8, -44, -128, -48, -208];
     if (line > 0) {
       g.lineStyle(line * 2, ink.edge); outline(g, torso);
-      this.taper(g, 16, -244, 30, 44, -348, 22, ink.edge, line);
+      this.taper(g, 18, -242, 32, 42, -308, 24, ink.edge, line);
       g.fillStyle(ink.edge).fillEllipse(HEAD.x, HEAD.y, (HEAD.rx + line) * 2, (HEAD.ry + line) * 2);
       g.fillStyle(ink.edge).fillEllipse(JAW.x, JAW.y, (JAW.rx + line) * 2, (JAW.ry + line) * 2);
-      g.fillStyle(ink.edge).fillEllipse(HAIR.x, HAIR.y, (HAIR.rx + line) * 2, (HAIR.ry + line) * 2);
-      g.fillStyle(ink.edge).fillEllipse(HEAD.x + 22, HEAD.y - 64, 56 + line * 2, 40 + line * 2);
+      this.drawHair(g, ink.edge, line);
     }
     g.fillStyle(skin.face); fan(g, torso);
-    this.taper(g, 16, -244, 30, 44, -348, 22, skin.face);
-    g.fillStyle(skin.shade, 0.38); fan(g, [-40, -242, -6, -240, -4, -8, -22, -8, -46, -132, -50, -210]);
-    g.fillStyle(skin.face).fillEllipse(86, -176, 78, 96);
-    g.fillStyle(skin.lit, 0.55).fillEllipse(98, -192, 40, 46);
+    this.taper(g, 18, -242, 32, 42, -308, 24, skin.face);
+    g.fillStyle(skin.shade, 0.38); fan(g, [-38, -240, -4, -238, -2, -8, -20, -8, -44, -128, -48, -208]);
     g.fillStyle(skin.face).fillEllipse(HEAD.x, HEAD.y, HEAD.rx * 2, HEAD.ry * 2);
     g.fillStyle(skin.face).fillEllipse(JAW.x, JAW.y, JAW.rx * 2, JAW.ry * 2);
-    g.fillStyle(skin.lit, 0.72).fillEllipse(HEAD.x - 16, HEAD.y - 18, 58, 52);
-    g.fillStyle(skin.shade, 0.28).fillEllipse(HEAD.x + 28, HEAD.y + 22, 36, 44);
+    g.fillStyle(skin.lit, 0.72).fillEllipse(HEAD.x - 18, HEAD.y - 16, 64, 56);
+    g.fillStyle(skin.shade, 0.28).fillEllipse(HEAD.x + 30, HEAD.y + 24, 40, 48);
     // Singlet, side-on: a lit chest panel, a thin shaded back, two straps. No mass
     // behind the spine, which is what made an earlier vest read as luggage.
-    const vest = [-14, -178, 92, -192, 116, -136, 80, -12, -16, -10, -32, -122];
+    const vest = [-12, -172, 90, -186, 112, -132, 78, -12, -14, -10, -30, -118];
     if (line > 0) { g.lineStyle(line, tank.edge); outline(g, vest); }
     g.fillStyle(tank.face); fan(g, vest);
-    g.fillStyle(tank.shade, 0.9); fan(g, [-32, -122, -4, -134, 0, -10, -16, -10]);
-    g.fillStyle(tank.lit, 0.88); fan(g, [10, -170, 90, -184, 110, -136, 78, -112, 18, -110]);
-    if (line > 0) g.lineStyle(16 + line * 2, tank.edge).lineBetween(-4, -180, 10, -252).lineBetween(72, -194, 62, -258);
-    g.lineStyle(16, tank.face).lineBetween(-4, -180, 10, -252).lineBetween(72, -194, 62, -258);
-    // Hair as a distinct mass — short sides, volume on top — then the sweatband and ear.
-    g.fillStyle(ink.face).fillEllipse(HAIR.x, HAIR.y, HAIR.rx * 2, HAIR.ry * 2);
-    g.fillStyle(ink.face).fillEllipse(HEAD.x + 22, HEAD.y - 64, 56, 40);
-    g.fillStyle(ink.shade, 0.45).fillEllipse(HAIR.x + 18, HAIR.y + 8, 40, 24);
-    g.fillStyle(ink.lit, 0.25).fillEllipse(HAIR.x - 14, HAIR.y - 10, 36, 22);
-    g.fillStyle(GYM.chalk).fillRoundedRect(HEAD.x - 58, HEAD.y - 32, 120, 22, 10);
-    g.fillStyle(GYM.tank).fillRect(HEAD.x - 54, HEAD.y - 24, 112, 5);
-    g.fillStyle(skin.shade).fillEllipse(HEAD.x - 50, HEAD.y + 8, 28, 34);
-    g.fillStyle(skin.face).fillEllipse(HEAD.x - 48, HEAD.y + 6, 22, 28);
+    g.fillStyle(tank.shade, 0.9); fan(g, [-30, -118, -2, -128, 2, -10, -14, -10]);
+    g.fillStyle(tank.lit, 0.88); fan(g, [12, -164, 86, -178, 106, -132, 76, -108, 20, -106]);
+    if (line > 0) g.lineStyle(16 + line * 2, tank.edge).lineBetween(-2, -172, 16, -240).lineBetween(74, -186, 72, -246);
+    g.lineStyle(16, tank.face).lineBetween(-2, -172, 16, -240).lineBetween(74, -186, 72, -246);
+    // High fade: hair lives on the crown and a front tuft, so the sides of the egg stay
+    // skin and the mass cannot read as a helmet.
+    this.drawHair(g, ink.face, 0);
+    g.fillStyle(ink.shade, 0.4).fillEllipse(HAIR.x + 14, HAIR.y + 6, 36, 20);
+    g.fillStyle(ink.lit, 0.22).fillEllipse(HAIR.x - 12, HAIR.y - 8, 30, 18);
+    // Sweatband sized to the oval at the hairline so it does not stick out as a visor.
+    const bandDy = 46;
+    const bandW = HEAD.rx * 2 * Math.sqrt(Math.max(0, 1 - (bandDy / HEAD.ry) ** 2)) * 0.96;
+    g.fillStyle(GYM.chalk).fillRoundedRect(HEAD.x - bandW / 2, HEAD.y - bandDy - 2, bandW, 18, 8);
+    g.fillStyle(GYM.tank).fillRect(HEAD.x - bandW / 2 + 4, HEAD.y - bandDy + 5, bandW - 8, 4);
+    g.fillStyle(skin.shade).fillEllipse(HEAD.x - 56, HEAD.y + 6, 30, 36);
+    g.fillStyle(skin.face).fillEllipse(HEAD.x - 54, HEAD.y + 4, 24, 30);
+  }
+
+  /** Crown and tuft only. Grown by `grow` so the silhouette pass can include it. */
+  private drawHair(g: Phaser.GameObjects.Graphics, colour: number, grow: number): void {
+    g.fillStyle(colour);
+    g.fillEllipse(HAIR.x, HAIR.y, (HAIR.rx + grow) * 2, (HAIR.ry + grow) * 2);
+    g.fillEllipse(HEAD.x + 22, HEAD.y - 74, 52 + grow * 2, 34 + grow * 2);
+    g.fillEllipse(HEAD.x - 28, HEAD.y - 62, 42 + grow * 2, 32 + grow * 2);
   }
 
   public layout(viewport: Viewport): void {
@@ -363,12 +375,12 @@ export class BicepCurlVignette implements Vignette {
   /** The breath out on the squeeze. Decorative, so it may skip under reduced motion. */
   private exhale(): void {
     if (this.reducedMotion) return;
-    this.bursts.burst('dust', HEAD.x + 78, HIP_Y + HEAD.y + 36, [GYM.chalk, GYM.wall], 3);
+    this.bursts.burst('dust', HEAD.x + 84, HIP_Y + HEAD.y + 40, [GYM.chalk, GYM.wall], 3);
   }
 
   private sweat(): void {
     if (this.reducedMotion) return;
-    this.bursts.burst('water', HEAD.x + 16, HIP_Y + HEAD.y - 62, [GYM.sweat, GYM.chalk], 3);
+    this.bursts.burst('water', HEAD.x + 20, HIP_Y + HEAD.y - 70, [GYM.sweat, GYM.chalk], 3);
   }
 
   public onDemonstrationBeat(time: number): void {
@@ -576,21 +588,21 @@ export class BicepCurlVignette implements Vignette {
     const beaten = this.finished && !this.successful;
     // Cheeks flush with the pump, the brow drops with the effort. Features sit on the
     // egg of a head, large enough to read the squeeze from the back of a bus.
-    g.fillStyle(GYM.flush, this.pump * 0.28).fillEllipse(HEAD.x + 36, HEAD.y + 22, 36, 32);
-    const eyeX = HEAD.x + 34;
-    const eyeY = HEAD.y - 4;
-    g.lineStyle(6, ink, 1).lineBetween(eyeX - 16, eyeY - 22 + effort * 8, eyeX + 16, eyeY - 24 + effort * 12);
+    g.fillStyle(GYM.flush, this.pump * 0.28).fillEllipse(HEAD.x + 38, HEAD.y + 28, 40, 34);
+    const eyeX = HEAD.x + 36;
+    const eyeY = HEAD.y + 6;
+    g.lineStyle(6, ink, 1).lineBetween(eyeX - 16, eyeY - 24 + effort * 8, eyeX + 16, eyeY - 26 + effort * 12);
     if (relieved || effort > 0.6) {
       g.lineStyle(6, ink, 1).lineBetween(eyeX - 12, eyeY + 2, eyeX + 12, eyeY - (relieved ? -3 : 1));
     } else {
-      g.fillStyle(GYM.chalk).fillEllipse(eyeX, eyeY, 28, 24);
-      g.fillStyle(ink).fillCircle(eyeX + 4, eyeY - (beaten ? -3 : 1), 7);
-      g.fillStyle(GYM.chalk, 0.7).fillCircle(eyeX + 1, eyeY - 5, 3);
+      g.fillStyle(GYM.chalk).fillEllipse(eyeX, eyeY, 30, 26);
+      g.fillStyle(ink).fillCircle(eyeX + 5, eyeY - (beaten ? -3 : 1), 8);
+      g.fillStyle(GYM.chalk, 0.7).fillCircle(eyeX + 2, eyeY - 6, 3);
     }
     // A nose so the three-quarter head has a plane, not a ball with a sticker on it.
-    g.lineStyle(4, ink, 0.85).beginPath().moveTo(HEAD.x + 52, HEAD.y + 2).lineTo(HEAD.x + 62, HEAD.y + 16).lineTo(HEAD.x + 50, HEAD.y + 18).strokePath();
-    const mouthX = HEAD.x + 44;
-    const mouthY = HEAD.y + 38;
+    g.lineStyle(4, ink, 0.85).beginPath().moveTo(HEAD.x + 56, HEAD.y + 8).lineTo(HEAD.x + 68, HEAD.y + 22).lineTo(HEAD.x + 54, HEAD.y + 24).strokePath();
+    const mouthX = HEAD.x + 48;
+    const mouthY = HEAD.y + 48;
     if (beaten) {
       g.fillStyle(ink).fillEllipse(mouthX, mouthY + 4, 16, 20);
     } else if (relieved) {
@@ -607,7 +619,7 @@ export class BicepCurlVignette implements Vignette {
     // Sweat on the brow once the set has started to tell.
     if (this.pump > 0.4 && !this.reducedMotion) {
       const bob = (now * 1.3) % 1;
-      g.fillStyle(GYM.sweat, 0.9).fillEllipse(HEAD.x + 68, HEAD.y - 28 + bob * 34, 8, 12);
+      g.fillStyle(GYM.sweat, 0.9).fillEllipse(HEAD.x + 72, HEAD.y - 20 + bob * 34, 8, 12);
     }
   }
 
