@@ -11,6 +11,7 @@ import {
   canBeginAttempt, formatCountdown, healthHud, loadHealth, practiceLevel, reconcile, viewHealth,
   type Health,
 } from '@/game/health';
+import { track } from '@/monetization';
 import { loadProgress, type Progress } from '@/game/progress';
 import { MaterialKey } from '@/textures/materials';
 import { mix, shade, starColour } from '@/ui/colour';
@@ -767,12 +768,14 @@ export class MapScene extends BaseScene {
     this.restActionLabel.setPosition(this.restActionRect.centerX, this.restActionRect.centerY + sink);
   }
 
-  private showRest(): void {
+  private showRest(level: number): void {
+    const first = !this.restShown;
     this.restShown = true;
     this.restPractice = practiceLevel(this.progress);
     this.restAt = performance.now() / 1000;
     this.drawRest(this.uiScale, 0);
     this.restPressDirty = true;
+    if (first) track('health_empty', { level });
   }
 
   private hideRest(): void {
@@ -980,7 +983,7 @@ export class MapScene extends BaseScene {
   }
   private openLevel(level: number): void {
     if (!canBeginAttempt(this.health, this.progress, level)) {
-      this.showRest();
+      this.showRest(level);
       return;
     }
     this.velocity = 0;

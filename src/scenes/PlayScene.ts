@@ -19,6 +19,7 @@ import { levelSpec, meanAccuracy, starsFor, type LevelSpec } from '@/game/levels
 import {
   beginAttempt, canBeginAttempt, finishAttempt, healthHud, loadHealth, saveHealth, viewHealth,
 } from '@/game/health';
+import { track } from '@/monetization';
 import { loadProgress, recordResult, saveProgress, type LevelOutcome } from '@/game/progress';
 import { STYLE } from '@/config/style';
 import { PALETTE, SHELL } from '@/config/theme';
@@ -73,6 +74,7 @@ export class PlayScene extends BaseScene {
   /** Set once gameplay actually begins; refunds use the same id so a double-finish cannot restore two hearts. */
   private attemptId: string | null = null;
   private heartRefunded = false;
+  private emptyTracked = false;
   private get definition() { return VIGNETTES.find(v => v.id === this.spec.vignette) ?? VIGNETTES[0]!; }
   private stars!: Phaser.GameObjects.Graphics;
   private headline!: Phaser.GameObjects.Text;
@@ -298,6 +300,7 @@ export class PlayScene extends BaseScene {
     this.saveFailed = false;
     this.attemptId = null;
     this.heartRefunded = false;
+    this.emptyTracked = false;
     this.kept.setVisible(false);
     this.stars.clear();
     this.setTurn('none');
@@ -886,6 +889,10 @@ export class PlayScene extends BaseScene {
     const wait = healthHud(viewHealth(loadHealth())).wait;
     if (!this.summaryShown) this.accuracy.setText(wait === null ? '' : wait);
     this.setAction('Map');
+    if (!this.emptyTracked) {
+      this.emptyTracked = true;
+      track('health_empty', { level: this.spec.level });
+    }
   }
 
   private showPause(): void {
