@@ -67,6 +67,32 @@ before the next possible hit at any tempo. See [curl notes](BICEP_CURL.md).
 `curlSounds.ts` supplies a deterministic exhale with plates settling, plus the shared
 `scrape`/`judder` accent slots.
 
+## Knife + Cucumber
+
+`CucumberKnifeVignette.ts` owns the illustration and `cucumberMotion.ts` its pure curves.
+A chef's knife slices a cucumber on a board in a cool kitchen, the vegetable the only
+saturated green in frame. One tap is one rocking chop, same contract as the tomato: the
+tip stays near the board, the heel drops, and the edge meeting the board carries the
+timing. Each accurate chop takes a round coin, which topples off the cut and leans on the
+pile showing its seed star; an extra tap nicks the board, a missed target leaves the knife
+trembling, and neither takes a slice. The demonstration rocks without slicing, and the
+unscored coda takes the standing heel. See [cucumber notes](CUCUMBER_KNIFE.md).
+
+`cucumberSounds.ts` supplies a deterministic board knock with a watery crunch, plus the
+shared `scrape`/`judder` accent slots.
+
+## Knife + Banana
+
+`BananaKnifeVignette.ts` owns the illustration and `bananaMotion.ts` its pure curves. A
+chef's knife slices a banana on a board in a cream kitchen, the fruit the only saturated
+yellow in frame. One tap is one rocking chop. Each accurate chop takes an oval coin, which
+flops onto the pile showing cream flesh and three locules; an extra tap nicks the board, a
+missed target leaves the knife trembling, and neither takes a slice. The demonstration
+rocks without slicing, and the unscored coda takes the stem. See [banana notes](BANANA_KNIFE.md).
+
+`bananaSounds.ts` supplies a deterministic dull knock with soft flesh, plus the shared
+`scrape`/`judder` accent slots.
+
 ## Transitions
 
 Vignettes no longer swap inside a session (each level is one vignette and the map sits between levels), so the impact-ring and squeegee curtain painters were retired; they remain in Git history if a direct level-to-level flow ever wants them.

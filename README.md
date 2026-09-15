@@ -21,9 +21,9 @@ Boot → Preload → **menu** → **map** → **play** → back to the map, with
   preparation bar opens the level so the player can find the pulse, and a level
   of six tasks or more gets one four-bar breather at its midpoint with the beat
   kept alive through it.
-- **Six vignettes** rotate strictly by registry order in
+- **Eight vignettes** rotate strictly by registry order in
   `src/vignettes/registry.ts`: Hammer & nail, Window cleaning, Bug & shoe, Saw &
-  timber, Knife & tomato, Bicep curl. `levelSpec` picks
+  timber, Knife & tomato, Bicep curl, Knife & cucumber, Knife & banana. `levelSpec` picks
   `VIGNETTES[(level - 1) % length]`, so reordering or inserting an entry
   reassigns every level's vignette. New acts are appended so the earlier levels
   keep theirs.
@@ -166,6 +166,7 @@ alone. The native build declares the lock in its manifest and never shows it.
   vignette may and may not own.
 - One document per vignette: [hammer](docs/HAMMER_NAIL.md),
   [window](docs/WINDOW_CLEANING.md), [saw](docs/SAW_TIMBER.md),
-  [tomato](docs/TOMATO_KNIFE.md), [curl](docs/BICEP_CURL.md).
+  [tomato](docs/TOMATO_KNIFE.md), [curl](docs/BICEP_CURL.md),
+  [cucumber](docs/CUCUMBER_KNIFE.md), [banana](docs/BANANA_KNIFE.md).
 - [Music](docs/MUSIC.md) — measured metadata, the premix, and open listening
   questions.

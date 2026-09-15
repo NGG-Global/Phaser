@@ -11,6 +11,10 @@ import { TomatoKnifeVignette, KITCHEN } from './TomatoKnifeVignette';
 import { createTomatoSounds } from '@/audio/tomatoSounds';
 import { BicepCurlVignette, GYM } from './BicepCurlVignette';
 import { createCurlSounds } from '@/audio/curlSounds';
+import { CucumberKnifeVignette, CRISP } from './CucumberKnifeVignette';
+import { createCucumberSounds } from '@/audio/cucumberSounds';
+import { BananaKnifeVignette, BREAKFAST } from './BananaKnifeVignette';
+import { createBananaSounds } from '@/audio/bananaSounds';
 
 export const VIGNETTES: readonly VignetteDefinition[] = [
   {
@@ -51,5 +55,18 @@ export const VIGNETTES: readonly VignetteDefinition[] = [
     success: ['Solid\nset.', 'Every rep to the top.'], rough: ['Form\ncheck.', 'The weight had other ideas.'],
     endingSec: 1.35, successAccuracy: 70,
     create: scene => new BicepCurlVignette(scene), sounds: createCurlSounds,
+  },
+  // Appended, not inserted: levels 1 to 6 keep the vignettes they had.
+  {
+    id: 'cucumber', title: 'Knife & cucumber', intro: 'Keep it\ncrisp.', ink: CRISP.ink,
+    success: ['Clean\nrounds.', 'Every disc the same.'], rough: ['A bit\nragged.', 'Still a salad. Just rustic.'],
+    endingSec: 1.35, successAccuracy: 70,
+    create: scene => new CucumberKnifeVignette(scene), sounds: createCucumberSounds,
+  },
+  {
+    id: 'banana', title: 'Knife & banana', intro: 'Easy does\nit.', ink: BREAKFAST.ink,
+    success: ['Even\ncoins.', 'Breakfast, sorted.'], rough: ['A bit\nmushy.', 'Call it banana bread.'],
+    endingSec: 1.35, successAccuracy: 70,
+    create: scene => new BananaKnifeVignette(scene), sounds: createBananaSounds,
   },
 ];
