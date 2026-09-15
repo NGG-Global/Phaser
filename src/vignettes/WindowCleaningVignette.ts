@@ -12,7 +12,7 @@ import { castShadow, faces } from '@/ui/light';
 import type { Vignette } from './Vignette';
 import { easeOut, isPlayerTurn, TURN_OPEN_SEC } from './motion';
 
-export const GLASS = { paper: 0xe5dfe8, ink: 0x49394e, frame: 0x756278, blue: 0xa8ced4, light: 0xf9f1df, glove: 0xdc9775, sill: 0xc6b8c6 };
+export const GLASS = { paper: 0xe9e4e7, ink: 0x49394e, frame: 0x82718a, blue: 0xb7d9db, light: 0xfff5df, glove: 0xdc9775, sill: 0xd1c1cd };
 export const strokeProgress = (age: number): number => easeOut(age / 0.23);
 // Graphics re-tessellate every frame; ~400 grime marks at Phaser's default 32 segments were
 // the slice's heaviest per-frame JS cost. Eight segments are indistinguishable at this size.
@@ -103,9 +103,12 @@ export class WindowCleaningVignette implements Vignette {
 
   public layout(viewport: Viewport): void {
     const { safe } = viewport;
-    this.scale = Math.min(safe.width / 700, safe.height / 1120);
+    const uiScale = Math.min(safe.width / 720, safe.height / 1150);
+    const top = safe.top + 320 * uiScale, bottom = safe.bottom - 330 * uiScale;
+    // The pane and its sill share the space between the phase sign and beat track on tablets too.
+    this.scale = Math.min(safe.width / 700, safe.height / 1120, (bottom - top) / 646);
     this.baseX = safe.centerX;
-    this.baseY = safe.top + safe.height * 0.54;
+    this.baseY = Math.max(top + 286 * this.scale, Math.min(safe.top + safe.height * 0.54, bottom - 360 * this.scale));
     this.stage.setPosition(this.baseX, this.baseY).setScale(this.scale);
     this.backdrop.layout(viewport);
     const line = STYLE.current.outline * 1.4;
@@ -117,7 +120,7 @@ export class WindowCleaningVignette implements Vignette {
     if (line > 0) f.lineStyle(line, shade(GLASS.frame, -0.6), 1).strokeRoundedRect(FRAME.x, FRAME.y, FRAME.width, FRAME.height, FRAME.radius);
     f.fillStyle(frame.shade).fillRoundedRect(FRAME.x, FRAME.y, FRAME.width, FRAME.height, FRAME.radius);
     f.fillStyle(frame.face).fillRoundedRect(FRAME.x, FRAME.y, FRAME.width, FRAME.height - 14, FRAME.radius);
-    f.fillStyle(frame.lit).fillRoundedRect(FRAME.x + 30, FRAME.y + 8, FRAME.width - 60, 12, 6);
+    f.lineStyle(5, frame.rim, 0.6).strokeRoundedRect(FRAME.x + 9, FRAME.y + 9, FRAME.width - 18, FRAME.height - 30, FRAME.radius - 9);
     // Painted grain, drawn rather than tiled: a material tile is a rectangle, and its
     // square corners would show past the frame's 108-unit radius. The lines run the full
     // width as if the frame were cut from one board; the pane covers their middles.
@@ -133,16 +136,47 @@ export class WindowCleaningVignette implements Vignette {
     }
     // The reveal: the dark inside edge of the opening, which is what gives the frame depth.
     f.fillStyle(ink.face).fillRoundedRect(-252, -267, 504, 560, 94);
+    f.lineStyle(3, frame.rim, 0.6).strokeRoundedRect(-245, -259, 490, 547, 89);
+    for (const x of [-258, 258]) for (const y of [-136, 184]) {
+      f.fillStyle(ink.shade, 0.5).fillCircle(x, y + 2, 5);
+      f.fillStyle(0xd5c4ae).fillCircle(x, y, 4);
+      f.lineStyle(1.5, GLASS.ink, 0.7).lineBetween(x - 2, y - 2, x + 2, y + 2);
+    }
 
     const g = this.glass.clear();
     g.fillStyle(GLASS.blue).fillRoundedRect(-236, -251, 472, 529, 82);
-    // Flattened landscape and reflected light sit behind the removable surface dirt.
-    g.fillStyle(0xc8dfda).fillCircle(106, -144, 54);
-    g.fillStyle(0x83b1be).fillRect(-230, 111, 460, 162);
-    g.fillStyle(0x719ba9).fillTriangle(-230, 181, -71, 20, 111, 273);
-    g.fillStyle(0x8ebcc4).fillTriangle(-93, 273, 132, 45, 230, 273);
-    g.fillStyle(GLASS.light, 0.45).fillTriangle(-218, -169, -99, -244, -218, 26);
-    g.fillStyle(GLASS.light, 0.25).fillTriangle(-198, 112, 27, -239, 65, -239);
+    // A small garden view is the reward for a clean pane: sun, clouds, hills and a cottage.
+    g.fillStyle(GLASS.light, 0.18).fillCircle(108, -155, 65);
+    g.fillStyle(0xf7de9e).fillCircle(108, -155, 40);
+    const cloud = (x: number, y: number, s: number): void => {
+      g.fillStyle(GLASS.light, 0.82).fillEllipse(x, y, 97 * s, 24 * s)
+        .fillCircle(x - 18 * s, y - 10 * s, 21 * s).fillCircle(x + 10 * s, y - 16 * s, 27 * s);
+    };
+    cloud(-115, -160, 0.95); cloud(39, -69, 0.68);
+    g.fillStyle(0xa2c2b9).fillRoundedRect(-231, 88, 462, 186, { tl: 0, tr: 0, bl: 78, br: 78 });
+    const hill = (points: number[][], colour: number): void => {
+      g.fillStyle(colour).fillPoints(points.map(p => new Phaser.Math.Vector2(p[0]!, p[1]!)), true);
+    };
+    hill([[-231, 89], [-188, 55], [-136, 39], [-73, 64], [11, 127], [102, 191], [-231, 191]], 0x9bbbae);
+    hill([[-100, 192], [-27, 117], [63, 50], [140, 40], [231, 96], [231, 209], [-100, 209]], 0x7fa99d);
+    g.fillStyle(0x78a48b).fillRoundedRect(-227, 185, 454, 87, { tl: 0, tr: 0, bl: 71, br: 71 });
+    // A winding path and a tiny house, simple enough to read through the dirt.
+    hill([[33, 188], [48, 188], [34, 217], [89, 271], [40, 271], [9, 218]], 0xc7c7a2);
+    g.fillStyle(0xece3c6).fillRoundedRect(1, 127, 83, 67, 4);
+    g.fillStyle(0xb67a65).fillTriangle(-11, 131, 43, 85, 98, 131);
+    g.lineStyle(3, 0x826c60).lineBetween(-11, 131, 43, 85).lineBetween(43, 85, 98, 131);
+    g.fillStyle(0x537e74).fillRoundedRect(32, 154, 21, 40, 3);
+    for (const x of [12, 61]) {
+      g.fillStyle(0xf5d594).fillRect(x, 145, 13, 17);
+      g.lineStyle(2, 0x9b977d).strokeRect(x, 145, 13, 17);
+    }
+    for (const [x, y, s] of [[-155, 184, 1], [160, 179, 0.8]] as const) {
+      g.fillStyle(0x627f70).fillRoundedRect(x - 4, y - 36 * s, 8, 48 * s, 3);
+      g.fillStyle(0x5e907f).fillCircle(x, y - 65 * s, 31 * s).fillCircle(x - 18 * s, y - 42 * s, 30 * s).fillCircle(x + 19 * s, y - 39 * s, 27 * s);
+      g.fillStyle(0x83ae90, 0.65).fillEllipse(x - 12 * s, y - 69 * s, 24 * s, 16 * s);
+    }
+    g.fillStyle(GLASS.light, 0.3).fillTriangle(-218, -169, -127, -239, -218, 8);
+    g.fillStyle(GLASS.light, 0.16).fillTriangle(-185, 97, 22, -239, 49, -239);
     g.lineStyle(3, GLASS.light, 0.55).lineBetween(-251, 277, 251, 277);
     // The ledge, a solid with a lit top and a shadow under it.
     const ledgeDrop = castShadow(10);
@@ -201,9 +235,12 @@ export class WindowCleaningVignette implements Vignette {
     const x = direction * (-212 + 424 * p);
     this.tool.setPosition(age > 0.5 ? x : x + direction * Math.sin(p * Math.PI) * 9 * ex, y);
     this.tool.setRotation(direction * Math.sin(p * Math.PI) * 0.08 * ex);
-    this.tool.setScale(1, 1 - Math.sin(p * Math.PI) * 0.06 * ex);
+    // Keep the hand behind the stroke, so it finishes inside the frame rather than off-screen.
+    this.tool.setScale(-direction, 1 - Math.sin(p * Math.PI) * 0.06 * ex);
     if (age > 0.5) this.tool.y += Math.sin(now * 1.6) * (this.reducedMotion ? 0 : 2);
-    if (age > 0.5 && (this.phase === 'idle' || this.phase === 'prepare')) this.tool.setPosition(-190, 165).setRotation(-0.15);
+    if (age > 0.5 && (this.phase === 'idle' || this.phase === 'prepare' || this.finished)) {
+      this.tool.setPosition(-180, this.finished ? 237 : 165).setRotation(-0.15).setScale(1);
+    }
   }
   /**
    * The stage light opens toward the player the instant their turn starts, and holds open
@@ -230,18 +267,22 @@ export class WindowCleaningVignette implements Vignette {
     const g = this.dirt.clear();
     const count = this.plan?.targets.length ?? 4;
     // Fixed deterministic marks, no per-hit objects or texture/mask allocations.
-    for (let row = 0; row < 24; row++) {
-      for (let col = 0; col < 17; col++) {
-        const x = -215 + col * 26;
-        const y = -215 + row * 20;
-        if (y < -180 && Math.abs(x) > 188) continue;
+    for (let row = 0; row < 22; row++) {
+      for (let col = 0; col < 15; col++) {
+        const seed = (row * 43 + col * 29) % 19;
+        const x = -208 + col * 29 + Math.sin(row * 13 + col * 7) * 9;
+        const y = -214 + row * 22 + Math.cos(row * 7 + col * 11) * 6;
+        if ((y < -180 && Math.abs(x) > 177) || (y > 226 && Math.abs(x) > 171)) continue;
         const lane = Math.min(count - 1, Math.max(0, Math.floor((y + 184) / (430 / count))));
         const p = strokeProgress(now - (this.cleanAt[lane] ?? Infinity));
-        const covered = lane % 2 ? x > 212 - 424 * p : x < -212 + 424 * p;
-        const seed = (row * 43 + col * 29) % 19;
-        const alpha = covered ? 0.02 : 0.17 + seed / 90;
-        g.fillStyle(seed % 2 ? 0x7c8e98 : 0xd5d2bd, alpha).fillEllipse(x + seed % 9 - 4, y + seed % 11 - 5, 31 + seed, 19 + seed % 13, GRIME_SEGMENTS);
-        if (seed < 5 && !covered) g.lineStyle(2, GLASS.ink, 0.12).lineBetween(x, y, x - 3, y + 26);
+        const covered = p >= 1 || (p > 0 && (lane % 2 ? x > 212 - 424 * p : x < -212 + 424 * p));
+        if (covered) continue;
+        const alpha = 0.11 + seed / 110;
+        g.fillStyle(seed % 3 ? 0x8c9d94 : 0xc0b799, alpha).fillEllipse(x, y, 35 + seed, 23 + seed % 17, GRIME_SEGMENTS);
+        if (seed < 5) {
+          g.fillStyle(GLASS.light, 0.36).fillEllipse(x + 5, y - 3, 5, 9, 6);
+          g.lineStyle(2, GLASS.ink, 0.12).lineBetween(x, y + 5, x - 3, y + 23);
+        }
       }
     }
     const shine = this.gleam.clear();
@@ -256,6 +297,11 @@ export class WindowCleaningVignette implements Vignette {
         shine.fillStyle(GLASS.light, p).fillTriangle(106, -100, 98, -144, 114, -144);
         shine.fillStyle(GLASS.light, p).fillTriangle(69, -144, 106, -151, 106, -137);
         shine.fillStyle(GLASS.light, p).fillTriangle(143, -144, 106, -151, 106, -137);
+        for (const [x, y, size] of [[-145, 84, 17], [168, 188, 13]] as const) {
+          shine.fillStyle(GLASS.light, p).fillTriangle(x, y - size, x - 3, y, x + 3, y)
+            .fillTriangle(x, y + size, x - 3, y, x + 3, y)
+            .fillTriangle(x - size, y, x, y - 3, x, y + 3).fillTriangle(x + size, y, x, y - 3, x, y + 3);
+        }
       } else {
         shine.lineStyle(5, GLASS.light, 0.75).strokeEllipse(93, 16, 36, 53);
         shine.lineBetween(93, 44, 95, 44 + p * 29);

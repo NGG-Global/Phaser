@@ -27,8 +27,8 @@ export const KITCHEN = {
 } as const;
 
 // The board's top face is y = 0 in stage space; everything on it sits above that line.
-const BOARD_LEFT = -620;
-const BOARD_RIGHT = 620;
+const BOARD_LEFT = -370;
+const BOARD_RIGHT = 470;
 const BOARD_THICK = 42;
 const TOMATO_X = -70;
 const RX = TOMATO_MOTION.radiusX;
@@ -40,8 +40,8 @@ const PILE_STEP = 30;
 const SLICE_RX = 64;
 const SLICE_RY = 118;
 const LEAN = 0.42;
-const BLADE_LEN = 300;
-const HANDLE_LEN = 168;
+const BLADE_LEN = 266;
+const HANDLE_LEN = 136;
 // Graphics re-tessellate every frame, so curves use a fixed small point budget.
 const ARC_STEPS = 26;
 const JUICE_DROPS = 6;
@@ -122,7 +122,7 @@ export class TomatoKnifeVignette implements Vignette {
     this.wall = scene.add.graphics().setDepth(-20);
     this.stage = scene.add.container(0, 0).setDepth(-10);
     this.boardG = scene.add.graphics();
-    this.boardSurface = scene.add.tileSprite(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, MaterialKey.wood)
+    this.boardSurface = scene.add.tileSprite(BOARD_LEFT + 14, 8, BOARD_RIGHT - BOARD_LEFT - 28, BOARD_THICK - 14, MaterialKey.wood)
       .setOrigin(0).setTint(KITCHEN.board).setAlpha(0.5 * STYLE.current.grain);
     this.boardSurface.setTileScale(0.3, 0.3);
     this.produce = scene.add.container(0, 0);
@@ -158,6 +158,11 @@ export class TomatoKnifeVignette implements Vignette {
     }
     g.fillStyle(KITCHEN.steel);
     fan(g, blade);
+    // A brushed face and a broad bevel give the blade a readable plane under the key light.
+    g.fillStyle(KITCHEN.steelLit, 0.7);
+    fan(g, [22, -9, 128, -55, 178, -65, 97, -11]);
+    g.fillStyle(KITCHEN.steelDark, 0.55);
+    fan(g, [8, -3, BLADE_LEN, -3, BLADE_LEN, -15, 39, -13]);
     g.lineStyle(3, KITCHEN.steelLit, 0.9).lineBetween(6, -3, BLADE_LEN - 4, -3);
     g.lineStyle(2, KITCHEN.steelDark, 0.6).lineBetween(40, -33, BLADE_LEN - 2, -71);
     g.fillStyle(KITCHEN.steelDark).fillRoundedRect(BLADE_LEN - 8, -76, 22, 82, 5);
@@ -167,7 +172,11 @@ export class TomatoKnifeVignette implements Vignette {
     g.fillStyle(handle.face).fillRoundedRect(BLADE_LEN + 8, -64, HANDLE_LEN, 46, 16);
     g.fillStyle(KITCHEN.paper, 0.12).fillRoundedRect(BLADE_LEN + 22, -56, HANDLE_LEN - 40, 14, 7);
     g.fillStyle(KITCHEN.rivet);
-    for (const x of [BLADE_LEN + 46, BLADE_LEN + 92, BLADE_LEN + 138]) g.fillCircle(x, -35, 6);
+    for (const x of [BLADE_LEN + 36, BLADE_LEN + 72, BLADE_LEN + 108]) {
+      g.fillCircle(x, -35, 6);
+      g.fillStyle(KITCHEN.steelLit, 0.85).fillCircle(x - 1, -37, 2);
+      g.fillStyle(KITCHEN.rivet);
+    }
     return g;
   }
 
@@ -180,9 +189,9 @@ export class TomatoKnifeVignette implements Vignette {
     this.backdrop.layout(viewport);
     const bg = this.wall.clear();
     // Tile grout, faint and regular: a kitchen wall without a warm note in it.
-    const tile = 120 * this.scale;
+    const tile = 160 * this.scale;
     const counterY = this.baseY + BOARD_THICK * this.scale;
-    bg.lineStyle(2 * this.scale, KITCHEN.grout, 0.55);
+    bg.lineStyle(2 * this.scale, KITCHEN.grout, 0.4);
     for (let y = counterY - tile; y > full.y - tile; y -= tile) bg.lineBetween(full.x, y, full.right, y);
     for (let x = this.baseX % tile; x < full.right + tile; x += tile) bg.lineBetween(x, full.y, x, counterY);
     bg.fillStyle(KITCHEN.counter, 0.35).fillRect(full.x, counterY, full.width, full.bottom - counterY);
@@ -192,13 +201,17 @@ export class TomatoKnifeVignette implements Vignette {
     const line = STYLE.current.outline * 1.4;
     const boardDrop = castShadow(10);
     b.fillStyle(KITCHEN.ink, boardDrop.alpha).fillRect(BOARD_LEFT + 10 + boardDrop.dx, BOARD_THICK + boardDrop.dy, BOARD_RIGHT - BOARD_LEFT - 20, 14);
-    if (line > 0) b.lineStyle(line, shade(KITCHEN.board, -0.6), 1).strokeRoundedRect(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, 6);
-    b.fillStyle(board.face).fillRoundedRect(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, 6);
-    b.fillStyle(shade(KITCHEN.boardEdge, -0.1)).fillRect(BOARD_LEFT, BOARD_THICK - 16, BOARD_RIGHT - BOARD_LEFT, 16);
+    if (line > 0) b.lineStyle(line, shade(KITCHEN.board, -0.6), 1).strokeRoundedRect(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, 14);
+    b.fillStyle(board.face).fillRoundedRect(BOARD_LEFT, 0, BOARD_RIGHT - BOARD_LEFT, BOARD_THICK, 14);
+    b.fillStyle(shade(KITCHEN.boardEdge, -0.1)).fillRoundedRect(BOARD_LEFT + 2, BOARD_THICK - 16, BOARD_RIGHT - BOARD_LEFT - 4, 16, { tl: 0, tr: 0, bl: 12, br: 12 });
     b.fillStyle(board.lit).fillRect(BOARD_LEFT + 4, 0, BOARD_RIGHT - BOARD_LEFT - 8, 7);
     b.fillStyle(board.rim, 0.7).fillRect(BOARD_LEFT + 4, 0, BOARD_RIGHT - BOARD_LEFT - 8, 3);
     b.lineStyle(1.5, KITCHEN.boardLine, 0.7);
     for (const y of [11, 19]) b.lineBetween(BOARD_LEFT + 30, y, BOARD_RIGHT - 30, y + 1);
+    b.lineStyle(2, shade(KITCHEN.boardEdge, -0.1), 0.4).strokeEllipse(BOARD_LEFT + 72, 18, 65, 13).strokeEllipse(BOARD_LEFT + 72, 18, 31, 6);
+    for (let x = BOARD_LEFT + 125; x < BOARD_RIGHT - 35; x += 73) {
+      b.lineStyle(1.5, KITCHEN.boardLine, 0.5).lineBetween(x, 7, x + 29, 11);
+    }
   }
 
   public reset(plan: RoundPlan): void {
@@ -358,7 +371,7 @@ export class TomatoKnifeVignette implements Vignette {
     let x = this.strikeX + 6;
     if (parked) {
       lift = 1;
-      x = this.cutTo + 54;
+      x = this.cutTo + 10;
       if (!this.reducedMotion) lift += Math.sin(now * 1.6) * 0.02;
     }
     // A rocking chop: the tip stays close to the board while the heel lifts and drops.
@@ -385,11 +398,27 @@ export class TomatoKnifeVignette implements Vignette {
       for (let i = 0; i < pts.length; i += 2) g[i === 0 ? 'moveTo' : 'lineTo'](pts[i]!, pts[i + 1]!);
       g.closePath().strokePath();
     }
-    g.fillStyle(KITCHEN.tomato);
+    g.fillStyle(shade(KITCHEN.tomato, -0.16));
     fan(g, pts);
+    // Concentric, offset flesh tones stay clipped to the same cut plane as the fruit.
+    // The shaded rim survives every slice instead of becoming a flat red circle.
+    const layer = (cx: number, cy: number, a: number, b: number, colour: number): void => {
+      const edge = Math.max(-1, Math.min(1, (this.cut - 3 - cx) / a));
+      if (edge <= -1) return;
+      const start = Math.acos(edge), points: number[] = [];
+      for (let i = 0; i <= ARC_STEPS; i++) {
+        const t = start + (Math.PI * 2 - start * 2) * i / ARC_STEPS;
+        points.push(cx + Math.cos(t) * a, cy + Math.sin(t) * b);
+      }
+      g.fillStyle(colour); fan(g, points);
+    };
+    layer(TOMATO_X - 6, -RY - 9, RX - 9, RY - 12, KITCHEN.tomato);
+    layer(TOMATO_X - 17, -RY - 26, RX - 27, RY - 36, 0xe15c47);
     if (this.cut > TOMATO_X - 60) {
       g.fillStyle(KITCHEN.tomatoLit, 0.75);
       fan(g, disc(Math.min(TOMATO_X - 58, this.cut - 30), -RY - 58, 34, 22, -0.5));
+      g.fillStyle(0xffb79a, 0.75);
+      fan(g, disc(Math.min(TOMATO_X - 67, this.cut - 38), -RY - 64, 13, 7, -0.5));
     }
     // The cut face is edge-on from the side; a strip of flesh says it is open fruit.
     const half = RY * Math.sin(th0);
@@ -397,9 +426,14 @@ export class TomatoKnifeVignette implements Vignette {
     g.fillStyle(KITCHEN.seed, 0.8);
     for (let i = -1; i <= 1; i++) g.fillEllipse(this.cut - 3, -RY + i * half * 0.45, 4, 9, 6);
     if (this.cut > TOMATO_X + 12) {
-      g.fillStyle(KITCHEN.stem);
-      fan(g, [TOMATO_X - 34, -2 * RY + 10, TOMATO_X + 34, -2 * RY + 10, TOMATO_X + 22, -2 * RY - 12, TOMATO_X - 18, -2 * RY - 14]);
-      g.fillStyle(KITCHEN.stemLit).fillRoundedRect(TOMATO_X - 5, -2 * RY - 30, 10, 26, 4);
+      const crown = -2 * RY + 14;
+      g.fillStyle(shade(KITCHEN.tomato, -0.38), 0.5).fillEllipse(TOMATO_X, crown + 8, 89, 25);
+      for (const [dx, dy] of [[-62, 10], [-40, -16], [1, -21], [43, -13], [59, 16]] as const) {
+        g.fillStyle(KITCHEN.stem).fillTriangle(TOMATO_X - 14, crown + 4, TOMATO_X + dx, crown + dy, TOMATO_X + 16, crown + 12);
+        g.lineStyle(2, KITCHEN.stemLit, 0.9).lineBetween(TOMATO_X, crown + 5, TOMATO_X + dx * 0.75, crown + dy * 0.75);
+      }
+      g.lineStyle(11, shade(KITCHEN.stem, -0.2)).beginPath().moveTo(TOMATO_X, crown + 4).lineTo(TOMATO_X + 4, crown - 17).lineTo(TOMATO_X + 16, crown - 29).strokePath();
+      g.lineStyle(4, KITCHEN.stemLit).beginPath().moveTo(TOMATO_X - 2, crown + 1).lineTo(TOMATO_X + 2, crown - 17).lineTo(TOMATO_X + 14, crown - 27).strokePath();
     }
   }
 
@@ -409,7 +443,8 @@ export class TomatoKnifeVignette implements Vignette {
     for (let i = 0; i < this.sliceAt.length; i++) {
       const p = sliceTumble(now - this.sliceAt[i]!, beat);
       const wobble = this.sliceWobble[i] ?? 0;
-      const restX = PILE_X + i * PILE_STEP;
+      const step = Math.min(PILE_STEP, 170 / Math.max(1, this.plan?.targets.length ?? 4));
+      const restX = PILE_X + i * step;
       const restLean = LEAN + wobble * 0.5;
       const squash = this.finished && !this.successful && i === this.sliceAt.length - 1 ? 0.55 : 1;
       const x = this.sliceFrom[i]! + (restX - this.sliceFrom[i]!) * p;
@@ -431,15 +466,23 @@ export class TomatoKnifeVignette implements Vignette {
       g.fillStyle(KITCHEN.fleshRing);
       fan(g, disc(x, cy, a * 0.84, b * 0.86, lean));
       g.fillStyle(KITCHEN.flesh);
-      fan(g, disc(x, cy, a * 0.58, b * 0.62, lean));
+      fan(g, disc(x, cy, a * 0.72, b * 0.76, lean));
       if (a > 20) {
-        g.fillStyle(KITCHEN.seed);
+        const c = Math.cos(lean), sn = Math.sin(lean);
         for (let s = 0; s < 4; s++) {
           const t = s * Math.PI / 2 + 0.6;
-          const sx = a * 0.42 * Math.cos(t);
-          const sy = b * 0.44 * Math.sin(t);
-          g.fillEllipse(x + sx * Math.cos(lean) - sy * Math.sin(lean), cy + sx * Math.sin(lean) + sy * Math.cos(lean), 6 + a / 16, 12, 6);
+          const sx = a * 0.43 * Math.cos(t), sy = b * 0.43 * Math.sin(t);
+          const gx = x + sx * c - sy * sn, gy = cy + sx * sn + sy * c;
+          g.fillStyle(0xc95536, 0.9); fan(g, disc(gx, gy, a * 0.23, b * 0.22, lean));
+          g.fillStyle(0xeaa15b, 0.82); fan(g, disc(gx - 1, gy - 3, a * 0.17, b * 0.17, lean));
+          for (let seed = 0; seed < 3; seed++) {
+            const angle = t + (seed - 1) * 0.95;
+            g.fillStyle(KITCHEN.seed);
+            fan(g, disc(gx + Math.cos(angle) * a * 0.095, gy + Math.sin(angle) * b * 0.075, 3 + a / 32, 7, lean + angle * 0.4));
+          }
+          g.lineStyle(2, KITCHEN.fleshRing, 0.65).lineBetween(x, cy, x + sx * 0.58 * c - sy * 0.58 * sn, cy + sx * 0.58 * sn + sy * 0.58 * c);
         }
+        g.fillStyle(KITCHEN.fleshRing); fan(g, disc(x, cy, a * 0.13, b * 0.15, lean));
       }
     }
   }
