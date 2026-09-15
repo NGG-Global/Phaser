@@ -228,6 +228,7 @@ describe('countdown display', () => {
     expect(viewHealth(spent, later + 1_000).nextHeartInMs).toBe(HEALTH.regenMs - 91_000);
     expect(healthHud(viewHealth(spent, later))).toEqual({ count: '4/5', wait: '18:30' });
     expect(healthHud(viewHealth(full(), later))).toEqual({ count: '5/5', wait: null });
+    expect(healthHud(viewHealth(spent, later), { premium: true })).toEqual({ count: '∞', wait: null });
   });
 
   it('formats a countdown as m:ss', () => {
@@ -289,6 +290,19 @@ describe('zero-health gating', () => {
     expect(canBeginAttempt(empty, mastered, 8, T0)).toBe(true);
     expect(practiceLevel(mastered)).toBe(8);
     expect(practiceLevel(EMPTY)).toBeNull();
+  });
+
+  it('does not gate or consume hearts for Premium', () => {
+    const empty = full({ hearts: 0, refillStartedAt: T0, spentAttempt: null });
+    expect(canBeginAttempt(empty, ROAD, 6, T0, true)).toBe(true);
+    const begun = beginAttempt(empty, ROAD, 6, 'premium-run', T0, true);
+    expect(begun.ok).toBe(true);
+    expect(begun.spent).toBe(false);
+    expect(begun.health.hearts).toBe(0);
+    expect(begun.health.spentAttempt).toBeNull();
+    const finished = finishAttempt(begun.health, 'premium-run', 1, T0);
+    expect(finished.refunded).toBe(false);
+    expect(finished.health.hearts).toBe(0);
   });
 
   it('lets regen reopen a gated level without a new spend stamp', () => {

@@ -114,7 +114,11 @@ export function formatCountdown(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-export function healthHud(view: HealthView): { readonly count: string; readonly wait: string | null } {
+export function healthHud(
+  view: HealthView,
+  options: { readonly premium?: boolean } = {},
+): { readonly count: string; readonly wait: string | null } {
+  if (options.premium === true) return { count: '∞', wait: null };
   return {
     count: `${view.hearts}/${view.maxHearts}`,
     wait: view.nextHeartInMs === null ? null : formatCountdown(view.nextHeartInMs),
@@ -136,8 +140,10 @@ export function attemptCostsHeart(progress: Progress, level: number): boolean {
   return !isProtectedLevel(level) && !isMastered(progress, level);
 }
 
-export function canBeginAttempt(health: Health, progress: Progress, level: number, now: number = Date.now()): boolean {
-  if (!attemptCostsHeart(progress, level)) return true;
+export function canBeginAttempt(
+  health: Health, progress: Progress, level: number, now: number = Date.now(), premium = false,
+): boolean {
+  if (premium || !attemptCostsHeart(progress, level)) return true;
   return reconcile(health, now).hearts > 0;
 }
 
@@ -157,9 +163,10 @@ export function practiceLevel(progress: Progress): number | null {
  */
 export function beginAttempt(
   health: Health, progress: Progress, level: number, attemptId: string, now: number = Date.now(),
+  premium = false,
 ): BeginAttemptResult {
   const live = reconcile(health, now);
-  if (!attemptCostsHeart(progress, level)) return { ok: true, spent: false, health: live };
+  if (premium || !attemptCostsHeart(progress, level)) return { ok: true, spent: false, health: live };
   if (live.spentAttempt === attemptId) return { ok: true, spent: true, health: live };
   if (live.hearts <= 0) return { ok: false, spent: false, health: live };
   return {

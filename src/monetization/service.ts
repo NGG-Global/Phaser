@@ -49,10 +49,13 @@ export function createMonetization(options: MonetizationOptions = {}): Monetizat
   const purchaseTimeoutMs = options.purchaseTimeoutMs ?? options.timeoutMs ?? DEFAULT_PURCHASE_TIMEOUT_MS;
 
   return {
-    rewardedAvailable: () => asBoolean(() => ads.available()),
+    rewardedAvailable: () => {
+      if (asBoolean(() => billing.premium())) return false;
+      return asBoolean(() => ads.available());
+    },
 
     async showRewarded(): Promise<RewardedResult> {
-      if (!asBoolean(() => ads.available())) {
+      if (asBoolean(() => billing.premium()) || !asBoolean(() => ads.available())) {
         track('rewarded_failed', { reason: 'unavailable' });
         return { ok: false, reason: 'unavailable' };
       }

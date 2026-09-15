@@ -9,6 +9,7 @@ import { CalibrationRun, CALIBRATION } from '@/game/CalibrationRun';
 import { clearProgress, loadProgress } from '@/game/progress';
 import { clearHealth } from '@/game/health';
 import { CALIBRATION_TAPS, loadSettings } from '@/game/settings';
+import { monetization, PRODUCT, purchaseFeedback, restoreFeedback } from '@/monetization';
 import { TapInput, type Tap } from '@/input/TapInput';
 import { MaterialKey } from '@/textures/materials';
 import { Backdrop } from '@/ui/backdrop';
@@ -21,7 +22,7 @@ import { arrive } from '@/ui/spring';
 import { body, display, resize } from '@/ui/type';
 
 const PANEL = {
-  cardHeight: 144, cardGap: 24,
+  cardHeight: 118, cardGap: 16,
 } as const;
 
 /** The few colours the scene owns; the paper is the game's clear colour. */
@@ -52,7 +53,8 @@ export class SettingsScene extends BaseScene {
   private offsetValue!: Phaser.GameObjects.Text;
   private soundValue!: Phaser.GameObjects.Text;
   private progressValue!: Phaser.GameObjects.Text;
-  private buttons: Record<'calibrate' | 'sound' | 'reset' | 'done', Button> = null!;
+  private premiumValue!: Phaser.GameObjects.Text;
+  private buttons: Record<'calibrate' | 'sound' | 'reset' | 'unlock' | 'restore' | 'done', Button> = null!;
   private taps!: TapInput;
   private curtain!: SceneCurtain;
   private uiScale = 1;
@@ -66,6 +68,7 @@ export class SettingsScene extends BaseScene {
   private pressDirty = false;
   private beadsShown = false;
   private resetArmed = false;
+  private commerceBusy = false;
   private from: string = SceneKey.Menu;
   private enteredAt = 0;
   private headlineX = 0;
@@ -80,6 +83,7 @@ export class SettingsScene extends BaseScene {
     this.from = data?.from === SceneKey.Map ? SceneKey.Map : SceneKey.Menu;
     this.phase = 'idle';
     this.resetArmed = false;
+    this.commerceBusy = false;
     this.run = null;
     this.measuredMs = null;
     this.pressedAt = -Infinity;
@@ -88,18 +92,21 @@ export class SettingsScene extends BaseScene {
     this.enteredAt = performance.now() / 1000;
     this.backdrop = new Backdrop(this, PALETTE.paper, LOOK.sun, { glowAt: { x: 0.3, y: 0.2 }, glowAlpha: 0.6 });
     this.plates = this.add.graphics();
-    this.surfaces = [0, 1, 2].map(() => surface(this, MaterialKey.parchment, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, LOOK.card, 0.45));
-    this.cards = [0, 1, 2].map(() => new Phaser.Geom.Rectangle());
+    this.surfaces = [0, 1, 2, 3].map(() => surface(this, MaterialKey.parchment, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, LOOK.card, 0.45));
+    this.cards = [0, 1, 2, 3].map(() => new Phaser.Geom.Rectangle());
     this.controls = this.add.graphics().setDepth(2);
     this.beats = this.add.graphics().setDepth(2);
     this.headline = display(this, 'Settings', { size: 66, colour: LOOK.ink }).setDepth(1);
     this.offsetValue = body(this, '', { size: 32, colour: LOOK.ink }).setOrigin(0, 0.5).setDepth(1);
     this.soundValue = body(this, '', { size: 32, colour: LOOK.ink }).setOrigin(0, 0.5).setDepth(1);
     this.progressValue = body(this, '', { size: 32, colour: LOOK.ink }).setOrigin(0, 0.5).setDepth(1);
+    this.premiumValue = body(this, '', { size: 32, colour: LOOK.ink }).setOrigin(0, 0.5).setDepth(1);
     this.buttons = {
       calibrate: this.button('Calibrate', false),
       sound: this.button('', false),
       reset: this.button('Reset', false),
+      unlock: this.button('Unlock', false),
+      restore: this.button('Restore', false),
       done: this.button('Done', true),
     };
     this.taps = new TapInput(this, tap => this.handleTap(tap));
@@ -144,6 +151,7 @@ export class SettingsScene extends BaseScene {
     this.beadRow = { x: left + 34 * s, y: top + card - 24 * s, gap: 26 * s, radius: 6 * s };
     place(1, this.soundValue, this.buttons.sound, 150);
     place(2, this.progressValue, this.buttons.reset, 160);
+    this.placePremium(left, top + 3 * (card + gap), width, card, control, s);
     const done = this.buttons.done;
     const doneHeight = Math.max(96 * s, control);
     done.rect.setTo(safe.centerX - 200 * s, safe.bottom - 132 * s - doneHeight, 400 * s, doneHeight);
@@ -151,11 +159,37 @@ export class SettingsScene extends BaseScene {
     this.pressDirty = true;
   }
 
+  private placePremium(left: number, top: number, width: number, card: number, control: number, s: number): void {
+    const rect = this.cards[3]!.setTo(left, top, width, card);
+    const g = this.plates;
+    drawPanel(g, rect, s, { fill: LOOK.card, depth: 8 });
+    placeSurface(this.surfaces[3]!, rect, s);
+    resize(this.premiumValue, 32 * s, LOOK.ink, STYLE.current, false);
+    this.premiumValue.setPosition(left + 28 * s, rect.centerY - 2 * s);
+    const restoreW = Math.max(150 * s, control);
+    const unlockW = Math.max(150 * s, control);
+    const entitled = monetization().premium();
+    this.buttons.unlock.label.setVisible(!entitled);
+    if (entitled) {
+      this.buttons.unlock.rect.setTo(0, 0, 0, 0);
+      this.buttons.restore.rect.setTo(left + width - 24 * s - restoreW, rect.centerY - control / 2, restoreW, control);
+    } else {
+      this.buttons.unlock.rect.setTo(left + width - 24 * s - unlockW, rect.centerY - control / 2, unlockW, control);
+      this.buttons.restore.rect.setTo(
+        this.buttons.unlock.rect.x - 12 * s - restoreW,
+        rect.centerY - control / 2,
+        restoreW,
+        control,
+      );
+    }
+  }
+
   /** Each control is a block on its card; the one that leaves the screen is the coral hero. */
   private drawButtons(press: number): void {
     const s = this.uiScale;
     const g = this.controls.clear();
     for (const button of Object.values(this.buttons)) {
+      if (button.rect.width <= 0 || button.rect.height <= 0) continue;
       const p = this.pressed === button ? press : 0;
       const depth = button.hero ? 14 : 8;
       drawPanel(g, button.rect, s, { fill: button.hero ? LOOK.done : LOOK.button, depth, press: p, hero: button.hero, radius: Math.min(button.rect.height / 2, STYLE.current.radius) });
@@ -178,6 +212,12 @@ export class SettingsScene extends BaseScene {
     this.buttons.sound.label.setText(muted ? 'Unmute' : 'Mute');
     this.progressValue.setText(this.resetArmed ? 'Reset progress?' : `Level ${progress.unlocked}`);
     this.buttons.reset.label.setText(this.resetArmed ? 'Confirm' : 'Reset');
+    const entitled = monetization().premium();
+    const price = monetization().productPrice(PRODUCT.premium);
+    this.premiumValue.setText(entitled ? 'Unlimited hearts' : 'Premium');
+    this.buttons.unlock.label.setText(price ?? 'Unlock');
+    this.buttons.unlock.label.setVisible(!entitled);
+    this.buttons.restore.label.setText('Restore');
   }
 
   public override update(): void {
@@ -240,6 +280,8 @@ export class SettingsScene extends BaseScene {
       if (name === 'calibrate') void this.calibrateTapped();
       else if (name === 'sound') { const audio = sharedAudio(this); toggleMute(audio); this.refreshCopy(); }
       else if (name === 'reset') this.resetTapped();
+      else if (name === 'unlock') void this.buyPremium();
+      else if (name === 'restore') void this.restorePurchases();
       else this.curtain.cover(() => this.scene.start(this.from));
       return;
     }
@@ -303,6 +345,37 @@ export class SettingsScene extends BaseScene {
     clearHealth();
     this.refreshCopy();
     if (!cleared) this.progressValue.setText('Couldn’t reset');
+  }
+
+  private async buyPremium(): Promise<void> {
+    if (this.commerceBusy || this.curtain.active || monetization().premium()) return;
+    this.commerceBusy = true;
+    try {
+      const result = await monetization().purchase(PRODUCT.premium);
+      if (this.curtain.active) return;
+      if (!result.ok) {
+        this.premiumValue.setText(purchaseFeedback(result.reason));
+        return;
+      }
+      this.layout();
+      this.refreshCopy();
+    } finally {
+      this.commerceBusy = false;
+    }
+  }
+
+  private async restorePurchases(): Promise<void> {
+    if (this.commerceBusy || this.curtain.active) return;
+    this.commerceBusy = true;
+    try {
+      const result = await monetization().restorePurchases();
+      if (this.curtain.active) return;
+      this.layout();
+      this.refreshCopy();
+      this.premiumValue.setText(restoreFeedback(result));
+    } finally {
+      this.commerceBusy = false;
+    }
   }
 
   private shutdown(): void {

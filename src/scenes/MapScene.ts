@@ -660,7 +660,7 @@ export class MapScene extends BaseScene {
     this.hang(this.signSurface, this.signRect.x + inner, this.signRect.y + inner, angle, drop);
     const current = areaOf(this.progress.unlocked);
     const view = viewHealth(this.health);
-    const hud = healthHud(view);
+    const hud = healthHud(view, { premium: monetization().premium() });
     const waiting = hud.wait !== null;
     const healthW = 118 * s;
     this.status.setText(current.name);
@@ -672,7 +672,7 @@ export class MapScene extends BaseScene {
     const heartY = this.signRect.y + h * (waiting ? 0.38 : 0.5);
     const heartX = this.signRect.right - 88 * s;
     this.healthMark.clear();
-    drawHeart(this.healthMark, 0, 0, 11 * s, view.hearts === 0 ? mix(SHELL.cream, PALETTE.coral, 0.35) : SHELL.cream);
+    drawHeart(this.healthMark, 0, 0, 11 * s, view.hearts === 0 && !monetization().premium() ? mix(SHELL.cream, PALETTE.coral, 0.35) : SHELL.cream);
     this.hang(this.healthMark, heartX, heartY, angle, drop);
     this.healthCount.setText(hud.count);
     resize(this.healthCount, 28 * s, SHELL.cream);
@@ -851,6 +851,7 @@ export class MapScene extends BaseScene {
   }
 
   private showRest(level: number): void {
+    if (monetization().premium()) return;
     const first = !this.restShown;
     this.restShown = true;
     this.restPractice = practiceLevel(this.progress);
@@ -924,7 +925,7 @@ export class MapScene extends BaseScene {
 
   private refreshHealthHud(): void {
     const view = viewHealth(this.health);
-    const hud = healthHud(view);
+    const hud = healthHud(view, { premium: monetization().premium() });
     const wait = hud.wait ?? '';
     if (this.healthCount.text !== hud.count || this.healthWait.visible !== (hud.wait !== null)) {
       this.drawSign(this.uiScale, 0, 0);
@@ -1138,7 +1139,7 @@ export class MapScene extends BaseScene {
     this.clampScroll();
   }
   private openLevel(level: number): void {
-    if (!canBeginAttempt(this.health, this.progress, level)) {
+    if (!canBeginAttempt(this.health, this.progress, level, Date.now(), monetization().premium())) {
       this.showRest(level);
       return;
     }

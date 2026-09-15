@@ -5,8 +5,13 @@
  */
 
 export const PRODUCT = {
-  premium: 'premium',
+  premium: 'tinytempo_premium',
   heartRefill: 'heart_refill_full',
+} as const;
+
+/** RevenueCat entitlement identifiers. Premium is the store product of the same id. */
+export const ENTITLEMENT = {
+  premium: 'tinytempo_premium',
 } as const;
 
 export type ProductId = typeof PRODUCT[keyof typeof PRODUCT];
@@ -33,7 +38,7 @@ export interface RewardedAds {
   show(): Promise<RewardedResult>;
 }
 
-/** RevenueCat implements this on native. Restore must never refill consumable hearts. */
+/** RevenueCat implements this on native. Restore restores Premium; it never fills consumable hearts. */
 export interface Billing {
   available(): boolean;
   premium(): boolean;

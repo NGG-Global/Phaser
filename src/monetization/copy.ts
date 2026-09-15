@@ -1,4 +1,4 @@
-import type { PurchaseReason, RewardedReason } from './types';
+import type { PurchaseReason, RestoreResult, RewardedReason } from './types';
 
 /** Workshop-voice copy when a watch does not grant a heart. Game state is unchanged. */
 export function rewardedFeedback(reason: RewardedReason): string {
@@ -17,4 +17,12 @@ export function purchaseFeedback(reason: PurchaseReason): string {
     case 'failed': return "The purchase didn't finish.";
     case 'pending': return 'The store is still checking.';
   }
+}
+
+/** Workshop-voice copy after Restore Purchases. Consumable refills are never restored. */
+export function restoreFeedback(result: RestoreResult): string {
+  if (!result.ok) {
+    return result.reason === 'unavailable' ? "The store isn't available." : "Couldn't restore just now.";
+  }
+  return result.premium ? 'Premium restored.' : 'No purchases to restore.';
 }

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   ANALYTICS_EVENTS, PRODUCT, createMonetization, installAnalytics, installMonetization,
-  monetization, purchaseFeedback, rewardedFeedback, stubAds, stubBilling, track,
+  monetization, purchaseFeedback, restoreFeedback, rewardedFeedback, stubAds, stubBilling, track,
   type AnalyticsEvent, type Billing, type RewardedAds,
 } from '../src/monetization';
 
@@ -211,5 +211,38 @@ describe('heart refill copy', () => {
     expect(purchaseFeedback('cancelled')).toBe('Purchase cancelled.');
     expect(purchaseFeedback('failed')).toBe("The purchase didn't finish.");
     expect(purchaseFeedback('pending')).toBe('The store is still checking.');
+  });
+});
+
+describe('premium', () => {
+  it('names the store product tinytempo_premium', () => {
+    expect(PRODUCT.premium).toBe('tinytempo_premium');
+  });
+
+  it('hides rewarded ads once the entitlement is active', async () => {
+    let shown = 0;
+    const ads: RewardedAds = {
+      available: () => true,
+      show: async () => { shown += 1; return { ok: true }; },
+    };
+    const billing: Billing = {
+      ...stubBilling,
+      available: () => true,
+      premium: () => true,
+    };
+    const commerce = createMonetization({ ads, billing });
+    expect(commerce.rewardedAvailable()).toBe(false);
+    expect(commerce.premium()).toBe(true);
+    await expect(commerce.showRewarded()).resolves.toEqual({ ok: false, reason: 'unavailable' });
+    expect(shown).toBe(0);
+  });
+});
+
+describe('restore copy', () => {
+  it('explains a restore without promising hearts', () => {
+    expect(restoreFeedback({ ok: true, premium: true })).toBe('Premium restored.');
+    expect(restoreFeedback({ ok: true, premium: false })).toBe('No purchases to restore.');
+    expect(restoreFeedback({ ok: false, reason: 'unavailable' })).toBe("The store isn't available.");
+    expect(restoreFeedback({ ok: false, reason: 'failed' })).toBe("Couldn't restore just now.");
   });
 });

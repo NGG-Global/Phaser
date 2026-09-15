@@ -9,6 +9,7 @@ function snapshot(info: CustomerInfo): CustomerSnapshot {
       id: txn.transactionIdentifier,
       productId: txn.productIdentifier,
     })),
+    entitlements: Object.keys(info.entitlements.active),
   };
 }
 

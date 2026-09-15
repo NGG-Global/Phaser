@@ -9,11 +9,11 @@ const PRICE = '€2.49';
 const PRODUCT_ID = PRODUCT.heartRefill;
 const ITEM: CatalogProduct = { identifier: PRODUCT_ID, priceString: PRICE, handle: { id: PRODUCT_ID } };
 
-function receipt(id: string, extra: StoreTxn[] = []): PurchaseReceipt {
+function receipt(id: string, extra: StoreTxn[] = [], entitlements: readonly string[] = []): PurchaseReceipt {
   return {
     productIdentifier: PRODUCT_ID,
     transactionId: id,
-    customer: { transactions: [{ id, productId: PRODUCT_ID }, ...extra] },
+    customer: { transactions: [{ id, productId: PRODUCT_ID }, ...extra], entitlements: [...entitlements] },
   };
 }
 
@@ -22,8 +22,9 @@ type StoreTxn = { id: string; productId: string };
 interface FakeOptions {
   readonly products?: readonly CatalogProduct[];
   readonly history?: CustomerSnapshot;
-  readonly purchase?: 'ok' | 'cancel' | 'fail' | 'pending' | 'ok-twice' | 'cancel-then-info' | 'pending-then-info' | 'empty-txn' | 'slow';
+  readonly purchase?: 'ok' | 'cancel' | 'fail' | 'pending' | 'ok-twice' | 'cancel-then-info' | 'pending-then-info' | 'empty-txn' | 'slow' | 'premium-ok' | 'already-owned';
   readonly restore?: 'ok' | 'fail';
+  readonly customerInfo?: 'ok' | 'fail';
 }
 
 function fakeClient(options: FakeOptions = {}): PurchasesClient & {
@@ -37,7 +38,10 @@ function fakeClient(options: FakeOptions = {}): PurchasesClient & {
     emit(info) { for (const listener of listeners) listener(info); },
     async configure() { configures += 1; },
     async getProducts() { return options.products ?? [ITEM]; },
-    async customerInfo() { return options.history ?? { transactions: [] }; },
+    async customerInfo() {
+      if (options.customerInfo === 'fail') throw new Error('offline');
+      return options.history ?? { transactions: [], entitlements: [] };
+    },
     async listen(listener) { listeners.push(listener); },
     async purchase() {
       const mode = options.purchase ?? 'ok';
@@ -49,14 +53,22 @@ function fakeClient(options: FakeOptions = {}): PurchasesClient & {
         return receipt('txn-slow');
       }
       if (mode === 'empty-txn') {
-        return { productIdentifier: PRODUCT_ID, transactionId: '', customer: { transactions: [] } };
+        return { productIdentifier: PRODUCT_ID, transactionId: '', customer: { transactions: [], entitlements: [] } };
       }
+      if (mode === 'premium-ok') {
+        return {
+          productIdentifier: PRODUCT.premium,
+          transactionId: 'prem-1',
+          customer: { transactions: [], entitlements: [PRODUCT.premium] },
+        };
+      }
+      if (mode === 'already-owned') throw { code: '6', userCancelled: false };
       if (mode === 'cancel-then-info') {
-        queueMicrotask(() => client.emit({ transactions: [{ id: 'late-txn', productId: PRODUCT_ID }] }));
+        queueMicrotask(() => client.emit({ transactions: [{ id: 'late-txn', productId: PRODUCT_ID }], entitlements: [] }));
         throw { code: '1', userCancelled: true };
       }
       if (mode === 'pending-then-info') {
-        queueMicrotask(() => client.emit({ transactions: [{ id: 'pending-txn', productId: PRODUCT_ID }] }));
+        queueMicrotask(() => client.emit({ transactions: [{ id: 'pending-txn', productId: PRODUCT_ID }], entitlements: [] }));
         throw { code: '20', userCancelled: false };
       }
       if (mode === 'ok-twice') {
@@ -68,7 +80,7 @@ function fakeClient(options: FakeOptions = {}): PurchasesClient & {
     },
     async restore() {
       if (options.restore === 'fail') throw new Error('restore failed');
-      return options.history ?? { transactions: [{ id: 'old', productId: PRODUCT_ID }] };
+      return options.history ?? { transactions: [{ id: 'old', productId: PRODUCT_ID }], entitlements: [] };
     },
   };
   return client;
@@ -108,8 +120,11 @@ describe('RevenueCat heart refill', () => {
 
     const missingProduct = createRevenueCatBilling(fakeClient({ products: [] }), { apiKey: 'goog_test', lateMs: 5 });
     await missingProduct.boot();
-    expect(missingProduct.available()).toBe(false);
+    expect(missingProduct.available()).toBe(true);
     expect(missingProduct.price(PRODUCT.heartRefill)).toBeNull();
+    await expect(missingProduct.purchase(PRODUCT.heartRefill)).resolves.toEqual({
+      ok: false, product: PRODUCT.heartRefill, reason: 'unavailable',
+    });
   });
 
   it('returns a claim id on success so a caller can fill once', async () => {
@@ -162,7 +177,7 @@ describe('RevenueCat heart refill', () => {
 
   it('does not restore consumable refills as a permanent purchase', async () => {
     const billing = createRevenueCatBilling(fakeClient({
-      history: { transactions: [{ id: 'old-fill', productId: PRODUCT_ID }] },
+      history: { transactions: [{ id: 'old-fill', productId: PRODUCT_ID }], entitlements: [] },
     }), { apiKey: 'goog_test', lateMs: 5 });
     await billing.boot();
     await expect(billing.restore()).resolves.toEqual({ ok: true, premium: false });
@@ -204,5 +219,99 @@ describe('heart refill through the facade', () => {
     expect(commerce.productPrice(PRODUCT.heartRefill)).toBe(PRICE);
     const result = await commerce.purchase(PRODUCT.heartRefill);
     expect(result).toEqual({ ok: true, product: PRODUCT.heartRefill, claimId: 'txn-1' });
+  });
+});
+
+const PREMIUM_ITEM: CatalogProduct = { identifier: PRODUCT.premium, priceString: '€4.99', handle: { id: PRODUCT.premium } };
+
+function memoryStorage(initial: Record<string, string> = {}): Storage {
+  const map = new Map(Object.entries(initial));
+  return {
+    getItem: k => map.get(k) ?? null,
+    setItem: (k, v) => { map.set(k, String(v)); },
+    removeItem: k => { map.delete(k); },
+    clear: () => map.clear(),
+    key: () => null,
+    length: 0,
+  } as Storage;
+}
+
+describe('RevenueCat Premium entitlement', () => {
+  it('exposes the localized Premium price', async () => {
+    const billing = createRevenueCatBilling(fakeClient({ products: [ITEM, PREMIUM_ITEM] }), {
+      apiKey: 'goog_test', lateMs: 5, cache: memoryStorage(),
+    });
+    await billing.boot();
+    expect(billing.price(PRODUCT.premium)).toBe('€4.99');
+  });
+
+  it('unlocks Premium from active entitlement state', async () => {
+    const billing = createRevenueCatBilling(fakeClient({
+      products: [ITEM, PREMIUM_ITEM],
+      history: { transactions: [], entitlements: [PRODUCT.premium] },
+    }), { apiKey: 'goog_test', lateMs: 5, cache: memoryStorage() });
+    await billing.boot();
+    expect(billing.premium()).toBe(true);
+  });
+
+  it('restores Premium on a new device and never fills hearts', async () => {
+    const billing = createRevenueCatBilling(fakeClient({
+      products: [ITEM, PREMIUM_ITEM],
+      history: { transactions: [{ id: 'old-fill', productId: PRODUCT_ID }], entitlements: [PRODUCT.premium] },
+    }), { apiKey: 'goog_test', lateMs: 5, cache: memoryStorage() });
+    await expect(billing.restore()).resolves.toEqual({ ok: true, premium: true });
+    expect(billing.premium()).toBe(true);
+    expect(emptyHealth().hearts).toBe(0);
+  });
+
+  it('keeps cached Premium when customer info cannot be fetched', async () => {
+    const cache = memoryStorage();
+    const entitled = createRevenueCatBilling(fakeClient({
+      products: [ITEM, PREMIUM_ITEM],
+      history: { transactions: [], entitlements: [PRODUCT.premium] },
+    }), { apiKey: 'goog_test', lateMs: 5, cache });
+    await entitled.boot();
+    expect(entitled.premium()).toBe(true);
+
+    const offline = createRevenueCatBilling(fakeClient({
+      products: [ITEM, PREMIUM_ITEM],
+      customerInfo: 'fail',
+    }), { apiKey: 'goog_test', lateMs: 5, cache });
+    await offline.boot();
+    expect(offline.premium()).toBe(true);
+  });
+
+  it('grants Premium after a confirmed purchase', async () => {
+    const billing = createRevenueCatBilling(fakeClient({
+      products: [ITEM, PREMIUM_ITEM],
+      purchase: 'premium-ok',
+    }), { apiKey: 'goog_test', lateMs: 5, cache: memoryStorage() });
+    await expect(billing.purchase(PRODUCT.premium)).resolves.toEqual({
+      ok: true, product: PRODUCT.premium, claimId: 'prem-1',
+    });
+    expect(billing.premium()).toBe(true);
+  });
+
+  it('treats an already-owned product as Premium when the entitlement is active', async () => {
+    const billing = createRevenueCatBilling(fakeClient({
+      products: [ITEM, PREMIUM_ITEM],
+      purchase: 'already-owned',
+      history: { transactions: [], entitlements: [PRODUCT.premium] },
+    }), { apiKey: 'goog_test', lateMs: 5, cache: memoryStorage() });
+    await expect(billing.purchase(PRODUCT.premium)).resolves.toEqual({
+      ok: true, product: PRODUCT.premium, claimId: PRODUCT.premium,
+    });
+    expect(billing.premium()).toBe(true);
+  });
+
+  it('does not unlock Premium when the player cancels', async () => {
+    const billing = createRevenueCatBilling(fakeClient({
+      products: [ITEM, PREMIUM_ITEM],
+      purchase: 'cancel',
+    }), { apiKey: 'goog_test', lateMs: 5, cache: memoryStorage() });
+    await expect(billing.purchase(PRODUCT.premium)).resolves.toEqual({
+      ok: false, product: PRODUCT.premium, reason: 'cancelled',
+    });
+    expect(billing.premium()).toBe(false);
   });
 });

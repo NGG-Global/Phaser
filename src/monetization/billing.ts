@@ -1,4 +1,4 @@
-import { PRODUCT } from './types';
+import { ENTITLEMENT, PRODUCT } from './types';
 import type { Billing, ProductId, PurchaseReason, PurchaseResult, RestoreResult } from './types';
 
 export interface CatalogProduct {
@@ -15,6 +15,8 @@ export interface StoreTransaction {
 
 export interface CustomerSnapshot {
   readonly transactions: readonly StoreTransaction[];
+  /** Active RevenueCat entitlement identifiers. Source of Premium access. */
+  readonly entitlements: readonly string[];
 }
 
 export interface PurchaseReceipt {
@@ -37,6 +39,8 @@ export interface RevenueCatBilling extends Billing {
 }
 
 const LATE_TXN_MS = 2_000;
+const PREMIUM_CACHE_KEY = 'tiny-tempo.premium.v1';
+const CATALOGUE = [PRODUCT.heartRefill, PRODUCT.premium] as const;
 
 export function classifyPurchaseError(error: unknown): PurchaseReason {
   if (typeof error !== 'object' || error === null) return 'failed';
@@ -49,28 +53,69 @@ export function classifyPurchaseError(error: unknown): PurchaseReason {
   return 'failed';
 }
 
+function alreadyOwned(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const code = String((error as { code?: unknown }).code ?? '');
+  return code === '6' || code === 'PRODUCT_ALREADY_PURCHASED_ERROR';
+}
+
 function transactionsOf(info: CustomerSnapshot, productId: string): readonly StoreTransaction[] {
   return info.transactions.filter(txn => txn.productId === productId && txn.id.length > 0);
 }
 
+function entitlementsOf(info: CustomerSnapshot): readonly string[] {
+  return info.entitlements;
+}
+
+function readPremiumCache(storage: Storage | null): boolean {
+  try {
+    const raw = storage?.getItem(PREMIUM_CACHE_KEY);
+    if (!raw) return false;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return false;
+    return (parsed as { entitled?: unknown }).entitled === true;
+  } catch {
+    return false;
+  }
+}
+
+function writePremiumCache(storage: Storage | null, entitled: boolean): void {
+  try {
+    storage?.setItem(PREMIUM_CACHE_KEY, JSON.stringify({ version: 1, entitled }));
+  } catch { /* private windows, blocked storage */ }
+}
+
+function safeStorage(): Storage | null {
+  try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
+}
+
 /**
- * RevenueCat adapter for the consumable heart refill. Restore never fills hearts:
- * those are one-shot purchases, not entitlements.
+ * RevenueCat adapter: consumable heart refill plus the permanent Premium entitlement.
+ * Restore never fills hearts; Premium is the entitlement, cached so an offline launch
+ * still sees the last confirmed state.
  */
 export function createRevenueCatBilling(
   client: PurchasesClient,
-  options: { readonly apiKey: string; readonly productId?: ProductId; readonly lateMs?: number } = { apiKey: '' },
+  options: {
+    readonly apiKey: string;
+    readonly lateMs?: number;
+    readonly entitlement?: string;
+    readonly cache?: Storage | null;
+  } = { apiKey: '' },
 ): RevenueCatBilling {
-  const productId: ProductId = options.productId ?? PRODUCT.heartRefill;
+  const refillId: ProductId = PRODUCT.heartRefill;
+  const premiumId: ProductId = PRODUCT.premium;
+  const entitlementId = options.entitlement ?? ENTITLEMENT.premium;
   const lateMs = options.lateMs ?? LATE_TXN_MS;
+  const cache = options.cache === undefined ? safeStorage() : options.cache;
   let bootPromise: Promise<void> | null = null;
   let denied = false;
-  let catalog: CatalogProduct | null = null;
+  let premiumActive = readPremiumCache(cache);
+  const catalog = new Map<string, CatalogProduct>();
   let purchasing = false;
   let session: {
     settle: (result: PurchaseResult) => void;
     product: ProductId;
-    /** True only after a cancelled sheet, while we wait for a late paid transaction. */
     late: boolean;
     buffered: string | null;
   } | null = null;
@@ -89,18 +134,21 @@ export function createRevenueCatBilling(
     try {
       await client.configure(options.apiKey);
       await client.listen(onCustomer);
-      try { remember(await client.customerInfo()); } catch { /* anonymous users start with no history */ }
-      const products = await client.getProducts([productId]);
-      catalog = products.find(item => item.identifier === productId) ?? null;
-      if (!catalog) denied = true;
     } catch {
       denied = true;
+      return;
     }
+    try { applyCustomer(await client.customerInfo(), 'authoritative'); } catch { /* offline: keep the cached entitlement */ }
+    try {
+      const products = await client.getProducts([...CATALOGUE]);
+      catalog.clear();
+      for (const item of products) catalog.set(item.identifier, item);
+    } catch { /* catalogue can wait; cached Premium still applies */ }
   }
 
   function remember(info: CustomerSnapshot): string[] {
     const fresh: string[] = [];
-    for (const txn of transactionsOf(info, productId)) {
+    for (const txn of transactionsOf(info, refillId)) {
       if (seen.has(txn.id)) continue;
       seen.add(txn.id);
       fresh.push(txn.id);
@@ -108,13 +156,38 @@ export function createRevenueCatBilling(
     return fresh;
   }
 
-  function onCustomer(info: CustomerSnapshot): void {
+  function applyEntitlements(info: CustomerSnapshot, mode: 'authoritative' | 'additive'): void {
+    const entitled = entitlementsOf(info).includes(entitlementId);
+    if (entitled) {
+      premiumActive = true;
+      writePremiumCache(cache, true);
+      return;
+    }
+    if (mode === 'authoritative' && session?.product !== premiumId) {
+      premiumActive = false;
+      writePremiumCache(cache, false);
+    }
+  }
+
+  function applyCustomer(info: CustomerSnapshot, mode: 'authoritative' | 'additive'): string[] {
     const fresh = remember(info);
+    applyEntitlements(info, mode);
+    return fresh;
+  }
+
+  function onCustomer(info: CustomerSnapshot): void {
+    const fresh = applyCustomer(info, 'authoritative');
     const current = session;
+    if (!current) return;
+    if (current.product === premiumId) {
+      if (!premiumActive) return;
+      const claimId = entitlementId;
+      if (current.late) current.settle({ ok: true, product: premiumId, claimId });
+      else current.buffered = claimId;
+      return;
+    }
     const claimId = fresh[0];
-    if (!current || claimId === undefined) return;
-    // Pending/failed sheets must not grant from a racing CustomerInfo update.
-    // A cancelled Play sheet may still complete after a bank-app hop; only then.
+    if (claimId === undefined) return;
     if (current.late) current.settle({ ok: true, product: current.product, claimId });
     else current.buffered = claimId;
   }
@@ -129,7 +202,7 @@ export function createRevenueCatBilling(
     return fresh[0] ?? null;
   }
 
-  function present(product: CatalogProduct): Promise<PurchaseResult> {
+  function present(product: CatalogProduct, productId: ProductId): Promise<PurchaseResult> {
     return new Promise(resolve => {
       let settled = false;
       const finish = (result: PurchaseResult): void => {
@@ -141,7 +214,21 @@ export function createRevenueCatBilling(
       session = { settle: finish, product: productId, late: false, buffered: null };
       void client.purchase(product).then(
         receipt => {
+          if (productId === premiumId) {
+            applyCustomer(receipt.customer, 'additive');
+            if (!premiumActive) {
+              finish({ ok: false, product: productId, reason: 'failed' });
+              return;
+            }
+            finish({
+              ok: true,
+              product: productId,
+              claimId: receipt.transactionId || entitlementId,
+            });
+            return;
+          }
           const claimId = claimFrom(receipt);
+          applyCustomer(receipt.customer, 'additive');
           if (claimId === null) {
             finish({ ok: false, product: productId, reason: 'failed' });
             return;
@@ -149,14 +236,23 @@ export function createRevenueCatBilling(
           finish({ ok: true, product: productId, claimId });
         },
         error => {
+          if (productId === premiumId && alreadyOwned(error)) {
+            void client.customerInfo().then(
+              info => {
+                applyCustomer(info, 'authoritative');
+                if (premiumActive) finish({ ok: true, product: productId, claimId: entitlementId });
+                else finish({ ok: false, product: productId, reason: 'failed' });
+              },
+              () => finish({ ok: false, product: productId, reason: 'failed' }),
+            );
+            return;
+          }
           const reason = classifyPurchaseError(error);
           const current = session;
           if (reason !== 'cancelled' || current === null) {
             finish({ ok: false, product: productId, reason });
             return;
           }
-          // Bank-app verification backgrounds the Activity; the original call can
-          // look cancelled while CustomerInfo then reports the paid transaction.
           current.late = true;
           if (current.buffered !== null) {
             finish({ ok: true, product: current.product, claimId: current.buffered });
@@ -177,21 +273,27 @@ export function createRevenueCatBilling(
       return !denied;
     },
 
-    premium: () => false,
+    premium: () => premiumActive,
 
     price(product: ProductId): string | null {
-      if (product !== productId || !catalog) return null;
-      return catalog.priceString.length > 0 ? catalog.priceString : null;
+      const item = catalog.get(product);
+      if (!item || item.priceString.length === 0) return null;
+      return item.priceString;
     },
 
     async purchase(product: ProductId): Promise<PurchaseResult> {
-      if (product !== productId) return { ok: false, product, reason: 'unavailable' };
+      if (product !== refillId && product !== premiumId) return { ok: false, product, reason: 'unavailable' };
       if (purchasing) return { ok: false, product, reason: 'failed' };
       purchasing = true;
       try {
         await boot();
-        if (denied || !catalog) return { ok: false, product, reason: 'unavailable' };
-        return await present(catalog);
+        if (denied) return { ok: false, product, reason: 'unavailable' };
+        if (product === premiumId && premiumActive) {
+          return { ok: true, product, claimId: entitlementId };
+        }
+        const item = catalog.get(product);
+        if (!item) return { ok: false, product, reason: 'unavailable' };
+        return await present(item, product);
       } catch {
         return { ok: false, product, reason: 'failed' };
       } finally {
@@ -204,8 +306,8 @@ export function createRevenueCatBilling(
         await boot();
         if (denied) return { ok: false, reason: 'unavailable' };
         const info = await client.restore();
-        remember(info);
-        return { ok: true, premium: false };
+        applyCustomer(info, 'authoritative');
+        return { ok: true, premium: premiumActive };
       } catch {
         return { ok: false, reason: 'failed' };
       }

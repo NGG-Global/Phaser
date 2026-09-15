@@ -366,7 +366,7 @@ export class PlayScene extends BaseScene {
 
   private async startRound(): Promise<void> {
     // Gate before tearing anything down: a denied restart must not kill a paid run.
-    if (!canBeginAttempt(loadHealth(), loadProgress(), this.spec.level)) {
+    if (!canBeginAttempt(loadHealth(), loadProgress(), this.spec.level, Date.now(), monetization().premium())) {
       if (this.controller?.active) return;
       this.showNoHearts();
       return;
@@ -437,7 +437,7 @@ export class PlayScene extends BaseScene {
       }
       // Spend only once audio is running: a failed unlock/load above never reaches here.
       const attemptId = `${this.spec.level}:${request}`;
-      const begun = beginAttempt(loadHealth(), loadProgress(), this.spec.level, attemptId);
+      const begun = beginAttempt(loadHealth(), loadProgress(), this.spec.level, attemptId, Date.now(), monetization().premium());
       if (!begun.ok) {
         this.audio!.music.stop();
         this.showNoHearts();
@@ -635,7 +635,7 @@ export class PlayScene extends BaseScene {
       this.refillRoot.setY(0).setAlpha(1);
     }
     if (this.actionCaption === 'WATCH' && !this.summaryShown) {
-      const wait = healthHud(viewHealth(loadHealth())).wait ?? '';
+      const wait = healthHud(viewHealth(loadHealth()), { premium: monetization().premium() }).wait ?? '';
       if (this.accuracy.text !== wait) this.accuracy.setText(wait);
     }
     // The verdict word rises and fades; one instance, so a quick double replaces rather
@@ -985,9 +985,10 @@ export class PlayScene extends BaseScene {
   }
   private showNoHearts(): void {
     this.starting = false;
+    if (monetization().premium()) return;
     this.setTurn('none');
     this.changeHeadline('No hearts');
-    const wait = healthHud(viewHealth(loadHealth())).wait;
+    const wait = healthHud(viewHealth(loadHealth()), { premium: monetization().premium() }).wait;
     if (!this.summaryShown) this.accuracy.setText(wait === null ? '' : wait);
     this.setAction('WATCH');
     if (!this.emptyTracked) {
