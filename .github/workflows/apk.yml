@@ -34,9 +34,11 @@ jobs:
 
       - uses: android-actions/setup-android@v4
         with:
-          # Platform 36 is compileSdk; AGP 8.13 still pulls build-tools 35 as well.
+          # Do not request `tools`: that package was retired and sdkmanager 20
+          # fails the job with "Failed to find package 'tools'". Platform 36 is
+          # compileSdk; AGP 8.13 still pulls build-tools 35 as well.
           log-accepted-android-sdk-licenses: false
-          packages: 'tools platform-tools platforms;android-36 build-tools;36.0.0 build-tools;35.0.0'
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0 build-tools;35.0.0'
 
       - uses: gradle/actions/setup-gradle@v4
 
@@ -44,8 +46,8 @@ jobs:
 
       - name: Point Gradle at the SDK
         # Untracked locally as android/local.properties. CI has none, and Gradle
-        # will not guess ANDROID_SDK_ROOT unless sdk.dir is written.
-        run: echo "sdk.dir=${ANDROID_SDK_ROOT:-$HOME/.android/sdk}" > android/local.properties
+        # will not guess ANDROID_HOME unless sdk.dir is written.
+        run: echo "sdk.dir=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" > android/local.properties
 
       - run: npm run android:apk
 
