@@ -6,11 +6,14 @@ import type {
 
 /** Native SDKs can hang a WebView; better to fail the offer than freeze the map. */
 const DEFAULT_TIMEOUT_MS = 45_000;
+/** A rewarded video plus the close card can run well past the commerce timeout. */
+const DEFAULT_SHOW_TIMEOUT_MS = 180_000;
 
 export interface MonetizationOptions {
   readonly ads?: RewardedAds;
   readonly billing?: Billing;
   readonly timeoutMs?: number;
+  readonly showTimeoutMs?: number;
 }
 
 function asBoolean(read: () => boolean): boolean {
@@ -39,6 +42,7 @@ export function createMonetization(options: MonetizationOptions = {}): Monetizat
   const ads = options.ads ?? stubAds;
   const billing = options.billing ?? stubBilling;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const showTimeoutMs = options.showTimeoutMs ?? options.timeoutMs ?? DEFAULT_SHOW_TIMEOUT_MS;
 
   return {
     rewardedAvailable: () => asBoolean(() => ads.available()),
@@ -52,7 +56,7 @@ export function createMonetization(options: MonetizationOptions = {}): Monetizat
       try {
         const result = await withTimeout(
           Promise.resolve().then(() => ads.show()),
-          timeoutMs,
+          showTimeoutMs,
           { ok: false, reason: 'failed' } satisfies RewardedResult,
         );
         if (result.ok) track('rewarded_completed', {});

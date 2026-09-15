@@ -17,13 +17,14 @@ import type { Judgement } from '@/rhythm/judge';
 import { beatsPlayed, countIn, markFor, trackGeometry, type Mark } from '@/game/beatTrack';
 import { levelSpec, meanAccuracy, starsFor, type LevelSpec } from '@/game/levels';
 import {
-  beginAttempt, canBeginAttempt, finishAttempt, healthHud, loadHealth, saveHealth, viewHealth,
+  beginAttempt, canBeginAttempt, finishAttempt, healthHud, loadHealth, redeemHeart, saveHealth,
+  viewHealth,
 } from '@/game/health';
-import { track } from '@/monetization';
+import { monetization, rewardedFeedback, track } from '@/monetization';
 import { loadProgress, recordResult, saveProgress, type LevelOutcome } from '@/game/progress';
 import { STYLE } from '@/config/style';
 import { PALETTE, SHELL } from '@/config/theme';
-import { drawMap, drawRestart, drawSpeaker } from '@/ui/icons';
+import { drawHeart, drawMap, drawRestart, drawSpeaker } from '@/ui/icons';
 import { faces } from '@/ui/light';
 import { mix, shade, starColour } from '@/ui/colour';
 import { CHROME, drawPuck, pressAmount, puckSink } from '@/ui/chrome';
@@ -75,6 +76,9 @@ export class PlayScene extends BaseScene {
   private attemptId: string | null = null;
   private heartRefunded = false;
   private emptyTracked = false;
+  private watchOfferTracked = false;
+  private watching = false;
+  private watchClaims = 0;
   private get definition() { return VIGNETTES.find(v => v.id === this.spec.vignette) ?? VIGNETTES[0]!; }
   private stars!: Phaser.GameObjects.Graphics;
   private headline!: Phaser.GameObjects.Text;
@@ -91,6 +95,8 @@ export class PlayScene extends BaseScene {
   private action!: Phaser.GameObjects.Graphics;
   private actionSurface!: Phaser.GameObjects.TileSprite;
   private actionLabel!: Phaser.GameObjects.Text;
+  private actionHint!: Phaser.GameObjects.Text;
+  private actionHeart!: Phaser.GameObjects.Graphics;
   private actionRect = new Phaser.Geom.Rectangle();
   private actionCaption = '';
   private actionPressedAt = -Infinity;
@@ -167,7 +173,9 @@ export class PlayScene extends BaseScene {
     this.action = this.add.graphics();
     this.actionSurface = surface(this, MaterialKey.cloth, new Phaser.Geom.Rectangle(0, 0, 10, 10), 1, PALETTE.coral, 0.35);
     this.actionLabel = display(this, '', { size: 40, colour: SHELL.cream, align: 'center' }).setOrigin(0.5);
-    this.actionRoot.add([this.action, this.actionSurface, this.actionLabel]);
+    this.actionHint = label(this, '+1', { size: 22, colour: SHELL.cream, align: 'center' }).setOrigin(1, 0.5);
+    this.actionHeart = this.add.graphics();
+    this.actionRoot.add([this.action, this.actionSurface, this.actionLabel, this.actionHint, this.actionHeart]);
     this.marks = this.add.graphics().setDepth(8);
     this.verdict = display(this, '', { size: 38, colour: ink, align: 'center' }).setOrigin(0.5).setAlpha(0).setDepth(8);
     this.taskMarks = this.add.graphics().setDepth(11);
@@ -265,9 +273,23 @@ export class PlayScene extends BaseScene {
     drawPanel(g, r, s, { fill: PALETTE.coral, depth: CHROME.block.depth, press, hero: true });
     const sink = CHROME.block.depth * s * press * 0.8;
     placeSurface(this.actionSurface, r, s, sink);
+    const watching = this.actionCaption === 'WATCH';
+    this.actionHint.setVisible(watching);
+    this.actionHeart.setVisible(watching);
     this.actionLabel.setText(this.actionCaption);
-    resize(this.actionLabel, 40 * s, SHELL.cream);
-    this.actionLabel.setPosition(r.centerX, r.centerY + sink);
+    if (watching) {
+      resize(this.actionLabel, 32 * s, SHELL.cream);
+      this.actionLabel.setPosition(r.centerX, r.centerY - 16 * s + sink);
+      this.actionHint.setText('+1');
+      resize(this.actionHint, 22 * s, SHELL.cream);
+      this.actionHint.setPosition(r.centerX - 4 * s, r.centerY + 22 * s + sink);
+      this.actionHeart.clear();
+      drawHeart(this.actionHeart, r.centerX + 18 * s, r.centerY + 22 * s + sink, 10 * s, SHELL.cream);
+    } else {
+      this.actionHeart.clear();
+      resize(this.actionLabel, 40 * s, SHELL.cream);
+      this.actionLabel.setPosition(r.centerX, r.centerY + sink);
+    }
   }
 
   private setAction(caption: string): void {
@@ -301,6 +323,8 @@ export class PlayScene extends BaseScene {
     this.attemptId = null;
     this.heartRefunded = false;
     this.emptyTracked = false;
+    this.watchOfferTracked = false;
+    this.watching = false;
     this.kept.setVisible(false);
     this.stars.clear();
     this.setTurn('none');
@@ -405,10 +429,12 @@ export class PlayScene extends BaseScene {
     if (this.actionCaption !== '' && Phaser.Geom.Rectangle.Contains(this.actionRect, tap.x, tap.y)) {
       this.actionPressedAt = performance.now() / 1000;
       this.actionPressDirty = true;
+      if (this.actionCaption === 'WATCH') { void this.watchAd(); return; }
       if (this.actionCaption === 'Map') { this.leaveForMap(); return; }
     }
     const phase = this.controller?.phase ?? 'idle';
     if (phase === 'idle' || phase === 'paused') {
+      if (this.actionCaption === 'WATCH') return;
       if (this.actionCaption === 'Map') { this.leaveForMap(); return; }
       if (!this.starting) void this.startRound();
       return;
@@ -888,10 +914,32 @@ export class PlayScene extends BaseScene {
     this.changeHeadline('No hearts');
     const wait = healthHud(viewHealth(loadHealth())).wait;
     if (!this.summaryShown) this.accuracy.setText(wait === null ? '' : wait);
-    this.setAction('Map');
+    this.setAction('WATCH');
     if (!this.emptyTracked) {
       this.emptyTracked = true;
       track('health_empty', { level: this.spec.level });
+    }
+    if (!this.watchOfferTracked) {
+      this.watchOfferTracked = true;
+      track('rewarded_offer_shown', { placement: 'play' });
+    }
+  }
+
+  private async watchAd(): Promise<void> {
+    if (this.watching || this.curtain.active) return;
+    this.watching = true;
+    const claimId = `play:${++this.watchClaims}`;
+    try {
+      const result = await monetization().showRewarded();
+      if (this.disposed) return;
+      if (!result.ok) {
+        this.accuracy.setText(rewardedFeedback(result.reason));
+        return;
+      }
+      redeemHeart(claimId);
+      void this.startRound();
+    } finally {
+      this.watching = false;
     }
   }
 

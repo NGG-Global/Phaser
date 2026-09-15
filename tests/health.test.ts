@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { levelSpec, starsFor } from '../src/game/levels';
 import type { Progress } from '../src/game/progress';
 import {
-  HEALTH, abandonAttempt, attemptCostsHeart, beginAttempt, canBeginAttempt, clearHealth,
-  finishAttempt, formatCountdown, healthHud, isMastered, isProtectedLevel, loadHealth,
-  practiceLevel, reconcile, saveHealth, viewHealth, type Health,
+  HEALTH, abandonAttempt, attemptCostsHeart, beginAttempt, canBeginAttempt, claimHeart,
+  clearHealth, finishAttempt, formatCountdown, grantHeart, healthHud, isMastered,
+  isProtectedLevel, loadHealth, practiceLevel, reconcile, saveHealth, viewHealth, type Health,
 } from '../src/game/health';
 
 vi.mock('phaser', () => ({ default: {} }));
@@ -299,5 +299,42 @@ describe('zero-health gating', () => {
     expect(begun.ok).toBe(true);
     expect(begun.health.hearts).toBe(0);
     expect(begun.health.refillStartedAt).toBe(T0 + HEALTH.regenMs);
+  });
+});
+
+describe('rewarded heart grants', () => {
+  it('adds exactly one heart and never exceeds the maximum', () => {
+    const empty = full({ hearts: 0, refillStartedAt: T0 });
+    const one = grantHeart(empty, T0);
+    expect(one.granted).toBe(true);
+    expect(one.health.hearts).toBe(1);
+    expect(one.health.refillStartedAt).toBe(T0);
+
+    const almost = grantHeart(full({ hearts: HEALTH.max - 1, refillStartedAt: T0 }), T0);
+    expect(almost.granted).toBe(true);
+    expect(almost.health.hearts).toBe(HEALTH.max);
+    expect(almost.health.refillStartedAt).toBeNull();
+
+    const fullBar = grantHeart(full(), T0);
+    expect(fullBar.granted).toBe(false);
+    expect(fullBar.health.hearts).toBe(HEALTH.max);
+  });
+
+  it('grants only once for the same claim id even when both callbacks fire', () => {
+    const empty = full({ hearts: 0, refillStartedAt: T0 });
+    const first = claimHeart(empty, 'ad-1', T0);
+    const again = claimHeart(first.health, 'ad-1', T0);
+    expect(first.granted).toBe(true);
+    expect(first.health.hearts).toBe(1);
+    expect(again.granted).toBe(false);
+    expect(again.health.hearts).toBe(1);
+  });
+
+  it('lets a later rewarded ad grant another heart up to the cap', () => {
+    const empty = full({ hearts: 0, refillStartedAt: T0 });
+    const first = claimHeart(empty, 'ad-a', T0);
+    const second = claimHeart(first.health, 'ad-b', T0);
+    expect(second.granted).toBe(true);
+    expect(second.health.hearts).toBe(2);
   });
 });

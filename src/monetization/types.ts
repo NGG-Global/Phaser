@@ -1,7 +1,7 @@
 /**
  * Commerce ports. Scenes talk to these types, never to AdMob or RevenueCat.
- * Native SDKs will implement the same contracts later; until then the stub
- * keeps the browser and every failed native call on the safe path.
+ * Native SDKs will implement the same contracts; until then the stub keeps the
+ * browser and every failed native call on the safe path.
  */
 
 export const PRODUCT = {
@@ -26,7 +26,7 @@ export type RestoreResult =
   | { readonly ok: true; readonly premium: boolean }
   | { readonly ok: false; readonly reason: RestoreReason };
 
-/** What a future AdMob adapter implements. Scenes never import this file's neighbour SDKs. */
+/** AdMob implements this on native; the web stub stays unavailable. Scenes never import the plugin. */
 export interface RewardedAds {
   available(): boolean;
   show(): Promise<RewardedResult>;

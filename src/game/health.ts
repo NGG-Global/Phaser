@@ -43,6 +43,14 @@ export interface FinishAttemptResult {
   readonly health: Health;
 }
 
+export interface GrantHeartResult {
+  readonly granted: boolean;
+  readonly health: Health;
+}
+
+/** Claim ids already granted this session, so a double Rewarded callback cannot add two hearts. */
+const claimedIds = new Set<string>();
+
 const KEY = 'tiny-tempo.health.v1';
 /** Written but not required on read, so a future migration has something to branch on. */
 const VERSION = 1;
@@ -192,6 +200,44 @@ export function abandonAttempt(health: Health, attemptId: string, now: number = 
   const live = reconcile(health, now);
   if (live.spentAttempt !== attemptId) return live;
   return freeze({ ...live, spentAttempt: null });
+}
+
+/**
+ * Adds exactly one heart, never above `HEALTH.max`. A grant at max is a no-op.
+ * An existing refill stamp is kept until the bar fills, matching a 3-star refund.
+ */
+export function grantHeart(health: Health, now: number = Date.now()): GrantHeartResult {
+  const live = reconcile(health, now);
+  if (live.hearts >= HEALTH.max) return { granted: false, health: live };
+  const hearts = Math.min(HEALTH.max, live.hearts + 1);
+  return {
+    granted: true,
+    health: freeze({
+      hearts,
+      refillStartedAt: hearts >= HEALTH.max ? null : (live.refillStartedAt ?? now),
+      spentAttempt: live.spentAttempt,
+    }),
+  };
+}
+
+/**
+ * Grants one heart for a rewarded-ad completion. The same `claimId` never grants
+ * twice, even if the SDK fires Rewarded and the show promise together.
+ */
+export function claimHeart(health: Health, claimId: string, now: number = Date.now()): GrantHeartResult {
+  const live = reconcile(health, now);
+  if (typeof claimId !== 'string' || claimId.length === 0 || claimedIds.has(claimId)) {
+    return { granted: false, health: live };
+  }
+  claimedIds.add(claimId);
+  return grantHeart(live, now);
+}
+
+/** Load, claim, persist. Scenes call this after a rewarded ad reports completion. */
+export function redeemHeart(claimId: string, now: number = Date.now()): GrantHeartResult {
+  const result = claimHeart(loadHealth(undefined, now), claimId, now);
+  if (result.granted) saveHealth(result.health);
+  return result;
 }
 
 /** Reads may fail in private windows or blocked storage; the game then starts at full health. */

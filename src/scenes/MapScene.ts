@@ -8,10 +8,10 @@ import { PALETTE, SHELL } from '@/config/theme';
 import { BaseScene } from '@/core/BaseScene';
 import { areaOf, levelSpec, starsFor, type Area } from '@/game/levels';
 import {
-  canBeginAttempt, formatCountdown, healthHud, loadHealth, practiceLevel, reconcile, viewHealth,
-  type Health,
+  canBeginAttempt, formatCountdown, healthHud, loadHealth, practiceLevel, reconcile, redeemHeart,
+  viewHealth, type Health,
 } from '@/game/health';
-import { track } from '@/monetization';
+import { monetization, rewardedFeedback, track } from '@/monetization';
 import { loadProgress, type Progress } from '@/game/progress';
 import { MaterialKey } from '@/textures/materials';
 import { mix, shade, starColour } from '@/ui/colour';
@@ -85,15 +85,23 @@ export class MapScene extends BaseScene {
   private restTitle!: Phaser.GameObjects.Text;
   private restWait!: Phaser.GameObjects.Text;
   private restNote!: Phaser.GameObjects.Text;
+  private restWatch!: Phaser.GameObjects.Graphics;
+  private restWatchLabel!: Phaser.GameObjects.Text;
+  private restWatchHint!: Phaser.GameObjects.Text;
+  private restWatchMark!: Phaser.GameObjects.Graphics;
   private restAction!: Phaser.GameObjects.Graphics;
   private restActionLabel!: Phaser.GameObjects.Text;
   private restRect = new Phaser.Geom.Rectangle();
+  private restWatchRect = new Phaser.Geom.Rectangle();
   private restActionRect = new Phaser.Geom.Rectangle();
   private restShown = false;
   private restPractice: number | null = null;
   private restAt = -Infinity;
   private restPressDirty = false;
   private restPressedAt = -Infinity;
+  private restPressed: 'watch' | 'practice' | null = null;
+  private restWatching = false;
+  private watchClaims = 0;
   private curtain!: SceneCurtain;
   private footerTop = 0;
   private lastHeight = 0;
@@ -149,6 +157,8 @@ export class MapScene extends BaseScene {
     this.restShown = false;
     this.restPractice = null;
     this.restAt = this.restPressedAt = -Infinity;
+    this.restPressed = null;
+    this.restWatching = false;
     const data = this.sys.settings.data as { focus?: number } | undefined;
     this.focus = Math.max(1, Math.min(this.progress.unlocked, data?.focus ?? this.progress.unlocked));
     const top = this.progress.unlocked + PROGRESSION.mapLookahead;
@@ -181,8 +191,12 @@ export class MapScene extends BaseScene {
     this.restTitle = display(this, 'No hearts', { size: 44, colour: PALETTE.ink, align: 'center' }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
     this.restWait = body(this, '', { size: 28, colour: PALETTE.ink, align: 'center' }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
     this.restNote = body(this, 'Early levels stay open.', { size: 24, colour: PALETTE.muted, align: 'center' }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
+    this.restWatch = this.add.graphics().setScrollFactor(0).setDepth(20);
+    this.restWatchLabel = label(this, 'Watch', { size: 30, colour: SHELL.cream, align: 'center' }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
+    this.restWatchHint = label(this, '+1', { size: 22, colour: SHELL.cream, align: 'center' }).setOrigin(1, 0.5).setScrollFactor(0).setDepth(21);
+    this.restWatchMark = this.add.graphics().setScrollFactor(0).setDepth(21);
     this.restAction = this.add.graphics().setScrollFactor(0).setDepth(20);
-    this.restActionLabel = label(this, 'Practice', { size: 30, colour: SHELL.cream, align: 'center' }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
+    this.restActionLabel = label(this, 'Practice', { size: 26, colour: PALETTE.ink, align: 'center' }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
     this.enteredAt = performance.now() / 1000;
     this.curtain = new SceneCurtain(this);
     this.events.once(Phaser.Scenes.Events.CREATE, () => this.curtain.reveal());
@@ -721,29 +735,39 @@ export class MapScene extends BaseScene {
   }
 
   /**
-   * A small paper plaque, not a shop screen: empty hearts, when the next one lands, and
-   * a way back into a 3-starred level. Nothing here sells a refill.
+   * Empty hearts, when the next one lands, a rewarded watch, and a way back into a
+   * 3-starred level. The watch is the one coral action; practice stays a cream block.
    */
   private drawRest(s: number, press: number): void {
     const shown = this.restShown;
+    const hasPractice = shown && this.restPractice !== null;
     this.restPlate.setVisible(shown);
     this.restSurface.setVisible(shown);
     this.restTitle.setVisible(shown);
     this.restWait.setVisible(shown);
     this.restNote.setVisible(shown);
-    this.restAction.setVisible(shown && this.restPractice !== null);
-    this.restActionLabel.setVisible(shown && this.restPractice !== null);
+    this.restWatch.setVisible(shown);
+    this.restWatchLabel.setVisible(shown);
+    this.restWatchHint.setVisible(shown);
+    this.restWatchMark.setVisible(shown);
+    this.restAction.setVisible(hasPractice);
+    this.restActionLabel.setVisible(hasPractice);
     if (!shown) {
       this.restPlate.clear();
+      this.restWatch.clear();
+      this.restWatchMark.clear();
       this.restAction.clear();
       return;
     }
     const { safe } = this.viewport;
     const view = viewHealth(this.health);
     const wait = view.nextHeartInMs === null ? null : formatCountdown(view.nextHeartInMs);
-    const hasPractice = this.restPractice !== null;
+    const control = Math.max(88 * s, 48 * this.viewport.unitScale);
+    const watchH = Math.max(110 * s, control);
+    const practiceH = hasPractice ? Math.max(88 * s, control) : 0;
+    const gap = hasPractice ? 14 * s : 0;
     const width = Math.min(560 * s, safe.width - 48 * s);
-    const height = (hasPractice ? 320 : 210) * s;
+    const height = 188 * s + watchH + gap + practiceH + 24 * s;
     const y = (this.hudHeight + this.footerTop) / 2 - height / 2;
     this.restRect.setTo(safe.centerX - width / 2, y, width, height);
     const g = this.restPlate.clear();
@@ -756,33 +780,78 @@ export class MapScene extends BaseScene {
     this.restWait.setPosition(this.restRect.centerX, this.restRect.y + 104 * s);
     resize(this.restNote, 24 * s, PALETTE.muted, STYLE.current, false);
     this.restNote.setPosition(this.restRect.centerX, this.restRect.y + 148 * s);
+    const bottom = this.restRect.bottom - 24 * s;
+    if (hasPractice) {
+      this.restActionRect.setTo(this.restRect.centerX - 180 * s, bottom - practiceH, 360 * s, practiceH);
+      this.restWatchRect.setTo(this.restRect.centerX - 180 * s, bottom - practiceH - gap - watchH, 360 * s, watchH);
+    } else {
+      this.restWatchRect.setTo(this.restRect.centerX - 180 * s, bottom - watchH, 360 * s, watchH);
+    }
+    const watchPress = this.restPressed === 'watch' ? press : 0;
+    const watch = this.restWatch.clear();
+    drawPanel(watch, this.restWatchRect, s, { fill: PALETTE.coral, depth: CHROME.block.depth, press: watchPress, hero: true });
+    const watchSink = CHROME.block.depth * s * watchPress * 0.8;
+    this.restWatchLabel.setText('WATCH');
+    resize(this.restWatchLabel, 30 * s, SHELL.cream);
+    this.restWatchLabel.setPosition(this.restWatchRect.centerX, this.restWatchRect.centerY - 16 * s + watchSink);
+    this.restWatchHint.setText('+1');
+    resize(this.restWatchHint, 22 * s, SHELL.cream);
+    this.restWatchHint.setPosition(this.restWatchRect.centerX - 4 * s, this.restWatchRect.centerY + 22 * s + watchSink);
+    const heart = this.restWatchMark.clear();
+    drawHeart(heart, this.restWatchRect.centerX + 18 * s, this.restWatchRect.centerY + 22 * s + watchSink, 10 * s, SHELL.cream);
     const action = this.restAction.clear();
     if (!hasPractice) return;
-    const control = Math.max(88 * s, 48 * this.viewport.unitScale);
-    const actionH = Math.max(96 * s, control);
-    this.restActionRect.setTo(this.restRect.centerX - 180 * s, this.restRect.bottom - 24 * s - actionH, 360 * s, actionH);
-    drawPanel(action, this.restActionRect, s, { fill: PALETTE.coral, depth: CHROME.block.depth, press, hero: true });
-    const sink = CHROME.block.depth * s * press * 0.8;
+    const practicePress = this.restPressed === 'practice' ? press : 0;
+    drawPanel(action, this.restActionRect, s, { fill: SHELL.bench, depth: 12, press: practicePress });
+    const practiceSink = 12 * s * practicePress * 0.8;
     this.restActionLabel.setText('PRACTICE');
-    resize(this.restActionLabel, 30 * s, SHELL.cream);
-    this.restActionLabel.setPosition(this.restActionRect.centerX, this.restActionRect.centerY + sink);
+    resize(this.restActionLabel, 26 * s, PALETTE.ink);
+    this.restActionLabel.setPosition(this.restActionRect.centerX, this.restActionRect.centerY + practiceSink);
   }
 
   private showRest(level: number): void {
     const first = !this.restShown;
     this.restShown = true;
     this.restPractice = practiceLevel(this.progress);
+    this.restPressed = null;
+    this.restNote.setText('Early levels stay open.');
     this.restAt = performance.now() / 1000;
     this.drawRest(this.uiScale, 0);
     this.restPressDirty = true;
-    if (first) track('health_empty', { level });
+    if (first) {
+      track('health_empty', { level });
+      track('rewarded_offer_shown', { placement: 'map' });
+    }
   }
 
   private hideRest(): void {
     if (!this.restShown) return;
     this.restShown = false;
     this.restPractice = null;
+    this.restPressed = null;
     this.drawRest(this.uiScale, 0);
+  }
+
+  private async watchAd(): Promise<void> {
+    if (this.restWatching || this.curtain.active) return;
+    this.restWatching = true;
+    this.restPressed = 'watch';
+    this.restPressedAt = performance.now() / 1000;
+    this.restPressDirty = true;
+    const claimId = `map:${++this.watchClaims}`;
+    try {
+      const result = await monetization().showRewarded();
+      if (this.disposed) return;
+      if (!result.ok) {
+        this.restNote.setText(rewardedFeedback(result.reason));
+        return;
+      }
+      this.health = redeemHeart(claimId).health;
+      this.hideRest();
+      this.drawSign(this.uiScale, 0, 0);
+    } finally {
+      this.restWatching = false;
+    }
   }
 
   private refreshHealthHud(): void {
@@ -888,6 +957,10 @@ export class MapScene extends BaseScene {
       this.restTitle.setAlpha(alpha);
       this.restWait.setAlpha(alpha);
       this.restNote.setAlpha(alpha);
+      this.restWatch.setAlpha(alpha);
+      this.restWatchLabel.setAlpha(alpha);
+      this.restWatchHint.setAlpha(alpha);
+      this.restWatchMark.setAlpha(alpha);
       this.restAction.setAlpha(alpha);
       this.restActionLabel.setAlpha(alpha);
     }
@@ -943,7 +1016,13 @@ export class MapScene extends BaseScene {
     }
     if (near(this.backAt)) { this.pressPuck('back'); this.curtain.cover(() => this.scene.start(SceneKey.Menu)); return; }
     if (this.restShown) {
+      if (this.restWatching) return;
+      if (this.restWatchRect.contains(x, y)) {
+        void this.watchAd();
+        return;
+      }
       if (this.restPractice !== null && this.restActionRect.contains(x, y)) {
+        this.restPressed = 'practice';
         this.restPressedAt = performance.now() / 1000;
         this.restPressDirty = true;
         const level = this.restPractice;

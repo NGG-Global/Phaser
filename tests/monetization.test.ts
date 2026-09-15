@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   ANALYTICS_EVENTS, PRODUCT, createMonetization, installAnalytics, installMonetization,
-  monetization, stubAds, stubBilling, track,
+  monetization, rewardedFeedback, stubAds, stubBilling, track,
   type AnalyticsEvent, type Billing, type RewardedAds,
 } from '../src/monetization';
 
@@ -161,5 +161,13 @@ describe('analytics boundary', () => {
     expect(monetization().rewardedAvailable()).toBe(true);
     installMonetization(previous);
     expect(monetization().rewardedAvailable()).toBe(false);
+  });
+});
+
+describe('rewarded watch copy', () => {
+  it('explains an unavailable or skipped ad without promising a heart', () => {
+    expect(rewardedFeedback('unavailable')).toBe('No ad just now.');
+    expect(rewardedFeedback('cancelled')).toBe('The ad closed before a heart.');
+    expect(rewardedFeedback('failed')).toBe("The ad didn't finish.");
   });
 });
