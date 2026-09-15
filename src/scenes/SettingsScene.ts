@@ -151,7 +151,7 @@ export class SettingsScene extends BaseScene {
     this.beadRow = { x: left + 34 * s, y: top + card - 24 * s, gap: 26 * s, radius: 6 * s };
     place(1, this.soundValue, this.buttons.sound, 150);
     place(2, this.progressValue, this.buttons.reset, 160);
-    this.placePremium(left, top + 3 * (card + gap), width, card, control, s);
+    this.placePremium(left, top + 3 * (card + gap), width, Math.max(card, 132 * s), control, s);
     const done = this.buttons.done;
     const doneHeight = Math.max(96 * s, control);
     done.rect.setTo(safe.centerX - 200 * s, safe.bottom - 132 * s - doneHeight, 400 * s, doneHeight);
@@ -164,23 +164,21 @@ export class SettingsScene extends BaseScene {
     const g = this.plates;
     drawPanel(g, rect, s, { fill: LOOK.card, depth: 8 });
     placeSurface(this.surfaces[3]!, rect, s);
-    resize(this.premiumValue, 32 * s, LOOK.ink, STYLE.current, false);
-    this.premiumValue.setPosition(left + 28 * s, rect.centerY - 2 * s);
-    const restoreW = Math.max(150 * s, control);
-    const unlockW = Math.max(150 * s, control);
+    resize(this.premiumValue, 28 * s, LOOK.ink, STYLE.current, false);
+    this.premiumValue.setPosition(left + 28 * s, rect.y + 36 * s);
     const entitled = monetization().premium();
     this.buttons.unlock.label.setVisible(!entitled);
+    const btnH = control;
+    const btnY = rect.bottom - 16 * s - btnH;
+    const inner = width - 48 * s;
     if (entitled) {
       this.buttons.unlock.rect.setTo(0, 0, 0, 0);
-      this.buttons.restore.rect.setTo(left + width - 24 * s - restoreW, rect.centerY - control / 2, restoreW, control);
+      this.buttons.restore.rect.setTo(left + 24 * s, btnY, inner, btnH);
     } else {
-      this.buttons.unlock.rect.setTo(left + width - 24 * s - unlockW, rect.centerY - control / 2, unlockW, control);
-      this.buttons.restore.rect.setTo(
-        this.buttons.unlock.rect.x - 12 * s - restoreW,
-        rect.centerY - control / 2,
-        restoreW,
-        control,
-      );
+      const gap = 12 * s;
+      const btnW = (inner - gap) / 2;
+      this.buttons.restore.rect.setTo(left + 24 * s, btnY, btnW, btnH);
+      this.buttons.unlock.rect.setTo(left + 24 * s + btnW + gap, btnY, btnW, btnH);
     }
   }
 
